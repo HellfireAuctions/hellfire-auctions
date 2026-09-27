@@ -1,5 +1,5 @@
 client_id = "eb49cba90749e254b957cd1d618e6d38"
-application_url = "https://REPLACE_WITH_RENDER_URL"
+application_url = "https://publishers-applications-tolerance-regular.trycloudflare.com"
 embedded = true
 name = "Hellfire Auctions"
 
@@ -18,7 +18,7 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://REPLACE_WITH_RENDER_URL/auth/callback" ]
+redirect_urls = [ "https://publishers-applications-tolerance-regular.trycloudflare.com/auth/callback" ]
 
 [build]
 automatically_update_urls_on_dev = false

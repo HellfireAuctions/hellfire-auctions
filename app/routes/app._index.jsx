@@ -1,0 +1,1393 @@
+﻿import { useActionData, useLoaderData, Form } from "react-router";
+import { useState } from "react";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+
+const DURATION_OPTIONS = [
+  { value: "1", label: "24 Hours" },
+  { value: "3", label: "3 Days" },
+  { value: "5", label: "5 Days" },
+  { value: "7", label: "7 Days" },
+  { value: "14", label: "14 Days" },
+  { value: "30", label: "30 Days" },
+];
+
+function easternOffset(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    timeZoneName: "shortOffset",
+  }).formatToParts(date);
+
+  const value =
+    parts.find((part) => part.type === "timeZoneName")?.value || "GMT-4";
+
+  const match = value.match(/GMT([+-])(\d+)(?::(\d+))?/);
+
+  if (!match) return -4 * 60;
+
+  const sign = match[1] === "-" ? -1 : 1;
+
+  return sign * (
+    Number(match[2]) * 60 +
+    Number(match[3] || 0)
+  );
+}
+
+function easternLocalToUtc(dateString, hour, minute, ampm) {
+  let h = Number(hour);
+
+  if (ampm === "PM" && h !== 12) h += 12;
+  if (ampm === "AM" && h === 12) h = 0;
+
+  const naive = new Date(
+    `${dateString}T${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`,
+  );
+
+  const offsetMinutes = easternOffset(naive);
+
+  return new Date(
+    naive.getTime() - offsetMinutes * 60 * 1000,
+  );
+}
+
+function formatEastern(date) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function easternToday() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const get = (type) =>
+    parts.find((part) => part.type === type)?.value;
+
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function getEasternParts(dateValue) {
+  const date = new Date(dateValue);
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+
+  const get = (type) =>
+    parts.find((part) => part.type === type)?.value;
+
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    hour: get("hour"),
+    minute: get("minute"),
+    ampm: get("dayPeriod"),
+  };
+}
+
+async function uploadImage(admin, imageFile) {
+  const stagedResponse = await admin.graphql(
+    `#graphql
+      mutation StagedUpload($input: [StagedUploadInput!]!) {
+        stagedUploadsCreate(input: $input) {
+          stagedTargets {
+            url
+            resourceUrl
+            parameters {
+              name
+              value
+            }
+          }
+          userErrors {
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        input: [
+          {
+            filename: imageFile.name,
+            mimeType: imageFile.type,
+            httpMethod: "POST",
+            resource: "PRODUCT_IMAGE",
+          },
+        ],
+      },
+    },
+  );
+
+  const stagedJson = await stagedResponse.json();
+  const result = stagedJson?.data?.stagedUploadsCreate;
+
+  if (result?.userErrors?.length) {
+    throw new Error(
+      result.userErrors.map((error) => error.message).join(", "),
+    );
+  }
+
+  const target = result?.stagedTargets?.[0];
+
+  if (!target) {
+    throw new Error("Shopify did not provide an image upload target.");
+  }
+
+  const uploadForm = new FormData();
+
+  for (const parameter of target.parameters) {
+    uploadForm.append(parameter.name, parameter.value);
+  }
+
+  uploadForm.append("file", imageFile, imageFile.name);
+
+  const uploadResponse = await fetch(target.url, {
+    method: "POST",
+    body: uploadForm,
+  });
+
+  if (!uploadResponse.ok) {
+    throw new Error("Shopify image upload failed.");
+  }
+
+  return target.resourceUrl;
+}
+
+async function getProductImage(admin, productId) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const response = await admin.graphql(
+      `#graphql
+        query AuctionProductImage($id: ID!) {
+          product(id: $id) {
+            media(first: 10) {
+              nodes {
+                id
+                mediaContentType
+                ... on MediaImage {
+                  image {
+                    url
+                  }
+                }
+              }
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          id: productId,
+        },
+      },
+    );
+
+    const json = await response.json();
+
+    const media =
+      json?.data?.product?.media?.nodes || [];
+
+    const image = media.find(
+      (item) => item?.image?.url,
+    );
+
+    if (image?.image?.url) {
+      return {
+        url: image.image.url,
+        mediaIds: media
+          .filter((item) => item.mediaContentType === "IMAGE")
+          .map((item) => item.id),
+      };
+    }
+
+    await new Promise((resolve) =>
+      setTimeout(resolve, 750),
+    );
+  }
+
+  return {
+    url: null,
+    mediaIds: [],
+  };
+}
+
+
+async function ensureAuctionStorefront(admin, productId) {
+  const publicationsResponse = await admin.graphql(
+    `#graphql
+      query AuctionPublications {
+        publications(first: 50) {
+          nodes {
+            id
+            name
+          }
+        }
+      }
+    `,
+  );
+
+  const publicationsJson =
+    await publicationsResponse.json();
+
+  const onlineStore =
+    publicationsJson?.data?.publications?.nodes?.find(
+      (publication) =>
+        publication.name === "Online Store",
+    );
+
+  if (!onlineStore) {
+    throw new Error(
+      'The Shopify "Online Store" publication could not be found.',
+    );
+  }
+
+  const collectionResponse =
+    await admin.graphql(
+      `#graphql
+        query LiveAuctionsCollection {
+          collections(first: 50) {
+            nodes {
+              id
+              title
+              ruleSet {
+                rules {
+                  column
+                  relation
+                  condition
+                }
+              }
+              products(first: 250) {
+                nodes {
+                  id
+                }
+              }
+            }
+          }
+        }
+      `,
+    );
+
+  const collectionJson =
+    await collectionResponse.json();
+
+  const liveCollection =
+    collectionJson?.data?.collections?.nodes?.find(
+      (collection) =>
+        collection.title === "Live Auctions",
+    );
+
+  if (!liveCollection) {
+    throw new Error(
+      'The Shopify collection "Live Auctions" could not be found.',
+    );
+  }
+
+  const alreadyInCollection =
+    liveCollection.products.nodes.some(
+      (product) =>
+        product.id === productId,
+    );
+
+  if (
+    !alreadyInCollection &&
+    !liveCollection.ruleSet
+  ) {
+    const addResponse =
+      await admin.graphql(
+        `#graphql
+          mutation AddAuctionToCollection(
+            $id: ID!
+            $productIds: [ID!]!
+          ) {
+            collectionAddProducts(
+              id: $id
+              productIds: $productIds
+            ) {
+              userErrors {
+                message
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            id: liveCollection.id,
+            productIds: [productId],
+          },
+        },
+      );
+
+    const addJson =
+      await addResponse.json();
+
+    const addErrors =
+      addJson?.data?.collectionAddProducts?.userErrors || [];
+
+    if (addErrors.length) {
+      throw new Error(
+        addErrors
+          .map((error) => error.message)
+          .join(", "),
+      );
+    }
+  }
+
+  if (
+    !alreadyInCollection &&
+    liveCollection.ruleSet
+  ) {
+    throw new Error(
+      'The "Live Auctions" collection is rule-based and does not currently include this auction product. Add the "Live Auction" tag or the "Hellfire Auction" product type to that collection rule.',
+    );
+  }
+
+  for (const resourceId of [
+    productId,
+    liveCollection.id,
+  ]) {
+    const publishResponse =
+      await admin.graphql(
+        `#graphql
+          mutation PublishAuctionResource(
+            $id: ID!
+            $publicationId: ID!
+          ) {
+            publishablePublish(
+              id: $id
+              input: {
+                publicationId: $publicationId
+              }
+            ) {
+              userErrors {
+                message
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            id: resourceId,
+            publicationId:
+              onlineStore.id,
+          },
+        },
+      );
+
+    const publishJson =
+      await publishResponse.json();
+
+    const publishErrors =
+      publishJson?.data?.publishablePublish?.userErrors || [];
+
+    if (publishErrors.length) {
+      throw new Error(
+        publishErrors
+          .map((error) => error.message)
+          .join(", "),
+      );
+    }
+  }
+}
+export const loader = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+
+  const auctions = await prisma.auction.findMany({
+    where: {
+      shop: session.shop,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+    include: {
+      bids: {
+        orderBy: {
+          amount: "desc",
+        },
+        take: 1,
+      },
+    },
+  });
+
+  return { auctions };
+};
+
+export const action = async ({ request }) => {
+  const { session, admin } = await authenticate.admin(request);
+  const formData = await request.formData();
+
+  const intent =
+    formData.get("intent")?.toString() || "create";
+
+  const title =
+    formData.get("title")?.toString().trim();
+
+  const description =
+    formData.get("description")?.toString().trim() || "";
+
+  const startingBid =
+    Number(formData.get("startingBid"));
+
+  const reservePriceValue =
+    formData.get("reservePrice");
+
+  const startsAtDate =
+    formData.get("startsAtDate")?.toString();
+
+  const startsAtHour =
+    formData.get("startsAtHour")?.toString();
+
+  const startsAtMinute =
+    formData.get("startsAtMinute")?.toString();
+
+  const startsAtAmPm =
+    formData.get("startsAtAmPm")?.toString();
+
+  const durationDays =
+    Number(formData.get("durationDays"));
+
+  const imageFile = formData.get("image");
+
+  if (
+    !title ||
+    !Number.isFinite(startingBid) ||
+    startingBid <= 0 ||
+    !startsAtDate ||
+    !startsAtHour ||
+    !startsAtMinute ||
+    !startsAtAmPm ||
+    !DURATION_OPTIONS.some(
+      (option) =>
+        Number(option.value) === durationDays,
+    )
+  ) {
+    return {
+      error: "Please complete all required auction fields.",
+    };
+  }
+
+  const startsAt = easternLocalToUtc(
+    startsAtDate,
+    startsAtHour,
+    startsAtMinute,
+    startsAtAmPm,
+  );
+
+  const endsAt = new Date(
+    startsAt.getTime() +
+      durationDays * 24 * 60 * 60 * 1000,
+  );
+
+  const reservePrice =
+    reservePriceValue !== null &&
+    reservePriceValue !== ""
+      ? Number(reservePriceValue)
+      : null;
+
+  const cleanDescription = description
+    ? `<p>${description
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\n", "<br>")}</p>`
+    : "";
+
+  /*
+   * EDIT EXISTING AUCTION
+   */
+  if (intent === "update") {
+    const auctionId =
+      formData.get("auctionId")?.toString();
+
+    if (!auctionId) {
+      return {
+        error: "Auction ID is missing.",
+      };
+    }
+
+    const existingAuction =
+      await prisma.auction.findFirst({
+        where: {
+          id: auctionId,
+          shop: session.shop,
+        },
+      });
+
+    if (!existingAuction) {
+      return {
+        error: "Auction could not be found.",
+      };
+    }
+
+    /*
+     * Update the existing Shopify product.
+     */
+    const productUpdateResponse =
+      await admin.graphql(
+        `#graphql
+          mutation UpdateAuctionProduct(
+            $product: ProductUpdateInput!
+          ) {
+            productUpdate(product: $product) {
+              product {
+                id
+              }
+              userErrors {
+                field
+                message
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            product: {
+              id: existingAuction.productId,
+              title,
+              descriptionHtml: cleanDescription,
+            },
+          },
+        },
+      );
+
+    const productUpdateJson =
+      await productUpdateResponse.json();
+
+    const productErrors =
+      productUpdateJson?.data?.productUpdate?.userErrors || [];
+
+    if (productErrors.length) {
+      return {
+        error: productErrors
+          .map((error) => error.message)
+          .join(", "),
+      };
+    }
+
+    let imageUrl = existingAuction.imageUrl;
+
+    const hasNewImage =
+      imageFile &&
+      typeof imageFile === "object" &&
+      imageFile.size > 0;
+
+    if (hasNewImage) {
+      if (!imageFile.type?.startsWith("image/")) {
+        return {
+          error: "The replacement file must be an image.",
+        };
+      }
+
+      const stagedResource =
+        await uploadImage(admin, imageFile);
+
+      /*
+       * Add the replacement image to the EXISTING
+       * Shopify product.
+       */
+      const mediaResponse = await admin.graphql(
+        `#graphql
+          mutation AddAuctionMedia(
+            $productId: ID!
+            $media: [CreateMediaInput!]!
+          ) {
+            productCreateMedia(
+              productId: $productId
+              media: $media
+            ) {
+              media {
+                id
+              }
+              mediaUserErrors {
+                message
+              }
+            }
+          }
+        `,
+        {
+          variables: {
+            productId: existingAuction.productId,
+            media: [
+              {
+                originalSource: stagedResource,
+                alt: title,
+                mediaContentType: "IMAGE",
+              },
+            ],
+          },
+        },
+      );
+
+      const mediaJson =
+        await mediaResponse.json();
+
+      const mediaErrors =
+        mediaJson?.data?.productCreateMedia?.mediaUserErrors || [];
+
+      if (mediaErrors.length) {
+        return {
+          error: mediaErrors
+            .map((error) => error.message)
+            .join(", "),
+        };
+      }
+
+      const productImage =
+        await getProductImage(
+          admin,
+          existingAuction.productId,
+        );
+
+      if (productImage.url) {
+        imageUrl = productImage.url;
+      }
+    }
+
+    /*
+     * Never reset the current bid if bidders already exist.
+     * If there are no bids, keep current bid synchronized
+     * with the edited starting bid.
+     */
+    const bidCount = await prisma.bid.count({
+      where: {
+        auctionId: auctionId,
+      },
+    });
+
+    try {
+      await ensureAuctionStorefront(
+        admin,
+        existingAuction.productId,
+      );
+    } catch (error) {
+      return {
+        error: error.message,
+      };
+    }
+
+    const updatedAuction =
+      await prisma.auction.update({
+        where: {
+          id: auctionId,
+        },
+        data: {
+          title,
+          description: description || null,
+          imageUrl,
+          startingBid,
+          currentBid:
+            bidCount === 0
+              ? startingBid
+              : undefined,
+          reservePrice:
+            reservePrice !== null &&
+            Number.isFinite(reservePrice)
+              ? reservePrice
+              : null,
+          startsAt,
+          endsAt,
+        },
+      });
+
+    return {
+      success: true,
+      mode: "update",
+      auctionId: updatedAuction.id,
+    };
+  }
+
+  /*
+   * CREATE NEW AUCTION
+   */
+  if (
+    !imageFile ||
+    typeof imageFile !== "object" ||
+    imageFile.size === 0
+  ) {
+    return {
+      error: "Please upload an auction image.",
+    };
+  }
+
+  if (!imageFile.type?.startsWith("image/")) {
+    return {
+      error: "Please upload an image file.",
+    };
+  }
+
+  /*
+   * Verify the Live Auctions collection exists
+   * BEFORE creating anything.
+   */
+  const collectionResponse =
+    await admin.graphql(
+      `#graphql
+        query LiveAuctionsCollection {
+          collections(first: 50) {
+            nodes {
+              id
+              title
+            }
+          }
+        }
+      `,
+    );
+
+  const collectionJson =
+    await collectionResponse.json();
+
+  const liveCollection =
+    collectionJson?.data?.collections?.nodes?.find(
+      (collection) =>
+        collection.title === "Live Auctions",
+    );
+
+  if (!liveCollection) {
+    return {
+      error:
+        'The Shopify collection "Live Auctions" could not be found.',
+    };
+  }
+
+  const stagedResource =
+    await uploadImage(admin, imageFile);
+
+  const productResponse =
+    await admin.graphql(
+      `#graphql
+        mutation CreateAuctionProduct(
+          $product: ProductCreateInput!
+          $media: [CreateMediaInput!]
+        ) {
+          productCreate(
+            product: $product
+            media: $media
+          ) {
+            product {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `,
+      {
+        variables: {
+          product: {
+            title,
+            descriptionHtml: cleanDescription,
+            status: "ACTIVE",
+            productType: "Hellfire Auction",
+            vendor: "Hellfire Frags",
+            tags: [
+              "Hellfire Auction",
+              "Live Auction",
+            ],
+            collectionsToJoin: [
+              liveCollection.id,
+            ],
+          },
+          media: [
+            {
+              originalSource: stagedResource,
+              alt: title,
+              mediaContentType: "IMAGE",
+            },
+          ],
+        },
+      },
+    );
+
+  const productJson =
+    await productResponse.json();
+
+  const productResult =
+    productJson?.data?.productCreate;
+
+  if (productResult?.userErrors?.length) {
+    return {
+      error: productResult.userErrors
+        .map((error) => error.message)
+        .join(", "),
+    };
+  }
+
+  const productId =
+    productResult?.product?.id;
+
+  if (!productId) {
+    return {
+      error:
+        "Shopify did not return the new product ID.",
+    };
+  }
+
+  const productImage =
+    await getProductImage(admin, productId);
+
+  const auction =
+    await prisma.auction.create({
+      data: {
+        shop: session.shop,
+        productId,
+        title,
+        description: description || null,
+        imageUrl: productImage.url,
+        startingBid,
+        currentBid: startingBid,
+        reservePrice:
+          reservePrice !== null &&
+          Number.isFinite(reservePrice)
+            ? reservePrice
+            : null,
+        startsAt,
+        endsAt,
+        status: "DRAFT",
+      },
+    });
+
+  return {
+    success: true,
+    mode: "create",
+    auctionId: auction.id,
+  };
+};
+
+/* eslint-disable react/prop-types */
+/* eslint-disable react/prop-types */
+function AuctionForm({
+  auction,
+  onCancel,
+}) {
+  const isEdit = Boolean(auction);
+
+  const initialParts = auction
+    ? getEasternParts(auction.startsAt)
+    : null;
+
+  const [startDate, setStartDate] =
+    useState(
+      initialParts?.date || easternToday(),
+    );
+
+  const [startHour, setStartHour] =
+    useState(
+      initialParts?.hour || "7",
+    );
+
+  const [startMinute, setStartMinute] =
+    useState(
+      initialParts?.minute || "00",
+    );
+
+  const [startAmPm, setStartAmPm] =
+    useState(
+      initialParts?.ampm || "PM",
+    );
+
+  const [duration, setDuration] =
+    useState(() => {
+      if (!auction) return "7";
+
+      const days = Math.round(
+        (
+          new Date(auction.endsAt).getTime() -
+          new Date(auction.startsAt).getTime()
+        ) /
+          (24 * 60 * 60 * 1000),
+      );
+
+      return DURATION_OPTIONS.some(
+        (option) =>
+          Number(option.value) === days,
+      )
+        ? String(days)
+        : "7";
+    });
+
+  const [imagePreview, setImagePreview] =
+    useState(
+      auction?.imageUrl || null,
+    );
+
+  const calculateEndPreview = () => {
+    try {
+      const start = easternLocalToUtc(
+        startDate,
+        startHour,
+        startMinute,
+        startAmPm,
+      );
+
+      const end = new Date(
+        start.getTime() +
+          Number(duration) *
+            24 *
+            60 *
+            60 *
+            1000,
+      );
+
+      return formatEastern(end);
+    } catch {
+      return "Choose a valid start time";
+    }
+  };
+
+  const handleImageChange = (event) => {
+    const file =
+      event.currentTarget.files?.[0];
+
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setImagePreview(
+        auction?.imageUrl || null,
+      );
+      return;
+    }
+
+    setImagePreview(
+      URL.createObjectURL(file),
+    );
+  };
+
+  return (
+    <Form
+      method="post"
+      encType="multipart/form-data"
+    >
+      <input
+        type="hidden"
+        name="intent"
+        value={isEdit ? "update" : "create"}
+      />
+
+      {isEdit && (
+        <input
+          type="hidden"
+          name="auctionId"
+          value={auction.id}
+        />
+      )}
+
+      <s-stack gap="base">
+
+        <s-text-field
+          label="Auction Title"
+          name="title"
+          placeholder="Example: Holy Grail Torch"
+          value={auction?.title || undefined}
+          required
+        />
+
+        <s-text-area
+          label="Description"
+          name="description"
+          placeholder="Describe the coral or item being auctioned..."
+          value={auction?.description || undefined}
+        />
+
+        <s-section
+          heading={
+            isEdit
+              ? "Replace Auction Image"
+              : "Auction Image"
+          }
+        >
+          <s-stack gap="small">
+
+            <s-drop-zone
+              name="image"
+              label={
+                isEdit
+                  ? "Choose a new image (optional)"
+                  : "Upload auction image"
+              }
+              accessibilityLabel="Auction image"
+              accept="image/*"
+              required={!isEdit}
+              onChange={handleImageChange}
+            />
+
+            {imagePreview && (
+              <img
+                src={imagePreview}
+                alt="Auction preview"
+                style={{
+                  width: "240px",
+                  height: "240px",
+                  objectFit: "cover",
+                  borderRadius: "12px",
+                  display: "block",
+                }}
+              />
+            )}
+
+          </s-stack>
+        </s-section>
+
+        <s-number-field
+          label="Starting Bid"
+          name="startingBid"
+          min="0.01"
+          step="0.01"
+          placeholder="25.00"
+          value={
+            auction
+              ? String(auction.startingBid)
+              : undefined
+          }
+          required
+        />
+
+        <s-number-field
+          label="Reserve Price"
+          name="reservePrice"
+          min="0"
+          step="0.01"
+          placeholder="Optional"
+          value={
+            auction?.reservePrice != null
+              ? String(auction.reservePrice)
+              : undefined
+          }
+        />
+
+        <s-section heading="Auction Schedule">
+          <s-stack gap="base">
+
+            <s-text>
+              Eastern Time (ET)
+            </s-text>
+
+            <s-date-picker
+              label="Start Date"
+              name="startsAtDate"
+              type="single"
+              value={startDate}
+              defaultValue={startDate}
+              disallow="past"
+              visibleMonths="1"
+              required
+              onChange={(event) =>
+                setStartDate(
+                  event.currentTarget.value,
+                )
+              }
+            />
+
+            <s-stack gap="small">
+
+              <s-text>
+                Start Time
+              </s-text>
+
+              <s-stack
+                direction="inline"
+                gap="small"
+              >
+
+                <s-select
+                  label="Hour"
+                  name="startsAtHour"
+                  value={startHour}
+                  onChange={(event) =>
+                    setStartHour(
+                      event.currentTarget.value,
+                    )
+                  }
+                >
+                  {Array.from(
+                    { length: 12 },
+                    (_, index) => {
+                      const hour =
+                        String(index + 1);
+
+                      return (
+                        <s-option
+                          key={hour}
+                          value={hour}
+                        >
+                          {hour}
+                        </s-option>
+                      );
+                    },
+                  )}
+                </s-select>
+
+                <s-select
+                  label="Minute"
+                  name="startsAtMinute"
+                  value={startMinute}
+                  onChange={(event) =>
+                    setStartMinute(
+                      event.currentTarget.value,
+                    )
+                  }
+                >
+                  {[
+                    "00",
+                    "05",
+                    "10",
+                    "15",
+                    "20",
+                    "25",
+                    "30",
+                    "35",
+                    "40",
+                    "45",
+                    "50",
+                    "55",
+                  ].map((minute) => (
+                    <s-option
+                      key={minute}
+                      value={minute}
+                    >
+                      :{minute}
+                    </s-option>
+                  ))}
+                </s-select>
+
+                <s-select
+                  label="AM / PM"
+                  name="startsAtAmPm"
+                  value={startAmPm}
+                  onChange={(event) =>
+                    setStartAmPm(
+                      event.currentTarget.value,
+                    )
+                  }
+                >
+                  <s-option value="AM">
+                    AM
+                  </s-option>
+                  <s-option value="PM">
+                    PM
+                  </s-option>
+                </s-select>
+
+              </s-stack>
+
+            </s-stack>
+
+            <s-select
+              label="Auction Length"
+              name="durationDays"
+              value={duration}
+              onChange={(event) =>
+                setDuration(
+                  event.currentTarget.value,
+                )
+              }
+            >
+              {DURATION_OPTIONS.map(
+                (option) => (
+                  <s-option
+                    key={option.value}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </s-option>
+                ),
+              )}
+            </s-select>
+
+            <s-card>
+              <s-stack gap="small">
+                <s-text>
+                  Automatic End Time
+                </s-text>
+
+                <s-heading>
+                  {calculateEndPreview()}
+                </s-heading>
+
+                <s-text>
+                  The end time is automatically
+                  calculated from the start time
+                  and auction length.
+                </s-text>
+              </s-stack>
+            </s-card>
+
+          </s-stack>
+        </s-section>
+
+        <s-stack
+          direction="inline"
+          gap="small"
+        >
+          <s-button
+            type="submit"
+            variant="primary"
+          >
+            {isEdit
+              ? "Save Auction Changes"
+              : "Create Auction"}
+          </s-button>
+
+          {isEdit && (
+            <s-button
+              type="button"
+              onClick={onCancel}
+            >
+              Cancel
+            </s-button>
+          )}
+        </s-stack>
+
+      </s-stack>
+    </Form>
+  );
+}
+
+export default function AuctionsPage() {
+  const { auctions } = useLoaderData();
+  const actionData = useActionData();
+
+  const [editingId, setEditingId] =
+    useState(null);
+
+  const editingAuction =
+    auctions.find(
+      (auction) =>
+        auction.id === editingId,
+    );
+
+  return (
+    <s-page heading="Hellfire Auctions">
+
+      {actionData?.error && (
+        <s-banner tone="critical">
+          {actionData.error}
+        </s-banner>
+      )}
+
+      {actionData?.success && (
+        <s-banner tone="success">
+          {actionData.mode === "update"
+            ? "Auction updated successfully."
+            : "Auction created successfully."}
+        </s-banner>
+      )}
+
+      <s-section
+        heading={
+          editingAuction
+            ? `Edit Auction — ${editingAuction.title}`
+            : "Create Auction"
+        }
+      >
+        {editingAuction ? (
+          <AuctionForm
+            key={editingAuction.id}
+            auction={editingAuction}
+            onCancel={() =>
+              setEditingId(null)
+            }
+          />
+        ) : (
+          <AuctionForm />
+        )}
+      </s-section>
+
+      <s-section heading="Auctions">
+
+        {auctions.length === 0 ? (
+          <s-empty-state heading="No auctions yet">
+            Create your first Hellfire auction above.
+          </s-empty-state>
+        ) : (
+          <s-stack gap="base">
+
+            {auctions.map((auction) => (
+              <s-card key={auction.id}>
+
+                <s-stack gap="small">
+
+                  {auction.imageUrl && (
+                    <img
+                      src={auction.imageUrl}
+                      alt={auction.title}
+                      style={{
+                        width: "160px",
+                        height: "160px",
+                        objectFit: "cover",
+                        borderRadius: "10px",
+                      }}
+                    />
+                  )}
+
+                  <s-heading>
+                    {auction.title}
+                  </s-heading>
+
+                  <s-text>
+                    Status: {auction.status}
+                  </s-text>
+
+                  <s-text>
+                    Starting Bid: $
+                    {auction.startingBid.toFixed(2)}
+                  </s-text>
+
+                  <s-text>
+                    Current Bid: $
+                    {auction.currentBid.toFixed(2)}
+                  </s-text>
+
+                  <s-text>
+                    Starts:{" "}
+                    {formatEastern(
+                      new Date(
+                        auction.startsAt,
+                      ),
+                    )}
+                  </s-text>
+
+                  <s-text>
+                    Ends:{" "}
+                    {formatEastern(
+                      new Date(
+                        auction.endsAt,
+                      ),
+                    )}
+                  </s-text>
+
+                  <s-text>
+                    Bids: {auction.bids.length}
+                  </s-text>
+
+                  <s-button
+                    type="button"
+                    onClick={() =>
+                      setEditingId(auction.id)
+                    }
+                  >
+                    Edit Auction
+                  </s-button>
+
+                </s-stack>
+
+              </s-card>
+            ))}
+
+          </s-stack>
+        )}
+
+      </s-section>
+
+    </s-page>
+  );
+}

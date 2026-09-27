@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: hellfire-auctions
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_URL
+        value: file:/app/data/prod.sqlite
+      - key: SCOPES
+        value: write_metaobject_definitions,write_metaobjects,write_products,write_publications,write_app_proxy
+      - key: SHOPIFY_API_KEY
+        sync: false
+      - key: SHOPIFY_API_SECRET
+        sync: false
+      - key: SHOPIFY_APP_URL
+        sync: false
+    disk:
+      name: hellfire-auctions-data
+      mountPath: /app/data
+      sizeGB: 1

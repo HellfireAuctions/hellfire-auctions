@@ -1,0 +1,29 @@
+client_id = "eb49cba90749e254b957cd1d618e6d38"
+application_url = "https://REPLACE_WITH_RENDER_URL"
+embedded = true
+name = "Hellfire Auctions"
+
+[access_scopes]
+scopes = "write_metaobject_definitions,write_metaobjects,write_products,write_publications,write_app_proxy"
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+[auth]
+redirect_urls = [ "https://REPLACE_WITH_RENDER_URL/auth/callback" ]
+
+[build]
+automatically_update_urls_on_dev = false
+
+[app_proxy]
+url = "/api/proxy"
+prefix = "apps"
+subpath = "hellfire-auctions"

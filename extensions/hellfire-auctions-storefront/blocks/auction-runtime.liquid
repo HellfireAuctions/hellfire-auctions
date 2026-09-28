@@ -1,16 +1,9 @@
-﻿{% comment %}
-  Legacy runtime placeholder.
-  The storefront auction is rendered by auction-experience.liquid.
-  This registered app-embed intentionally contains no JavaScript.
-{% endcomment %}
-<div id="hellfire-auction-runtime" hidden></div>
+<div id="hellfire-auction-runtime" data-product-id="{{ product.id | default: '' }}" hidden></div>
+<script src="{{ 'auction-runtime.js' | asset_url }}" defer></script>
 {% schema %}
 {
-  "name": "Auction Runtime",
+  "name": "Hellfire Auctions Runtime",
   "target": "body",
-  "enabled_on": {
-    "templates": ["product"]
-  },
   "settings": []
 }
 {% endschema %}

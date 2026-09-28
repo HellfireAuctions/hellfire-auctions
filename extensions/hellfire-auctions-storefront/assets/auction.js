@@ -72,13 +72,22 @@
       if (container.getAttribute("data-product-id") !== productId &&
           container.getAttribute("data-current-variant-id") !== variantId) return;
 
-      container.querySelectorAll("button, input").forEach((control) => {
-        if (isPurchaseControl(control)) {
+      // Horizon quick-add controls live on product cards and can use icon-only labels.
+      if (container.matches("quick-add-component, .quick-add, product-card")) {
+        container.style.setProperty("display", "none", "important");
+        container.style.setProperty("visibility", "hidden", "important");
+        container.style.setProperty("pointer-events", "none", "important");
+        return;
+      }
+
+      container.querySelectorAll("button, input, quick-add-component, .quick-add").forEach((control) => {
+        if (control.matches("quick-add-component, .quick-add") || isPurchaseControl(control)) {
           control.style.setProperty("display", "none", "important");
+          control.style.setProperty("visibility", "hidden", "important");
+          control.style.setProperty("pointer-events", "none", "important");
         }
       });
     });
-  };
 
   hidePurchaseControls();
 

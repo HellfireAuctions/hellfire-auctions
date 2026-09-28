@@ -207,8 +207,10 @@ export const action = async ({ request }) => {
       orderBy: { createdAt: "desc" },
     });
     const oldMax = existing ? Number(existing.maxBid || existing.amount) : 0;
-    const currentBid = Number(current.currentBid || current.startingBid);
-    const minimumBid = currentBid + increment;
+    const currentBid = Number(current.currentBid || 0);
+    const minimumBid = currentBid > 0
+      ? currentBid + increment
+      : Number(current.startingBid);
 
     if (existing && amount <= oldMax) {
       return { error: "Your maximum bid is already at or above that amount." };
@@ -228,7 +230,7 @@ export const action = async ({ request }) => {
           auctionId: current.id,
           bidderId: customerId,
           bidderEmail: null,
-          amount: currentBid,
+          amount: minimumBid,
           maxBid: amount,
         },
       });
@@ -243,13 +245,18 @@ export const action = async ({ request }) => {
     const secondHighest = bids[1];
     const highestMax = Number(highest.maxBid || highest.amount);
     const secondMax = secondHighest ? Number(secondHighest.maxBid || secondHighest.amount) : 0;
-    const displayedBid = Math.min(
-      highestMax,
-      Math.max(Number(current.startingBid), secondMax + increment),
+    const competingBid = secondHighest
+      ? Math.max(Number(current.startingBid), secondMax + increment)
+      : Number(current.startingBid);
+    const displayedBid = Math.max(
+      Number(current.currentBid || 0),
+      Math.min(highestMax, competingBid),
     );
 
     for (const bid of bids) {
-      const bidAmount = bid.id === highest.id ? displayedBid : Math.min(Number(bid.maxBid || bid.amount), displayedBid);
+      const bidAmount = bid.id === highest.id
+        ? displayedBid
+        : Math.min(Number(bid.maxBid || bid.amount), displayedBid);
       if (Number(bid.amount) !== bidAmount) {
         await tx.bid.update({ where: { id: bid.id }, data: { amount: bidAmount } });
       }

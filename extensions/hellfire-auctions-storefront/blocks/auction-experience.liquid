@@ -14,7 +14,7 @@
     pointer-events: none !important;
   }
 </style>
-<div id="hellfire-auction-root" data-product-id="{{ product.id }}"></div>
+<div id="hellfire-auction-root" data-product-id="{{ block.settings.product.id | default: product.id }}"></div>
 <script src="{{ 'auction.js' | asset_url }}" defer></script>
 
 {% schema %}
@@ -24,6 +24,14 @@
   "enabled_on": {
     "templates": ["product"]
   },
-  "stylesheet": "auction.css"
+  "stylesheet": "auction.css",
+  "settings": [
+    {
+      "type": "product",
+      "id": "product",
+      "label": "Auction product",
+      "autofill": true
+    }
+  ]
 }
 {% endschema %}

@@ -21,8 +21,6 @@
     <div class="hellfire-auction-status">Connecting to the auction service…</div>
   </section>
 </div>
-<script src="{{ 'auction.js' | asset_url }}" defer></script>
-
 {% schema %}
 {
   "name": "Auction Experience",
@@ -30,6 +28,7 @@
   "enabled_on": {
     "templates": ["product"]
   },
-  "stylesheet": "auction.css"
+  "stylesheet": "auction.css",
+  "javascript": "auction.js"
 }
 {% endschema %}

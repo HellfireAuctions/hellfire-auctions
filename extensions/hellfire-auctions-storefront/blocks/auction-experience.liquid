@@ -14,7 +14,13 @@
     pointer-events: none !important;
   }
 </style>
-<div id="hellfire-auction-root" data-product-id="{{ product.id }}"></div>
+<div id="hellfire-auction-root" data-product-id="{{ product.id }}">
+  <section class="hellfire-auction-card" aria-label="Hellfire auction">
+    <div class="hellfire-auction-badge">🔥 HELLFIRE AUCTIONS</div>
+    <h2 class="hellfire-auction-title">Loading live auction…</h2>
+    <div class="hellfire-auction-status">Connecting to the auction service…</div>
+  </section>
+</div>
 <script src="{{ 'auction.js' | asset_url }}" defer></script>
 
 {% schema %}

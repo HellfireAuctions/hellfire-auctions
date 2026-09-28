@@ -43,7 +43,9 @@
     host.setAttribute("data-hellfire-owned", "true");
     host.style.cssText = "display:block!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:2147483647!important;width:100%!important;min-height:1px!important;";
     host.dataset.productId = String(productId || "");
-    document.body.appendChild(host);
+    const mountParent = document.documentElement;
+    if (!mountParent) return host;
+    mountParent.appendChild(host);
     const shadow = host.attachShadow({mode:"open"});
     const style = document.createElement("style");
     style.textContent = css;

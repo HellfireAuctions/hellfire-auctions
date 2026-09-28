@@ -19,11 +19,3 @@
 /* HELLFIRE_AUCTION_QUICK_ADD_GLOBAL */
 .quick-add,.quick-add__button{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}
 /* /HELLFIRE_AUCTION_QUICK_ADD_GLOBAL */
-
-/* Auction is body-mounted; keep Shopify purchase controls out of the way globally. */
-form[action*="/cart/add"],button[name="add"],.buy-buttons,
-.shopify-payment-button,sticky-add-to-cart,.sticky-add-to-cart__bar,
-.add-to-cart-button,[data-testid="checkout-button"]{
-  display:none!important;visibility:hidden!important;pointer-events:none!important;
-}
-#hellfire-auction-root{display:block!important;visibility:visible!important;width:100%;box-sizing:border-box}

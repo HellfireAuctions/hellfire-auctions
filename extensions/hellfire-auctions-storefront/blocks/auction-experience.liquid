@@ -1,26 +1,11 @@
-<style>
-  form[action*="/cart/add"],
-  .quick-add,
-  .quick-add__button,
-  .shopify-payment-button,
-  button[name="add"],
-  .buy-buttons,
-  sticky-add-to-cart,
-  .sticky-add-to-cart__bar,
-  .add-to-cart-button,
-  [data-testid="checkout-button"] {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
-</style>
-<div id="hellfire-auction-root" data-product-id="{{ product.id }}">
+﻿<div id="hellfire-auction-root" data-product-id="{{ product.id }}">
   <section class="hellfire-auction-card" aria-label="Hellfire auction">
-    <div class="hellfire-auction-badge">🔥 HELLFIRE AUCTIONS</div>
-    <h2 class="hellfire-auction-title">Loading live auction…</h2>
-    <div class="hellfire-auction-status">Connecting to the auction service…</div>
+    <div class="hellfire-auction-badge">HELLFIRE AUCTIONS</div>
+    <h2 class="hellfire-auction-title">Loading live auction...</h2>
+    <div class="hellfire-auction-status">Connecting to the auction service...</div>
   </section>
 </div>
+
 {% schema %}
 {
   "name": "Auction Experience",

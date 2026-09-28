@@ -5,7 +5,7 @@
   const root = document.getElementById("hellfire-auction-runtime");
   const cache = new Map();
   const hidden = new WeakSet();
-  const productPattern = /(?:gid:\/\/shopify\/Product\/)?(\\d+)/;
+  const productPattern = /(?:gid:\/\/shopify\/Product\/)?(\d+)/;
 
   const productIdOf = (el) => {
     let node = el;
@@ -23,7 +23,7 @@
   const isPurchaseControl = (el) => {
     if (!el || el === root) return false;
     const tag = el.tagName?.toLowerCase();
-    if (tag === "form" && /\\/cart\\/add/.test(el.getAttribute("action") || "")) return true;
+    if (tag === "form" && /\/cart\/add/.test(el.getAttribute("action") || "")) return true;
     if ((tag === "button" || tag === "input") && (el.name || "").toLowerCase() === "add") return true;
     if (tag === "button" || tag === "input") {
       const text = (el.textContent || el.value || "").trim().toLowerCase();

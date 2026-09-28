@@ -7,9 +7,26 @@
   const productId = root.dataset.productId;
   if (!productId) return;
 
-  const isPurchaseControl = (el) =>
-    el?.matches?.('form[action*="/cart/add"], .quick-add, .quick-add__button, button[name="add"], .add-to-cart-button, .shopify-payment-button, .buy-buttons, sticky-add-to-cart, .sticky-add-to-cart__bar, [data-testid="checkout-button"]') ||
-    el?.closest?.('form[action*="/cart/add"], .quick-add, .quick-add__button, button[name="add"], .add-to-cart-button, .shopify-payment-button, .buy-buttons, sticky-add-to-cart, .sticky-add-to-cart__bar, [data-testid="checkout-button"]');
+  const variantId = root.dataset.variantId;
+
+  const isAuctionProductForm = (form) => {
+    if (!form?.matches?.('form[action*="/cart/add"]')) return false;
+    if (!variantId) return false;
+    return Array.from(form.elements || []).some((field) => field.name === "id" && field.value === variantId);
+  };
+
+  const isPurchaseControl = (el) => {
+    const form = el?.closest?.('form[action*="/cart/add"]');
+    if (form && isAuctionProductForm(form)) return true;
+
+    const formId = el?.getAttribute?.("form");
+    if (formId) {
+      const associatedForm = document.getElementById(formId);
+      if (isAuctionProductForm(associatedForm)) return true;
+    }
+
+    return false;
+  };
 
   const blockPurchaseEvent = (event) => {
     if (isPurchaseControl(event.target)) {
@@ -21,9 +38,19 @@
   document.addEventListener("click", blockPurchaseEvent, true);
   document.addEventListener("submit", blockPurchaseEvent, true);
 
-  const hidePurchaseControls = () =>
-    document.querySelectorAll('form[action*="/cart/add"], .quick-add, .quick-add__button, .shopify-payment-button, button[name="add"], .buy-buttons, sticky-add-to-cart, .sticky-add-to-cart__bar, .add-to-cart-button, [data-testid="checkout-button"]')
-      .forEach((el) => el.style.setProperty("display", "none", "important"));
+  const hidePurchaseControls = () => {
+    document.querySelectorAll('form[action*="/cart/add"]').forEach((form) => {
+      if (!isAuctionProductForm(form)) return;
+      form.style.setProperty("display", "none", "important");
+
+      const formId = form.id;
+      if (formId) {
+        document.querySelectorAll('[form="' + formId + '"]').forEach((control) => {
+          control.style.setProperty("display", "none", "important");
+        });
+      }
+    });
+  };
 
   hidePurchaseControls();
 

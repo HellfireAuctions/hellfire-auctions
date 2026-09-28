@@ -16,6 +16,3 @@
 .hellfire-auction-message{margin-top:12px;font-weight:700;color:#f5f5f5}
 .hellfire-auction-login{padding:14px;border-radius:8px;background:rgba(255,255,255,.08);font-weight:700;color:#f5f5f5}
 @media(max-width:700px){.hellfire-auction-grid{grid-template-columns:1fr}.hellfire-auction-bid-form input,.hellfire-auction-bid-form button{width:100%}}
-/* HELLFIRE_AUCTION_QUICK_ADD_GLOBAL */
-.quick-add,.quick-add__button{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}
-/* /HELLFIRE_AUCTION_QUICK_ADD_GLOBAL */

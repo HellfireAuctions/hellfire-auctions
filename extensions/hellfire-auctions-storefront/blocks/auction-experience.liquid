@@ -1,20 +1,4 @@
-<style>
-  form[action*="/cart/add"],
-  .quick-add,
-  .quick-add__button,
-  .shopify-payment-button,
-  button[name="add"],
-  .buy-buttons,
-  sticky-add-to-cart,
-  .sticky-add-to-cart__bar,
-  .add-to-cart-button,
-  [data-testid="checkout-button"] {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
-</style>
-<div id="hellfire-auction-root" data-product-id="{{ block.settings.product.id | default: product.id }}"></div>
+<div id="hellfire-auction-root" data-product-id="{{ block.settings.product.id | default: product.id }}" data-variant-id="{{ block.settings.product.selected_or_first_available_variant.id | default: product.selected_or_first_available_variant.id }}"></div>
 <script src="{{ 'auction.js' | asset_url }}" defer></script>
 
 {% schema %}

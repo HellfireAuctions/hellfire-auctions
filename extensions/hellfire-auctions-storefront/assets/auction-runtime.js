@@ -20,6 +20,24 @@
     return root?.dataset.productId || "";
   };
 
+  const productHandleOf = (el) => {
+    let node = el;
+    while (node && node !== document) {
+      const link = node.matches?.('a[href*="/products/"]')
+        ? node
+        : node.querySelector?.('a[href*="/products/"]');
+      if (link) {
+        try {
+          const url = new URL(link.href, location.origin);
+          const match = url.pathname.match(/\/products\/([^/?#]+)/);
+          if (match) return decodeURIComponent(match[1]);
+        } catch (_) {}
+      }
+      node = node.parentElement;
+    }
+    return "";
+  };
+
   const isPurchaseControl = (el) => {
     if (!el || el === root) return false;
     const tag = el.tagName?.toLowerCase();
@@ -43,6 +61,22 @@
     el.style.setProperty("pointer-events", "none", "important");
   };
 
+  const productIdForHandle = async (handle) => {
+    const key = "handle:" + handle;
+    if (cache.has(key)) return cache.get(key);
+    const promise = fetch("/products/" + encodeURIComponent(handle) + ".js", {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      cache: "no-store"
+    }).then(async response => {
+      if (!response.ok) return "";
+      const data = await response.json();
+      return String(data.id || "");
+    }).catch(() => "");
+    cache.set(key, promise);
+    return promise;
+  };
+
   const auctionFor = async (productId) => {
     if (!productId) return null;
     if (cache.has(productId)) return cache.get(productId);
@@ -62,11 +96,23 @@
   const scan = async () => {
     const controls = Array.from(document.querySelectorAll('form[action*="/cart/add"], button[name="add"], input[name="add"], quick-add-component, add-to-cart-component, sticky-add-to-cart, [data-testid*="add-to-cart"], [data-action="add-to-cart"], [data-add-to-cart]'));
     const ids = new Set();
+    const unresolved = [];
     for (const control of controls) {
       const id = productIdOf(control);
-      if (id) ids.add(id);
+      if (id) {
+        ids.add(id);
+      } else {
+        const handle = productHandleOf(control);
+        if (handle) unresolved.push({ control, handle });
+      }
     }
     if (root?.dataset.productId) ids.add(root.dataset.productId);
+
+    for (const item of unresolved) {
+      const id = await productIdForHandle(item.handle);
+      if (id) ids.add(id);
+      item.productId = id;
+    }
 
     for (const id of ids) {
       const auction = await auctionFor(id);
@@ -74,7 +120,8 @@
       const active = auction.status === "LIVE" || auction.status === "UPCOMING";
       if (!active) continue;
       for (const control of controls) {
-        if (productIdOf(control) === id && isPurchaseControl(control)) hide(control);
+        const resolvedId = productIdOf(control) || unresolved.find((item) => item.control === control)?.productId;
+        if (resolvedId === id && isPurchaseControl(control)) hide(control);
       }
     }
   };

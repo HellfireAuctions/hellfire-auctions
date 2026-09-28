@@ -4,10 +4,15 @@
   const API_PATH = "/apps/hellfire-auctions/auction";
   const RUNTIME = "hellfire-auction-runtime";
   const HOST = "hellfire-auction-host";
-  const productId = window.__HELLFIRE_AUCTION_PRODUCT_ID ||
-    document.getElementById(RUNTIME)?.dataset.productId ||
-    window.ShopifyAnalytics?.meta?.product?.id;
+  let productId = null;
   let mountQueued = false;
+
+  function discoverProductId() {
+    return window.__HELLFIRE_AUCTION_PRODUCT_ID ||
+      document.getElementById(RUNTIME)?.dataset.productId ||
+      window.ShopifyAnalytics?.meta?.product?.id ||
+      null;
+  }
 
   const css = `
     :host { display:block; width:100%; box-sizing:border-box; contain:content; }
@@ -95,7 +100,11 @@
 
   function mount() {
     mountQueued = false;
-    if (!document.body || !productId) return;
+    productId ||= discoverProductId();
+    if (!document.body || !productId) {
+      if (!productId) setTimeout(scheduleMount, 100);
+      return;
+    }
     const host = createHost();
     load(host);
   }

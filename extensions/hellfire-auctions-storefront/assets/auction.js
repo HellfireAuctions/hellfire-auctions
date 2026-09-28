@@ -15,6 +15,13 @@
     return Array.from(form.elements || []).some((field) => field.name === "id" && field.value === variantId);
   };
 
+  const isAuctionProductContainer = (el) => {
+    const container = el?.closest?.("[data-product-id], [data-current-variant-id]");
+    if (!container) return false;
+    return container.getAttribute("data-product-id") === productId ||
+      container.getAttribute("data-current-variant-id") === variantId;
+  };
+
   const isPurchaseControl = (el) => {
     const form = el?.closest?.('form[action*="/cart/add"]');
     if (form && isAuctionProductForm(form)) return true;
@@ -23,6 +30,16 @@
     if (formId) {
       const associatedForm = document.getElementById(formId);
       if (isAuctionProductForm(associatedForm)) return true;
+    }
+
+    if (isAuctionProductContainer(el)) {
+      const tag = el.tagName?.toLowerCase();
+      const type = el.getAttribute?.("type")?.toLowerCase();
+      const name = el.getAttribute?.("name")?.toLowerCase();
+      const text = el.textContent?.trim().toLowerCase() || "";
+      return (tag === "button" || tag === "input") &&
+        (type === "submit" || name === "add" ||
+          /add to cart|buy now|purchase/.test(text));
     }
 
     return false;
@@ -49,6 +66,17 @@
           control.style.setProperty("display", "none", "important");
         });
       }
+    });
+
+    document.querySelectorAll("[data-product-id], [data-current-variant-id]").forEach((container) => {
+      if (container.getAttribute("data-product-id") !== productId &&
+          container.getAttribute("data-current-variant-id") !== variantId) return;
+
+      container.querySelectorAll("button, input").forEach((control) => {
+        if (isPurchaseControl(control)) {
+          control.style.setProperty("display", "none", "important");
+        }
+      });
     });
   };
 

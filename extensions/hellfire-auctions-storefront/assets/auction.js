@@ -40,7 +40,7 @@
       const data = await response.json();
 
       if (!response.ok || !data.auction) {
-        root.innerHTML = "";
+        root.innerHTML = '<section class="hellfire-auction-card"><div class="hellfire-auction-badge">🔥 HELLFIRE AUCTIONS</div><h2>Auction temporarily unavailable</h2><div class="hellfire-auction-status">Please refresh this page.</div></section>';
         return;
       }
 
@@ -117,7 +117,7 @@
       }
     } catch (err) {
       console.error("HELLFIRE AUCTIONS:", err);
-      root.innerHTML = "";
+      root.innerHTML = '<section class="hellfire-auction-card"><div class="hellfire-auction-badge">🔥 HELLFIRE AUCTIONS</div><h2>Auction temporarily unavailable</h2><div class="hellfire-auction-status">Please refresh this page.</div></section>';
     }
   }
 

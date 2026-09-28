@@ -36,6 +36,7 @@
     host = document.createElement("div");
     host.id = HOST;
     host.setAttribute("data-hellfire-owned", "true");
+    host.style.cssText = "display:block!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:2147483647!important;width:100%!important;min-height:1px!important;";
     host.dataset.productId = String(productId || "");
     document.body.appendChild(host);
     const shadow = host.attachShadow({mode:"open"});
@@ -105,9 +106,35 @@
     queueMicrotask(mount);
   }
 
+  function onPageLifecycle() {
+    setTimeout(scheduleMount, 0);
+    setTimeout(scheduleMount, 250);
+    setTimeout(scheduleMount, 1000);
+  }
+
   if (document.readyState === "loading")
-    document.addEventListener("DOMContentLoaded", scheduleMount, {once:true});
-  else scheduleMount();
+    document.addEventListener("DOMContentLoaded", onPageLifecycle, {once:true});
+  else onPageLifecycle();
+
+  window.addEventListener("pageshow", onPageLifecycle);
+  window.addEventListener("popstate", onPageLifecycle);
+  window.addEventListener("shopify:page:view", onPageLifecycle);
+  window.addEventListener("shopify:product:view", onPageLifecycle);
+  window.addEventListener("shopify:section:load", onPageLifecycle);
+
+  const originalPushState = history.pushState;
+  history.pushState = function() {
+    const result = originalPushState.apply(this, arguments);
+    onPageLifecycle();
+    return result;
+  };
+
+  const originalReplaceState = history.replaceState;
+  history.replaceState = function() {
+    const result = originalReplaceState.apply(this, arguments);
+    onPageLifecycle();
+    return result;
+  };
 
   const observer = new MutationObserver(() => {
     const host = document.getElementById(HOST);

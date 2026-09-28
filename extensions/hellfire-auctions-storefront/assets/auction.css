@@ -3,7 +3,9 @@ body:has(#hellfire-auction-root) sticky-add-to-cart[data-product-id],
 body:has(#hellfire-auction-root) product-form-component[data-product-id],
 body:has(#hellfire-auction-root) quick-add-component,
 body:has(#hellfire-auction-root) .quick-add,
-body:has(#hellfire-auction-root) .quick-add__button{
+body:has(#hellfire-auction-root) .quick-add__button,
+body:has(#hellfire-auction-root) add-to-cart-component,
+body:has(#hellfire-auction-root) .add-to-cart-icon{
   display:none!important;
   visibility:hidden!important;
   pointer-events:none!important;

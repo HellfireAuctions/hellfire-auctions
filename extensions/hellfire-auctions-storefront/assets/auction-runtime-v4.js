@@ -27,7 +27,41 @@
     return match ? match[1] : "";
   };
 
-  const productHandleFromHref = (href) => {
+  const ensureAuctionExperience = async () => {
+    const runtimeNode = document.getElementById('hellfire-auction-runtime');
+    let productId = normalizeId(runtimeNode?.dataset.productId);
+    let variantId = normalizeVariantId(runtimeNode?.dataset.variantId);
+    if (!productId) {
+      const match = location.pathname.match(/^\/products\/([^/?#]+)/);
+      if (match) {
+        try {
+          const product = await loadProduct(decodeURIComponent(match[1]));
+          productId = normalizeId(product.id);
+          if (!variantId) variantId = normalizeVariantId(product.variants?.[0]?.id);
+        } catch (_) {}
+      }
+    }
+    if (!productId || !auctionIds.has(productId) || document.getElementById('hellfire-auction-root')) return;
+    const root = document.createElement('div');
+    root.id = 'hellfire-auction-root';
+    root.dataset.productId = productId;
+    if (variantId) root.dataset.variantId = variantId;
+    const form = [...document.querySelectorAll("form[action*='/cart/add']")].find((candidate) => {
+      const field = candidate.querySelector("input[name='id'], select[name='id']");
+      return normalizeVariantId(field?.value) === variantId;
+    });
+    if (form?.parentElement) form.parentElement.insertBefore(root, form);
+    else (document.querySelector('main') || document.body).appendChild(root);
+    const src = runtimeNode?.dataset.experienceSrc;
+    if (src && !document.querySelector('script[data-hellfire-auction-experience]')) {
+      const script = document.createElement('script');
+      script.src = src;
+      script.defer = true;
+      script.dataset.hellfireAuctionExperience = 'true';
+      document.head.appendChild(script);
+    }
+  };
+    const productHandleFromHref = (href) => {
     try {
       const url = new URL(href, location.origin);
       if (url.origin !== location.origin) return "";
@@ -191,6 +225,7 @@
       }
 
       await discoverAuctionProducts();
+      await ensureAuctionExperience();
     } catch (_) {
       // Keep retrying; storefront themes can load asynchronously.
     } finally {
@@ -225,6 +260,7 @@
   }, true);
 
   apply();
+  ensureAuctionExperience();
   loadAuctionIds();
 
   let queued = false;

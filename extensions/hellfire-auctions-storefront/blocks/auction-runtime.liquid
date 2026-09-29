@@ -1,4 +1,8 @@
-<div id="hellfire-auction-runtime" data-product-id="{{ product.id | default: '' }}" hidden></div>
+<div id="hellfire-auction-runtime"
+  data-product-id="{{ product.id | default: '' }}"
+  data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
+  data-experience-src="{{ 'auction.js' | asset_url }}"
+  hidden></div>
 <script src="{{ 'auction-runtime-v4.js' | asset_url }}" defer></script>
 {% schema %}
 {

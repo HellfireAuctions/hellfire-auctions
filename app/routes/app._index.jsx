@@ -222,7 +222,7 @@ async function getProductImage(admin, productId) {
 }
 
 
-async function makeAuctionVariantUnavailable(admin, productId) {
+async function ensureAuctionVariantAvailable(admin, productId) {
   const productResponse = await admin.graphql(
     `#graphql
       query AuctionVariant($id: ID!) {
@@ -302,7 +302,7 @@ async function makeAuctionVariantUnavailable(admin, productId) {
           quantities: [{
             inventoryItemId: variant.inventoryItem.id,
             locationId,
-            quantity: 0,
+            quantity: 1,
             changeFromQuantity: null,
           }],
         },
@@ -834,6 +834,10 @@ export const action = async ({ request }) => {
     });
 
     try {
+      await ensureAuctionVariantAvailable(
+        admin,
+        existingAuction.productId,
+      );
       await ensureAuctionStorefront(
         admin,
         existingAuction.productId,
@@ -983,7 +987,7 @@ export const action = async ({ request }) => {
   }
 
   try {
-    await makeAuctionVariantUnavailable(admin, productId);
+    await ensureAuctionVariantAvailable(admin, productId);
   } catch (error) {
     return { error: error.message };
   }

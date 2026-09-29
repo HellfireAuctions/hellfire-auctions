@@ -254,6 +254,29 @@ async function makeAuctionVariantUnavailable(admin, productId) {
     throw new Error("Shopify could not prepare the auction product inventory.");
   }
 
+  const trackingResponse = await admin.graphql(
+    `#graphql
+      mutation TrackAuctionInventory($id: ID!, $input: InventoryItemInput!) {
+        inventoryItemUpdate(id: $id, input: $input) {
+          inventoryItem { id tracked }
+          userErrors { field message }
+        }
+      }
+    `,
+    {
+      variables: {
+        id: variant.inventoryItem.id,
+        input: { tracked: true },
+      },
+    },
+  );
+
+  const trackingJson = await trackingResponse.json();
+  const trackingErrors = trackingJson?.data?.inventoryItemUpdate?.userErrors || [];
+  if (trackingErrors.length) {
+    throw new Error(trackingErrors.map((error) => error.message).join(", "));
+  }
+
   const response = await admin.graphql(
     `#graphql
       mutation SetAuctionInventory($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {

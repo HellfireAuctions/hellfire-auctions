@@ -1,4 +1,5 @@
-﻿import { useActionData, useLoaderData, Form } from "react-router";
+﻿import crypto from "node:crypto";
+import { useActionData, useLoaderData, Form } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -255,12 +256,12 @@ async function makeAuctionVariantUnavailable(admin, productId) {
 
   const response = await admin.graphql(
     `#graphql
-      mutation SetAuctionInventory($input: InventorySetQuantitiesInput!) {
-        inventorySetQuantities(input: $input) {
-          inventoryLevels {
-            quantities {
+      mutation SetAuctionInventory($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+        inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+          inventoryAdjustmentGroup {
+            changes {
               name
-              quantity
+              quantityAfterChange
             }
           }
           userErrors {
@@ -279,8 +280,10 @@ async function makeAuctionVariantUnavailable(admin, productId) {
             inventoryItemId: variant.inventoryItem.id,
             locationId,
             quantity: 0,
+            changeFromQuantity: null,
           }],
         },
+        idempotencyKey: crypto.randomUUID(),
       },
     },
   );

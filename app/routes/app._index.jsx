@@ -221,6 +221,151 @@ async function getProductImage(admin, productId) {
 }
 
 
+async function makeAuctionVariantUnavailable(admin, productId) {
+  const productResponse = await admin.graphql(
+    `#graphql
+      query AuctionVariant($id: ID!) {
+        product(id: $id) {
+          variants(first: 1) {
+            nodes {
+              id
+              inventoryItem {
+                id
+              }
+            }
+          }
+        }
+        locations(first: 1) {
+          nodes {
+            id
+          }
+        }
+      }
+    `,
+    { variables: { id: productId } },
+  );
+
+  const json = await productResponse.json();
+  const variant = json?.data?.product?.variants?.nodes?.[0];
+  const locationId = json?.data?.locations?.nodes?.[0]?.id;
+
+  if (!variant?.inventoryItem?.id || !locationId) {
+    throw new Error("Shopify could not prepare the auction product inventory.");
+  }
+
+  const response = await admin.graphql(
+    `#graphql
+      mutation SetAuctionInventory($input: InventorySetQuantitiesInput!) {
+        inventorySetQuantities(input: $input) {
+          inventoryLevels {
+            quantities {
+              name
+              quantity
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        input: {
+          name: "available",
+          reason: "correction",
+          quantities: [{
+            inventoryItemId: variant.inventoryItem.id,
+            locationId,
+            quantity: 0,
+          }],
+        },
+      },
+    },
+  );
+
+  const result = await response.json();
+  const errors = result?.data?.inventorySetQuantities?.userErrors || [];
+  if (errors.length) {
+    throw new Error(errors.map((error) => error.message).join(", "));
+  }
+}
+
+async function ensureLiveAuctionsCollection(admin) {
+  const response = await admin.graphql(
+    `#graphql
+      query LiveAuctionsCollection {
+        collections(first: 100) {
+          nodes {
+            id
+            title
+            ruleSet {
+              rules {
+                column
+                relation
+                condition
+              }
+            }
+          }
+        }
+      }
+    `,
+  );
+
+  const json = await response.json();
+  const existing = json?.data?.collections?.nodes?.find(
+    (collection) => collection.title === "Live Auctions",
+  );
+
+  if (existing) {
+    if (existing.ruleSet) {
+      throw new Error(
+        'The "Live Auctions" collection is rule-based. Please convert it to a manual collection so the auction app can assign products automatically.',
+      );
+    }
+    return existing;
+  }
+
+  const createResponse = await admin.graphql(
+    `#graphql
+      mutation CreateLiveAuctionsCollection($input: CollectionInput!) {
+        collectionCreate(input: $input) {
+          collection {
+            id
+            title
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    {
+      variables: {
+        input: {
+          title: "Live Auctions",
+          descriptionHtml: "<p>Active Hellfire Auctions</p>",
+        },
+      },
+    },
+  );
+
+  const createJson = await createResponse.json();
+  const result = createJson?.data?.collectionCreate;
+
+  if (result?.userErrors?.length) {
+    throw new Error(result.userErrors.map((error) => error.message).join(", "));
+  }
+
+  if (!result?.collection?.id) {
+    throw new Error('Shopify could not create the "Live Auctions" collection.');
+  }
+
+  return result.collection;
+}
+
 async function ensureAuctionStorefront(admin, productId) {
   const publicationsResponse = await admin.graphql(
     `#graphql
@@ -694,6 +839,7 @@ export const action = async ({ request }) => {
               : null,
           startsAt,
           endsAt,
+          status: startsAt > new Date() ? "UPCOMING" : (new Date() < endsAt ? "LIVE" : "ENDED"),
         },
       });
 
@@ -724,37 +870,15 @@ export const action = async ({ request }) => {
   }
 
   /*
-   * Verify the Live Auctions collection exists
-   * BEFORE creating anything.
+   * The app owns the Live Auctions collection.
+   * Create it automatically when it does not exist.
    */
-  const collectionResponse =
-    await admin.graphql(
-      `#graphql
-        query LiveAuctionsCollection {
-          collections(first: 50) {
-            nodes {
-              id
-              title
-            }
-          }
-        }
-      `,
-    );
+  let liveCollection;
 
-  const collectionJson =
-    await collectionResponse.json();
-
-  const liveCollection =
-    collectionJson?.data?.collections?.nodes?.find(
-      (collection) =>
-        collection.title === "Live Auctions",
-    );
-
-  if (!liveCollection) {
-    return {
-      error:
-        'The Shopify collection "Live Auctions" could not be found.',
-    };
+  try {
+    liveCollection = await ensureLiveAuctionsCollection(admin);
+  } catch (error) {
+    return { error: error.message };
   }
 
   const stagedResource =
@@ -832,6 +956,12 @@ export const action = async ({ request }) => {
     };
   }
 
+  try {
+    await makeAuctionVariantUnavailable(admin, productId);
+  } catch (error) {
+    return { error: error.message };
+  }
+
   const productImage =
     await getProductImage(admin, productId);
 
@@ -852,7 +982,7 @@ export const action = async ({ request }) => {
             : null,
         startsAt,
         endsAt,
-        status: "DRAFT",
+        status: startsAt > new Date() ? "UPCOMING" : (new Date() < endsAt ? "LIVE" : "ENDED"),
       },
     });
 

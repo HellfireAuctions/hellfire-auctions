@@ -6,7 +6,7 @@ embedded = true
 name = "Hellfire Auctions"
 
 [access_scopes]
-scopes = "write_metaobject_definitions,write_metaobjects,write_products,write_publications,write_app_proxy"
+scopes = "write_metaobject_definitions,write_metaobjects,write_products,write_publications,write_inventory,write_app_proxy"
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"

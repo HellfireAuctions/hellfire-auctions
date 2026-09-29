@@ -234,9 +234,15 @@ async function tick() {
     take: 25,
   });
 
+  if (due.length) {
+    console.log(`[hellfire-auctions] settling ${due.length} expired auction(s)`);
+  }
+
   for (const auction of due) {
     try {
+      console.log(`[hellfire-auctions] settling ${auction.id}`);
       await settleAuction(auction);
+      console.log(`[hellfire-auctions] settled ${auction.id}`);
     } catch (error) {
       console.error(
         `[hellfire-auctions] failed to settle ${auction.id}:`,
@@ -246,9 +252,22 @@ async function tick() {
   }
 }
 
+async function runScheduledTick() {
+  try {
+    await tick();
+  } catch (error) {
+    console.error("[hellfire-auctions] scheduled tick failed:", error);
+  } finally {
+    globalThis.__HELLFIRE_AUCTION_WORKER__ = setTimeout(
+      runScheduledTick,
+      INTERVAL_MS,
+    );
+  }
+}
+
 if (!globalThis.__HELLFIRE_AUCTION_WORKER__) {
-  globalThis.__HELLFIRE_AUCTION_WORKER__ = setInterval(tick, INTERVAL_MS);
-  tick().catch((error) =>
+  globalThis.__HELLFIRE_AUCTION_WORKER__ = true;
+  runScheduledTick().catch((error) =>
     console.error("[hellfire-auctions] initial settlement failed:", error),
   );
 }

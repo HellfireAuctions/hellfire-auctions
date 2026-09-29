@@ -214,6 +214,18 @@ async function settleAuction(auction) {
 async function tick() {
   const now = new Date();
 
+  // Keep persisted lifecycle state authoritative so the admin UI never shows
+  // stale DRAFT/LIVE values after a restart or an interrupted write.
+  await prisma.auction.updateMany({
+    where: { endsAt: { gt: now } },
+    data: { status: "LIVE" },
+  });
+
+  await prisma.auction.updateMany({
+    where: { startsAt: { gt: now } },
+    data: { status: "UPCOMING" },
+  });
+
   const due = await prisma.auction.findMany({
     where: {
       endsAt: { lte: now },

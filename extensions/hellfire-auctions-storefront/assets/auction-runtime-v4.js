@@ -41,7 +41,8 @@
         } catch (_) {}
       }
     }
-    if (!productId || !auctionIds.has(productId) || document.getElementById('hellfire-auction-root')) return;
+    const isAuctionPage = runtimeNode?.dataset.auctionProduct === 'true';
+    if (!productId || !isAuctionPage || document.getElementById('hellfire-auction-root')) return;
     const root = document.createElement('div');
     root.id = 'hellfire-auction-root';
     root.dataset.productId = productId;

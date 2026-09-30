@@ -116,6 +116,31 @@
     "sticky-add-to-cart",
   ].join(","));
 
+  const hideAuctionPagePurchaseControls = () => {
+    const runtimeNode = document.getElementById("hellfire-auction-runtime");
+    if (runtimeNode?.dataset.auctionProduct !== "true") return;
+
+    const variantId = normalizeVariantId(runtimeNode.dataset.variantId);
+    document.querySelectorAll("form[action*='/cart/add']").forEach((form) => {
+      const field = form.querySelector("input[name='id'], select[name='id']");
+      const formVariantId = normalizeVariantId(field?.value);
+      if (!variantId || !formVariantId || formVariantId === variantId) hide(form);
+    });
+
+    document.querySelectorAll([
+      "button[name='add']",
+      "button[type='submit'][name='add']",
+      "button[data-testid*='add-to-cart']",
+      "button[data-action='add-to-cart']",
+      "[data-add-to-cart]",
+      "[data-add-to-cart-button]",
+      "[data-quick-add]",
+      "quick-add-component",
+      "add-to-cart-component",
+      "sticky-add-to-cart",
+    ].join(",")).forEach((control) => hide(control));
+  };
+
   const hideVariantPurchaseControls = () => {
     document.querySelectorAll("form[action*='/cart/add']").forEach((form) => {
       const field = form.querySelector("input[name='id'], select[name='id']");
@@ -160,6 +185,7 @@
   };
 
   const apply = () => {
+    hideAuctionPagePurchaseControls();
     hideVariantPurchaseControls();
     hideProductScopes();
     hideKnownProductControls();
@@ -236,6 +262,28 @@
 
   // Block purchase activation even if a theme injects its control after our scan.
   document.addEventListener("click", (event) => {
+    const runtimeNode = document.getElementById("hellfire-auction-runtime");
+    if (runtimeNode?.dataset.auctionProduct === "true") {
+      const control = event.target?.closest?.([
+        "form[action*='/cart/add']",
+        "button[name='add']",
+        "button[type='submit'][name='add']",
+        "button[data-testid*='add-to-cart']",
+        "button[data-action='add-to-cart']",
+        "[data-add-to-cart]",
+        "[data-add-to-cart-button]",
+        "[data-quick-add]",
+        "quick-add-component",
+        "add-to-cart-component",
+        "sticky-add-to-cart",
+      ].join(","));
+      if (control) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+    }
+
     let node = event.target;
     for (let depth = 0; node && node !== document && depth < 12; depth++, node = node.parentElement) {
       const handle = productHandleFromHref(node.closest?.("a[href*='/products/']")?.href || "");

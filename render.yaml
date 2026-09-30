@@ -9,13 +9,13 @@ services:
     envVars:
       - key: PORT
         value: "3000"
+      - key: HOST
+        value: "0.0.0.0"
       - key: DATABASE_URL
         sync: false
       - key: SCOPES
-        value: write_metaobject_definitions,write_metaobjects,write_products,write_publications,write_app_proxy
+        value: write_metaobject_definitions,write_metaobjects,write_products,write_publications,read_inventory,write_inventory,read_locations,write_draft_orders,write_app_proxy
       - key: SHOPIFY_API_KEY
         sync: false
       - key: SHOPIFY_API_SECRET
-        sync: false
-      - key: SHOPIFY_APP_URL
         sync: false

@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "eb49cba90749e254b957cd1d618e6d38"
-application_url = "https://coordinates-urgent-bob-pull.trycloudflare.com"
+application_url = "https://hellfire-auctions.onrender.com"
 embedded = true
 name = "Hellfire Auctions"
 
@@ -44,7 +44,7 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://coordinates-urgent-bob-pull.trycloudflare.com/api/auth" ]
+redirect_urls = [ "https://hellfire-auctions.onrender.com/api/auth" ]
 
 [build]
 automatically_update_urls_on_dev = true

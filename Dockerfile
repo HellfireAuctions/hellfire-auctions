@@ -15,11 +15,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY . .
 
-# Production uses PostgreSQL; local development keeps its SQLite database.
-RUN cp prisma/schema.postgres.prisma prisma/schema.prisma \
-    && rm -rf prisma/migrations \
-    && cp -R prisma/migrations-postgres prisma/migrations
-
+# Production schema and migrations are already PostgreSQL in prisma/.
 RUN npm run build
 
 CMD ["npm", "run", "docker-start"]

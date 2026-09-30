@@ -26,3 +26,4 @@ databases:
   - name: hellfire-auctions-db
     plan: free
     databaseName: hellfire_auctions
+# Render production database is managed by this Blueprint.

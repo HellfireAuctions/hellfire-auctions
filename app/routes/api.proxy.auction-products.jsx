@@ -8,8 +8,15 @@ function stateFor(auction, now) {
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.public.appProxy(request);
   const url = new URL(request.url);
+  let session;
+
+  try {
+    ({ session } = await authenticate.public.appProxy(request));
+  } catch (error) {
+    if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw error;
+  }
+
   const shop = session?.shop || url.searchParams.get("shop");
 
   if (!shop) {

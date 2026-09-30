@@ -1,37 +1,14 @@
-{% assign hellfire_auction_product_id = block.settings.product.id | default: product.id %}
-<div id="hellfire-auction-root" data-product-id="{{ hellfire_auction_product_id }}" data-variant-id="{{ block.settings.product.selected_or_first_available_variant.id | default: product.selected_or_first_available_variant.id }}"></div>
-<style>
-  [data-product-id="{{ hellfire_auction_product_id }}"] form[action*="/cart/add"],
-  [data-product-id="{{ hellfire_auction_product_id }}"] .quick-add,
-  [data-product-id="{{ hellfire_auction_product_id }}"] .quick-add__button,
-  [data-product-id="{{ hellfire_auction_product_id }}"] .add-to-cart-button,
-  [data-product-id="{{ hellfire_auction_product_id }}"] .shopify-payment-button,
-  [data-product-id="{{ hellfire_auction_product_id }}"].quick-add,
-  [data-product-id="{{ hellfire_auction_product_id }}"].sticky-add-to-cart,
-  sticky-add-to-cart[data-product-id="{{ hellfire_auction_product_id }}"],
-  product-form-component[data-product-id="{{ hellfire_auction_product_id }}"] {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
-</style>
-<script src="{{ 'auction.js' | asset_url }}" defer></script>
+<div id="hellfire-auction-runtime"
+  data-product-id="{{ product.id | default: '' }}"
+  data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
+  data-experience-src="{{ 'auction.js' | asset_url }}"
+  hidden></div>
+<script src="{{ 'auction-runtime-v4.js' | asset_url }}" defer></script>
 
 {% schema %}
 {
-  "name": "Auction Experience",
-  "target": "section",
-  "enabled_on": {
-    "templates": ["product"]
-  },
-  "stylesheet": "auction.css",
-  "settings": [
-    {
-      "type": "product",
-      "id": "product",
-      "label": "Auction product",
-      "autofill": true
-    }
-  ]
+  "name": "Hellfire Auctions Runtime",
+  "target": "body",
+  "settings": []
 }
 {% endschema %}

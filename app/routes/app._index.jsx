@@ -593,7 +593,9 @@ export const loader = async ({ request }) => {
     },
   });
 
-  return { auctions };
+  const storefrontActivationUrl = "https://" + session.shop + "/admin/themes/current/editor?context=apps&template=product&activateAppId=eb49cba90749e254b957cd1d618e6d38/auction-runtime";
+
+  return { auctions, storefrontActivationUrl };
 };
 
 export const action = async ({ request }) => {
@@ -1419,7 +1421,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions } = useLoaderData();
+  const { auctions, storefrontActivationUrl } = useLoaderData();
   const actionData = useActionData();
 
   const [editingId, setEditingId] =
@@ -1447,6 +1449,11 @@ export default function AuctionsPage() {
             : "Auction created successfully."}
         </s-banner>
       )}
+
+      <s-banner tone="info" heading="Storefront setup">
+        The Hellfire Auctions storefront engine is theme-independent, but Shopify requires the app embed to be activated in each theme you use. Activate it in the current theme before testing or publishing that theme.
+        <s-link href={storefrontActivationUrl} target="_top">Activate Hellfire Auctions in this theme</s-link>
+      </s-banner>
 
       <s-section
         heading={

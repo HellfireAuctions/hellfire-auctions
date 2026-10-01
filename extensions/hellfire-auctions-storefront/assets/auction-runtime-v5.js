@@ -217,8 +217,15 @@
   setInterval(() => {
     renderAuctionCards(); suppressProductCart(); suppressKnownAuctionCards();
   }, 1000);
+  let observerQueued = false;
   new MutationObserver(() => {
-    suppressProductCart(); suppressKnownAuctionCards(); renderAuctionCards(); mountAuction();
+    if (observerQueued) return;
+    observerQueued = true;
+    queueMicrotask(() => {
+      observerQueued = false;
+      suppressProductCart(); suppressKnownAuctionCards(); renderAuctionCards();
+      if (document.querySelectorAll("a[href*='/products/']").length < 250) mountAuction();
+    });
   }).observe(document.documentElement, {
     childList:true, subtree:true, attributes:true,
     attributeFilter:["data-product-id","data-product","product-id","data-variant-id","data-current-variant-id"]

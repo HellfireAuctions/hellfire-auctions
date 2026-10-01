@@ -15,13 +15,6 @@
     return Array.from(form.elements || []).some((field) => field.name === "id" && field.value === variantId);
   };
 
-  const isAuctionProductContainer = (el) => {
-    const container = el?.closest?.("[data-product-id], [data-current-variant-id]");
-    if (!container) return false;
-    return container.getAttribute("data-product-id") === productId ||
-      container.getAttribute("data-current-variant-id") === variantId;
-  };
-
   const isPurchaseControl = (el) => {
     const form = el?.closest?.('form[action*="/cart/add"]');
     if (form && isAuctionProductForm(form)) return true;
@@ -32,7 +25,15 @@
       if (isAuctionProductForm(associatedForm)) return true;
     }
 
-    if (isAuctionProductContainer(el)) {
+    const scope = el?.closest?.("[data-product-id], [data-product], [product-id]");
+    const scopeProductId = scope?.getAttribute?.("data-product-id") ||
+      scope?.getAttribute?.("data-product") ||
+      scope?.getAttribute?.("product-id");
+    const scopeVariantId = scope?.getAttribute?.("data-current-variant-id") ||
+      scope?.getAttribute?.("data-variant-id");
+
+    if (String(scopeProductId || "").includes(productId) ||
+        String(scopeVariantId || "").includes(variantId)) {
       const tag = el.tagName?.toLowerCase();
       const type = el.getAttribute?.("type")?.toLowerCase();
       const name = el.getAttribute?.("name")?.toLowerCase();
@@ -68,20 +69,18 @@
       }
     });
 
-    document.querySelectorAll("[data-product-id], [data-current-variant-id]").forEach((container) => {
-      if (container.getAttribute("data-product-id") !== productId &&
-          container.getAttribute("data-current-variant-id") !== variantId) return;
+    document.querySelectorAll("[data-product-id], [data-product], [product-id]").forEach((container) => {
+      const containerProductId = container.getAttribute("data-product-id") ||
+        container.getAttribute("data-product") ||
+        container.getAttribute("product-id");
+      const containerVariantId = container.getAttribute("data-current-variant-id") ||
+        container.getAttribute("data-variant-id");
 
-      // Horizon quick-add controls live on product cards and can use icon-only labels.
-      if (container.matches("quick-add-component, .quick-add, product-card")) {
-        container.style.setProperty("display", "none", "important");
-        container.style.setProperty("visibility", "hidden", "important");
-        container.style.setProperty("pointer-events", "none", "important");
-        return;
-      }
+      if (String(containerProductId || "") !== productId &&
+          String(containerVariantId || "") !== variantId) return;
 
-      container.querySelectorAll("button, input, quick-add-component, .quick-add").forEach((control) => {
-        if (control.matches("quick-add-component, .quick-add") || isPurchaseControl(control)) {
+      container.querySelectorAll("form[action*='/cart/add'], button, input").forEach((control) => {
+        if (isPurchaseControl(control)) {
           control.style.setProperty("display", "none", "important");
           control.style.setProperty("visibility", "hidden", "important");
           control.style.setProperty("pointer-events", "none", "important");

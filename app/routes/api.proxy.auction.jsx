@@ -95,6 +95,7 @@ export const loader = async ({ request }) => {
           title: auction.title,
           startingBid: auction.startingBid,
           currentBid: auction.currentBid,
+          bidCount: auction.bidCount,
           highestBidder: highestBid ? maskedBidder(highestBid.bidderId) : null,
           reservePrice: auction.reservePrice,
           startsAt: auction.startsAt,
@@ -272,7 +273,7 @@ export const action = async ({ request }) => {
 
     await tx.auction.update({
       where: { id: current.id },
-      data: { currentBid: displayedBid },
+      data: { currentBid: displayedBid, bidCount: { increment: 1 } },
     });
 
     return { success: true, currentBid: displayedBid, maximumBid: amount };

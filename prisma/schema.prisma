@@ -35,7 +35,8 @@ model Auction {
   description   String?
   imageUrl      String?
   startingBid   Float
-  currentBid   Float    @default(0)
+  currentBid    Float    @default(0)
+  bidCount      Int      @default(0)
   reservePrice  Float?
   startsAt      DateTime
   endsAt        DateTime

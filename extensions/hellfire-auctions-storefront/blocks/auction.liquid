@@ -1,19 +1,14 @@
-{% if product.tags contains 'Hellfire Auction' or product.type == 'Hellfire Auction' %}
-<div id="hellfire-auction-root"
-  data-product-id="{{ product.id }}"
-  data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
-  data-experience-src="{{ 'auction.js' | asset_url }}"></div>
-{% endif %}
+<div id="hellfire-auction-runtime" data-product-id="{{ product.id | default: '' }}" data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}" data-auction-product="{% if product.tags contains 'Hellfire Auction' or product.type == 'Hellfire Auction' %}true{% else %}false{% endif %}" data-experience-src="{{ 'auction.js' | asset_url }}" hidden></div>
+<div id="hellfire-auction-root" data-product-id="{{ product.id }}" data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}" data-experience-src="{{ 'auction.js' | asset_url }}"></div>
+<script src="{{ 'auction-runtime-v4.js' | asset_url }}" defer></script>
+<script src="{{ 'auction.js' | asset_url }}" defer></script>
 
 {% schema %}
 {
   "name": "Hellfire Auction",
   "target": "section",
-  "javascript": "auction.js",
   "stylesheet": "auction.css",
-  "enabled_on": {
-    "templates": ["product"]
-  },
+  "enabled_on": { "templates": ["product"] },
   "settings": []
 }
 {% endschema %}

@@ -4,11 +4,20 @@
     {% assign hellfire_product_is_auction = true %}
   {% endif %}
 {% endif %}
+{% assign hellfire_auction_handles = '' %}
+{% if request.page_type == 'collection' and collection %}
+  {% for p in collection.products %}
+    {% if p.tags contains 'Hellfire Auction' or p.type == 'Hellfire Auction' %}
+      {% assign hellfire_auction_handles = hellfire_auction_handles | append: p.handle | append: '|' %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
 
 <meta id="hellfire-auction-runtime"
   data-auction-product="{{ hellfire_product_is_auction }}"
   data-product-id="{{ product.id | default: '' }}"
   data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
+  data-auction-handles="{{ hellfire_auction_handles }}"
   data-experience-src="{{ 'auction.js' | asset_url }}">
 
 {% schema %}

@@ -1,20 +1,11 @@
-<div id="hellfire-auction-runtime"
-  data-product-id="{{ product.id | default: '' }}"
-  data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
-  data-auction-product="{% if product.tags contains 'Hellfire Auction' or product.type == 'Hellfire Auction' %}true{% else %}false{% endif %}"
-  data-experience-src="{{ 'auction.js' | asset_url }}"
-  hidden></div>
-{% if product.tags contains 'Hellfire Auction' or product.type == 'Hellfire Auction' %}
-  <style>
-    form[action*="/cart/add"], button[name="add"], button[type="submit"][name="add"], [data-add-to-cart], [data-add-to-cart-button], [data-quick-add], quick-add-component, add-to-cart-component, sticky-add-to-cart { display: none !important; visibility: hidden !important; pointer-events: none !important; }
-  </style>
-{% endif %}
-<script src="{{ 'auction-runtime-v4.js' | asset_url }}" defer></script>
+<meta id="hellfire-auction-runtime"
+  data-experience-src="{{ 'auction.js' | asset_url }}">
 
 {% schema %}
 {
   "name": "Hellfire Auctions Runtime",
   "target": "head",
+  "javascript": "auction-runtime-v4.js",
   "settings": []
 }
 {% endschema %}

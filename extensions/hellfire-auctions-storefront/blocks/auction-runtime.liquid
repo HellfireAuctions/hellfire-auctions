@@ -1,4 +1,14 @@
+{% assign hellfire_product_is_auction = false %}
+{% if request.page_type == 'product' and product %}
+  {% if product.tags contains 'Hellfire Auction' or product.type == 'Hellfire Auction' %}
+    {% assign hellfire_product_is_auction = true %}
+  {% endif %}
+{% endif %}
+
 <meta id="hellfire-auction-runtime"
+  data-auction-product="{{ hellfire_product_is_auction }}"
+  data-product-id="{{ product.id | default: '' }}"
+  data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
   data-experience-src="{{ 'auction.js' | asset_url }}">
 
 {% schema %}

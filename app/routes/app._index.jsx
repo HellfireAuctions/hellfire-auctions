@@ -988,6 +988,7 @@ export const action = async ({ request }) => {
 
   try {
     await ensureAuctionVariantAvailable(admin, productId);
+    await ensureAuctionStorefront(admin, productId);
   } catch (error) {
     return { error: error.message };
   }

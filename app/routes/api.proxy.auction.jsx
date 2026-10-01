@@ -1,4 +1,4 @@
-﻿import { authenticate } from "../shopify.server";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 function normalizeProductId(value) {
@@ -202,13 +202,15 @@ export const action = async ({ request }) => {
     if (!current) return { error: "Auction not found." };
 
     const increment = bidIncrement();
-    const existing = await tx.bid.findFirst({
-      where: { auctionId: current.id, bidderId: customerId },
-      orderBy: { createdAt: "desc" },
+    const preBids = await tx.bid.findMany({
+      where: { auctionId: current.id },
+      orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
     });
+    const existing = preBids.find((bid) => bid.bidderId === customerId) || null;
     const oldMax = existing ? Number(existing.maxBid || existing.amount) : 0;
+    const wasHighest = Boolean(existing && preBids[0]?.id === existing.id);
     const currentBid = Number(current.currentBid || 0);
-    const minimumBid = currentBid > 0
+    const minimumBid = preBids.length > 0
       ? currentBid + increment
       : Number(current.startingBid);
 
@@ -245,13 +247,19 @@ export const action = async ({ request }) => {
     const secondHighest = bids[1];
     const highestMax = Number(highest.maxBid || highest.amount);
     const secondMax = secondHighest ? Number(secondHighest.maxBid || secondHighest.amount) : 0;
-    const competingBid = secondHighest
-      ? Math.max(Number(current.startingBid), secondMax + increment)
-      : Number(current.startingBid);
-    const displayedBid = Math.max(
-      Number(current.currentBid || 0),
-      Math.min(highestMax, competingBid),
-    );
+    const highestChanged = !wasHighest && highest.bidderId === customerId;
+    const displayedBid = preBids.length === 0
+      ? Number(current.startingBid)
+      : highestChanged
+      ? Math.min(
+          highestMax,
+          Math.max(
+            Number(current.startingBid),
+            Number(current.currentBid || 0) + increment,
+            secondMax + increment,
+          ),
+        )
+      : Number(current.currentBid || 0);
 
     for (const bid of bids) {
       const bidAmount = bid.id === highest.id

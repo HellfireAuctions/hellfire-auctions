@@ -43,6 +43,7 @@ model Auction {
   status        String   @default("DRAFT")
   winnerId      String?
   winnerCheckoutUrl String?
+  winnerDraftOrderId String?
   winnerNotifiedAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

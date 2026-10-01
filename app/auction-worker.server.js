@@ -45,8 +45,9 @@ async function settleAuction(auction) {
   const winnerId = reserveMet ? highest?.bidderId || null : null;
 
   let checkoutUrl = auction.winnerCheckoutUrl || null;
+  let draftOrderId = auction.winnerDraftOrderId || null;
 
-  if (winnerId && !checkoutUrl) {
+  if (winnerId && (!checkoutUrl || !auction.winnerNotifiedAt)) {
     const customerGid = String(winnerId).startsWith("gid://")
       ? String(winnerId)
       : `gid://shopify/Customer/${winnerId}`;
@@ -74,8 +75,12 @@ async function settleAuction(auction) {
     const email = customerData?.customer?.email;
     const variantId = customerData?.product?.variants?.nodes?.[0]?.id;
 
+    if (!email || !variantId) {
+      throw new Error("Winner customer or auction variant could not be resolved.");
+    }
+
     if (email && variantId) {
-      const draftData = await adminGraphql(
+      const draftData = draftOrderId ? null : await adminGraphql(
         auction.shop,
         session.accessToken,
         `#graphql
@@ -116,9 +121,17 @@ async function settleAuction(auction) {
         throw new Error(draftErrors.map((e) => e.message).join(", "));
       }
 
-      if (draft?.id) {
-        checkoutUrl = draft.invoiceUrl || null;
+      if (!draftOrderId && !draft?.id) {
+        throw new Error("Unable to create winner draft order.");
+      }
 
+      if (draft?.id) {
+        draftOrderId = draft.id;
+        checkoutUrl = draft.invoiceUrl || checkoutUrl;
+        await prisma.auction.update({ where: { id: auction.id }, data: { winnerDraftOrderId: draftOrderId, winnerCheckoutUrl: checkoutUrl } });
+      }
+
+      if (draftOrderId) {
         const invoiceData = await adminGraphql(
           auction.shop,
           session.accessToken,
@@ -142,7 +155,7 @@ async function settleAuction(auction) {
               }
             }
           `,
-          { id: draft.id },
+          { id: draftOrderId },
         );
 
         const invoiceErrors =
@@ -155,6 +168,10 @@ async function settleAuction(auction) {
         checkoutUrl =
           invoiceData?.draftOrderInvoiceSend?.draftOrder?.invoiceUrl ||
           checkoutUrl;
+
+        if (!checkoutUrl) {
+          throw new Error("Shopify did not return a winner checkout URL.");
+        }
       }
     }
   }
@@ -165,6 +182,7 @@ async function settleAuction(auction) {
       status: "ENDED",
       winnerId,
       winnerCheckoutUrl: checkoutUrl,
+      winnerDraftOrderId: draftOrderId,
       winnerNotifiedAt: checkoutUrl ? new Date() : undefined,
     },
   });

@@ -223,8 +223,9 @@
     observerQueued = true;
     queueMicrotask(() => {
       observerQueued = false;
-      suppressProductCart(); suppressKnownAuctionCards(); renderAuctionCards();
-      if (document.querySelectorAll("a[href*='/products/']").length < 250) mountAuction();
+      suppressProductCart();
+      suppressKnownAuctionCards();
+      if (!document.getElementById("hellfire-auction-root") && document.querySelectorAll("a[href*='/products/']").length < 250) mountAuction();
     });
   }).observe(document.documentElement, {
     childList:true, subtree:true, attributes:true,

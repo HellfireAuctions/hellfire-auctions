@@ -148,7 +148,7 @@
   };
   const mountAuction = async () => {
     const root = document.getElementById("hellfire-auction-root");
-    if (root?.querySelector(".hellfire-auction-card")) return;
+    if (root) return;
     const el = document.getElementById("hellfire-auction-runtime");
     if (!el || !document.body) return;
     let id = productId(el.dataset.productId), variant = variantId(el.dataset.variantId);

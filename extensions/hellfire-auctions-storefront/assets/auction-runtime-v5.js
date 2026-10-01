@@ -198,37 +198,44 @@
     }
   };
   const boot = async () => {
-    await loadCardData();
-    const response = await fetch("/apps/hellfire-auctions/auction-products", {
-      credentials:"same-origin", cache:"no-store", headers:{Accept:"application/json"}
-    }).catch(() => null);
-    if (response?.ok) {
-      const json = await response.json();
-      ids.clear();
-      (json.auctionProductIds || []).forEach((id) => { const n = productId(id); if (n) ids.add(n); });
-    }
-    await discoverProducts();
+    // Product pages must mount immediately; auction discovery must never block the storefront.
     await mountAuction();
-    suppressProductCart(); suppressKnownAuctionCards(); renderAuctionCards();
+    suppressProductCart();
+    suppressKnownAuctionCards();
+    renderAuctionCards();
+
+    void loadCardData();
+
+    void (async () => {
+      const response = await fetch("/apps/hellfire-auctions/auction-products", {
+        credentials:"same-origin", cache:"no-store", headers:{Accept:"application/json"}
+      }).catch(() => null);
+      if (response?.ok) {
+        const json = await response.json();
+        ids.clear();
+        (json.auctionProductIds || []).forEach((id) => {
+          const n = productId(id);
+          if (n) ids.add(n);
+        });
+      }
+      await discoverProducts();
+      suppressProductCart();
+      suppressKnownAuctionCards();
+      renderAuctionCards();
+      await mountAuction();
+    })();
   };
   document.addEventListener("click", protectClicks, true);
   boot();
-  setInterval(loadCardData, 10000);
+
+  // Keep the runtime deliberately low-impact. Do not observe the entire document.
+  // Shopify themes mutate large DOM trees frequently; a global observer can create
+  // feedback loops or make the storefront unresponsive.
   setInterval(() => {
-    renderAuctionCards(); suppressProductCart(); suppressKnownAuctionCards();
-  }, 1000);
-  let observerQueued = false;
-  new MutationObserver(() => {
-    if (observerQueued) return;
-    observerQueued = true;
-    queueMicrotask(() => {
-      observerQueued = false;
-      suppressProductCart();
-      suppressKnownAuctionCards();
-      if (!document.getElementById("hellfire-auction-root") && document.querySelectorAll("a[href*='/products/']").length < 250) mountAuction();
-    });
-  }).observe(document.documentElement, {
-    childList:true, subtree:true, attributes:true,
-    attributeFilter:["data-product-id","data-product","product-id","data-variant-id","data-current-variant-id"]
-  });
+    void loadCardData();
+    suppressProductCart();
+    suppressKnownAuctionCards();
+    if (!document.getElementById("hellfire-auction-root")) void mountAuction();
+    renderAuctionCards();
+  }, 10000);
 })();

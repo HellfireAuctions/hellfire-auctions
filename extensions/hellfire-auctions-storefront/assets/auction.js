@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const root = document.getElementById("hellfire-auction-root");
+  let root = document.getElementById("hellfire-auction-root");
   if (!root) return;
 
   const productId = root.dataset.productId;
@@ -250,4 +250,10 @@
   }
 
   load();
+  window.__hellfireAuctionRemount = () => {
+    const nextRoot = document.getElementById("hellfire-auction-root");
+    if (!nextRoot) return;
+    root = nextRoot;
+    load();
+  };
 })();

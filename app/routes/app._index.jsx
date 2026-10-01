@@ -578,13 +578,18 @@ export const loader = async ({ request }) => {
     orderBy: {
       createdAt: "desc",
     },
-    include: {
-      bids: {
-        orderBy: {
-          amount: "desc",
-        },
-        take: 1,
-      },
+    select: {
+      id: true,
+      title: true,
+      imageUrl: true,
+      startingBid: true,
+      currentBid: true,
+      bidCount: true,
+      startsAt: true,
+      endsAt: true,
+      status: true,
+      reservePrice: true,
+      productId: true,
     },
   });
 
@@ -1527,7 +1532,7 @@ export default function AuctionsPage() {
                   </s-text>
 
                   <s-text>
-                    Bids: {auction.bids.length}
+                    Bids: {auction.bidCount}
                   </s-text>
 
                   <s-button

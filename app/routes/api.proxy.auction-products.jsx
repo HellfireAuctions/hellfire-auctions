@@ -5,10 +5,9 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   let session;
 
-  try {
+  const localDev = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname);
+  if (!localDev) {
     ({ session } = await authenticate.public.appProxy(request));
-  } catch (error) {
-    if (!["localhost", "127.0.0.1"].includes(url.hostname)) throw error;
   }
 
   const shop = session?.shop || url.searchParams.get("shop");

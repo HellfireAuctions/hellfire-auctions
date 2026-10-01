@@ -75,6 +75,13 @@ export const loader = async ({ request }) => {
     });
 
   const publicBids = auction?.bids || [];
+  const loggedInCustomerId = url.searchParams.get("logged_in_customer_id") || null;
+  const myBid = loggedInCustomerId && auction
+    ? await prisma.bid.findFirst({
+        where: { auctionId: auction.id, bidderId: loggedInCustomerId },
+        select: { maxBid: true },
+      })
+    : null;
   const highestBid = publicBids.reduce(
     (highest, bid) =>
       Number(bid.maxBid || bid.amount) > Number(highest?.maxBid || highest?.amount || 0)
@@ -96,6 +103,10 @@ export const loader = async ({ request }) => {
           startingBid: auction.startingBid,
           currentBid: auction.currentBid,
           bidCount: auction.bidCount,
+          minimumBid: publicBids.length > 0
+            ? Number(auction.currentBid || 0) + bidIncrement(auction.currentBid)
+            : Number(auction.startingBid),
+          myMaximumBid: myBid ? Number(myBid.maxBid) : null,
           highestBidder: highestBid ? maskedBidder(highestBid.bidderId) : null,
           reservePrice: auction.reservePrice,
           startsAt: auction.startsAt,
@@ -107,8 +118,11 @@ export const loader = async ({ request }) => {
   });
 };
 
-function bidIncrement() {
-  return 1;
+function bidIncrement(currentBid) {
+  const bid = Number(currentBid || 0);
+  if (bid < 25) return 1;
+  if (bid < 100) return 2;
+  return 5;
 }
 
 export const action = async ({ request }) => {
@@ -199,27 +213,39 @@ export const action = async ({ request }) => {
   }
 
   const result = await prisma.$transaction(async (tx) => {
+    // Serialize bids for this auction so simultaneous bidders cannot both
+    // calculate against the same stale current bid.
+    await tx.$queryRaw`SELECT "id" FROM "Auction" WHERE "id" = ${auction.id} FOR UPDATE`;
+
     const current = await tx.auction.findUnique({ where: { id: auction.id } });
     if (!current) return { error: "Auction not found." };
 
-    const increment = bidIncrement();
+    const transactionNow = new Date();
+    if (transactionNow < current.startsAt) {
+      return { error: "This auction has not started yet." };
+    }
+    if (transactionNow >= current.endsAt) {
+      return { error: "This auction has ended." };
+    }
+
+    const currentBid = Number(current.currentBid || 0);
     const preBids = await tx.bid.findMany({
       where: { auctionId: current.id },
       orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
     });
-    const existing = preBids.find((bid) => bid.bidderId === customerId) || null;
-    const oldMax = existing ? Number(existing.maxBid || existing.amount) : 0;
-    const wasHighest = Boolean(existing && preBids[0]?.id === existing.id);
-    const currentBid = Number(current.currentBid || 0);
+    const increment = bidIncrement(currentBid);
     const minimumBid = preBids.length > 0
       ? currentBid + increment
       : Number(current.startingBid);
+    const existing = preBids.find((bid) => bid.bidderId === customerId) || null;
+    const oldMax = existing ? Number(existing.maxBid || existing.amount) : 0;
+    const wasHighest = Boolean(existing && preBids[0]?.id === existing.id);
 
+    if (amount < minimumBid) {
+      return { error: "Your maximum bid must be at least the minimum bid." };
+    }
     if (existing && amount <= oldMax) {
       return { error: "Your maximum bid is already at or above that amount." };
-    }
-    if (!existing && amount < minimumBid) {
-      return { error: "Your maximum bid must be at least the minimum bid." };
     }
 
     if (existing) {

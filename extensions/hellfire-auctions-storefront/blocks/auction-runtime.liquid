@@ -1,22 +1,64 @@
 {% assign hellfire_product_is_auction = false %}
-{% if request.page_type == 'product' and product %}
-  {% if product.tags contains 'Hellfire Auction' or product.type == 'Hellfire Auction' %}
+{% assign hellfire_runtime_product = nil %}
+{% if request.page_type == 'product' and handle %}
+  {% assign hellfire_runtime_product = all_products[handle] %}
+  {% if hellfire_runtime_product.tags contains 'Hellfire Auction' or hellfire_runtime_product.type == 'Hellfire Auction' %}
     {% assign hellfire_product_is_auction = true %}
   {% endif %}
 {% endif %}
 {% assign hellfire_auction_handles = '' %}
-{% if request.page_type == 'collection' and collection %}
-  {% for p in collection.products %}
+{% if request.page_type == 'collection' and handle %}
+  {% assign hellfire_runtime_collection = collections[handle] %}
+  {% for p in hellfire_runtime_collection.products %}
     {% if p.tags contains 'Hellfire Auction' or p.type == 'Hellfire Auction' %}
       {% assign hellfire_auction_handles = hellfire_auction_handles | append: p.handle | append: '|' %}
     {% endif %}
   {% endfor %}
 {% endif %}
 
+{% if hellfire_product_is_auction %}
+<style id="hellfire-auction-critical-hide">
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/cart/add"],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) button[name="add"],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) button[type="submit"][name="add"],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) button[data-testid*="add-to-cart"],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) button[data-action="add-to-cart"],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) [data-add-to-cart],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) [data-add-to-cart-button],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) [data-quick-add],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) quick-add-component,
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) add-to-cart-component,
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) sticky-add-to-cart,
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) .price,
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) [data-product-price],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) [data-price],
+html:has(#hellfire-auction-runtime[data-auction-product="true"]) product-price {
+  display:none!important;
+  visibility:hidden!important;
+  pointer-events:none!important;
+}
+</style>
+{% endif %}
+
+{% if hellfire_auction_handles != blank %}
+<style id="hellfire-auction-collection-hide">
+{% assign hellfire_handles = hellfire_auction_handles | split: '|' %}
+{% for auction_handle in hellfire_handles %}
+  {% unless auction_handle == blank %}
+  body :is(article,li,product-card,.product-card,.product-item,.card,.card-wrapper,.grid__item,[data-product-id]):has(a[href="/products/{{ auction_handle }}"]) :is(form[action*="/cart/add"],button[name="add"],button[type="submit"][name="add"],button[data-testid*="add-to-cart"],button[data-action="add-to-cart"],[data-add-to-cart],[data-add-to-cart-button],[data-quick-add],quick-add-component,add-to-cart-component,sticky-add-to-cart) {
+    display:none!important;
+    visibility:hidden!important;
+    pointer-events:none!important;
+  }
+  {% endunless %}
+{% endfor %}
+</style>
+{% endif %}
+
 <meta id="hellfire-auction-runtime"
   data-auction-product="{{ hellfire_product_is_auction }}"
-  data-product-id="{{ product.id | default: '' }}"
-  data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
+  data-product-id="{{ hellfire_runtime_product.id | default: '' }}"
+  data-variant-id="{{ hellfire_runtime_product.selected_or_first_available_variant.id | default: '' }}"
   data-auction-handles="{{ hellfire_auction_handles }}"
   data-experience-src="{{ 'auction.js' | asset_url }}">
 

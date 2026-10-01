@@ -60,9 +60,7 @@ export const loader = async ({ request }) => {
       },
       include: {
         bids: {
-          orderBy: {
-            maxBid: "desc",
-          },
+          orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
           take: 10,
           select: {
             amount: true,

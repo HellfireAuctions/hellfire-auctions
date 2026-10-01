@@ -1,0 +1,14 @@
+<div id="hellfire-auction-root"
+  data-product-id="{{ product.id }}"
+  data-variant-id="{{ product.selected_or_first_available_variant.id | default: '' }}"
+  data-experience-src="{{ 'auction.js' | asset_url }}"></div>
+
+{% schema %}
+{
+  "name": "Hellfire Auction",
+  "target": "section",
+  "javascript": "auction.js",
+  "stylesheet": "auction.css",
+  "settings": []
+}
+{% endschema %}

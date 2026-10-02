@@ -5,7 +5,6 @@ import { createReadableStreamFromReadable } from "@react-router/node";
 import { isbot } from "isbot";
 import { addDocumentResponseHeaders } from "./shopify.server";
 import "./auction-worker.server";
-import "./restore-original-data.server";
 import "./startup-diagnostics.server";
 
 export const streamTimeout = 5000;

@@ -73,7 +73,37 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  row-gap: 6px;
+}
+
+.hellfire-card-badge__hot {
+  margin-left: auto;
+}
+
+.hellfire-card-badge__mine:empty {
+  display: none !important;
+}
+
+.hellfire-card-badge > .hellfire-card-badge__mine {
+  display: inline-block;
+  margin: 6px 0 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #ffffff;
+}
+
+.hellfire-card-badge__mine[data-mine="winning"],
+.hellfire-card-badge__mine[data-mine="won"] {
+  background: linear-gradient(90deg, #0f8a3c, #19b453);
+}
+
+.hellfire-card-badge__mine[data-mine="outbid"] {
+  background: linear-gradient(90deg, #b40000, #ff3b30);
 }
 
 .hellfire-card-badge__hot:empty,

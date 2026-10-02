@@ -57,6 +57,7 @@ export const loader = async ({ request }) => {
   const auctions = await prisma.auction.findMany({
     where: { shop, endsAt: { gt: new Date(now.getTime() - ENDED_WINDOW_MS) } },
     select: {
+      id: true,
       productId: true,
       startingBid: true,
       currentBid: true,
@@ -77,6 +78,23 @@ export const loader = async ({ request }) => {
 
   const plan = await getShopPlan(shop);
 
+  const customerId = url.searchParams.get("logged_in_customer_id");
+  const myStatus = new Map();
+  if (customerId && auctions.length) {
+    const bids = await prisma.bid.findMany({
+      where: { auctionId: { in: auctions.map((a) => a.id) } },
+      orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
+      select: { auctionId: true, bidderId: true },
+    });
+    const leader = new Map();
+    const mine = new Set();
+    for (const b of bids) {
+      if (!leader.has(b.auctionId)) leader.set(b.auctionId, b.bidderId);
+      if (b.bidderId === customerId) mine.add(b.auctionId);
+    }
+    for (const id of mine) myStatus.set(id, leader.get(id) === customerId ? "WINNING" : "OUTBID");
+  }
+
   const payload = auctions
     .filter((a) => handles.has(a.productId))
     .map((a) => ({
@@ -88,6 +106,7 @@ export const loader = async ({ request }) => {
       endsAt: a.endsAt,
       status: auctionState(a, now),
       hot: plan.hotBadge && a.bidCount >= HOT_BID_THRESHOLD,
+      myStatus: myStatus.get(a.id) || null,
     }));
 
   return Response.json(

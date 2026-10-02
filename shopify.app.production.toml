@@ -44,7 +44,7 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://hellfire-auctions.onrender.com/api/auth" ]
+redirect_urls = [ "https://hellfire-auctions.onrender.com/auth/callback" ]
 
 [build]
 automatically_update_urls_on_dev = false

@@ -1722,16 +1722,34 @@ export default function AuctionsPage() {
 
       {actionData?.success && (
         <s-banner tone="success">
-          {actionData.mode === "update"
-            ? "Auction updated successfully."
-            : "Auction created successfully."}
+          {typeof actionData.success === "string"
+            ? actionData.success
+            : actionData.mode === "update"
+              ? "Auction updated successfully."
+              : "Auction created successfully."}
         </s-banner>
       )}
 
-      <s-banner tone="info" heading="Storefront setup">
-        The Hellfire Auctions storefront engine is theme-independent, but Shopify requires the app embed to be activated in each theme you use. Activate it in the current theme before testing or publishing that theme.
-        <s-link href={storefrontActivationUrl} target="_top">Activate Hellfire Auctions in this theme</s-link>
-      </s-banner>
+      <details open style={{ background: "#fff", border: "1px solid #e3e3e3", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
+        <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 15 }}>Setup guide (4 steps, about 3 minutes)</summary>
+        <ol style={{ margin: "12px 0 0", paddingLeft: 20, display: "grid", gap: 12, fontSize: 14, lineHeight: 1.5 }}>
+          <li>
+            <strong>Turn on Hellfire Auctions in your theme.</strong> Click the button below. In the panel that opens on the left, switch <em>Hellfire Auctions Runtime</em> on, then click <em>Save</em> (top right). This adds the live bidding panel to auction product pages and live bid badges to product cards. It works with any theme and changes no theme code. Repeat this for any other theme you publish later.
+            <div style={{ marginTop: 8 }}>
+              <s-button href={storefrontActivationUrl} target="_top" variant="primary">Open theme editor</s-button>
+            </div>
+          </li>
+          <li>
+            <strong>Create your first auction</strong> with the form below: title, description, image, starting bid, optional reserve price, start time and length. The app creates the product, adds it to a <em>Live Auctions</em> collection, and starts and ends the auction automatically. The winner is invoiced through Shopify when it ends.
+          </li>
+          <li>
+            <strong>Add &ldquo;My Auctions&rdquo; to your store menu</strong> using the one-click banner (if shown) so customers can see every auction they&rsquo;re bidding on, winning or outbid.
+          </li>
+          <li>
+            <strong>Test it.</strong> Open the auction on your storefront, sign in as a customer and place a bid. Bidding requires a customer account. Optional: upgrade on <em>Plans &amp; upgrades</em> for outbid and &ldquo;1 hour left&rdquo; emails.
+          </li>
+        </ol>
+      </details>
 
       <s-section
         heading={

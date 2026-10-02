@@ -1,4 +1,7 @@
+api_version = "2026-10"
+
+[[extensions]]
 name = "Hellfire Auctions Storefront"
-type = "theme"
 handle = "hellfire-auctions-storefront"
+type = "theme"
 uid = "58070325-cbc8-a38c-170e-cdfa6942ada8d2f65327"

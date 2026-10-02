@@ -64,7 +64,7 @@ export const loader = async ({ request }) => {
       startsAt: true,
       endsAt: true,
     },
-    orderBy: { endsAt: "asc" },
+    orderBy: { createdAt: "asc" }, // newest auction per product wins
     take: 250,
   });
 

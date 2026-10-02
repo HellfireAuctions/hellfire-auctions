@@ -690,6 +690,59 @@ export const action = async ({ request }) => {
   const intent =
     formData.get("intent")?.toString() || "create";
 
+  if (intent === "cancel" || intent === "relist") {
+    const target = await prisma.auction.findFirst({
+      where: { id: formData.get("auctionId")?.toString() || "", shop: session.shop },
+    });
+    if (!target) return { error: "Auction could not be found." };
+    const now = new Date();
+
+    if (intent === "cancel") {
+      // eBay rule: a listing can only be ended early while nobody has bid.
+      if (target.bidCount > 0) {
+        return { error: "This auction already has bids, so it can't be cancelled. Every bidder is treated fairly." };
+      }
+      if (now >= target.endsAt) return { error: "This auction has already ended." };
+      await prisma.auction.update({ where: { id: target.id }, data: { endsAt: now } });
+      return { success: "Auction cancelled. It will be removed from Live Auctions within a few seconds." };
+    }
+
+    // Relist: only ended auctions that didn't sell.
+    if (now < target.endsAt) return { error: "Only ended auctions can be relisted." };
+    if (target.winnerId) return { error: "This auction sold, so it can't be relisted." };
+    const quota = await canCreateAuction(session.shop);
+    if (!quota.allowed) {
+      return { error: `You've used all ${quota.limit} auctions on the ${quota.plan.name} plan this month. Upgrade on the "Plans & upgrades" page for more.` };
+    }
+    const lengthMs = new Date(target.endsAt).getTime() - new Date(target.startsAt).getTime();
+    const collection = await ensureLiveAuctionsCollection(admin);
+    if (collection?.id) {
+      await admin.graphql(
+        `#graphql
+          mutation RelistJoin($id: ID!, $productIds: [ID!]!) {
+            collectionAddProducts(id: $id, productIds: $productIds) { userErrors { message } }
+          }`,
+        { variables: { id: collection.id, productIds: [target.productId] } },
+      );
+    }
+    await prisma.auction.create({
+      data: {
+        shop: target.shop,
+        productId: target.productId,
+        title: target.title,
+        description: target.description,
+        imageUrl: target.imageUrl,
+        startingBid: target.startingBid,
+        currentBid: target.startingBid,
+        reservePrice: target.reservePrice,
+        startsAt: now,
+        endsAt: new Date(now.getTime() + lengthMs),
+        status: "LIVE",
+      },
+    });
+    return { success: "Relisted! The auction is live again with the same price and length." };
+  }
+
   if (intent === "create") {
     const quota = await canCreateAuction(session.shop);
     if (!quota.allowed) {
@@ -1656,10 +1709,24 @@ export default function AuctionsPage() {
                       {state === "UPCOMING" ? "Starts " : state === "LIVE" ? "Ends " : "Ended "}
                       {formatEastern(new Date(state === "UPCOMING" ? auction.startsAt : auction.endsAt), timezone)}
                     </div>
-                    <div style={{ marginTop: "auto", paddingTop: 6 }}>
+                    <div style={{ marginTop: "auto", paddingTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <s-button type="button" onClick={() => setEditingId(auction.id)}>
                         Edit
                       </s-button>
+                      {state !== "ENDED" && auction.bidCount === 0 && (
+                        <Form method="post" onSubmit={(e) => { if (!window.confirm("Cancel this auction? It has no bids, so it will simply end now.")) e.preventDefault(); }}>
+                          <input type="hidden" name="intent" value="cancel" />
+                          <input type="hidden" name="auctionId" value={auction.id} />
+                          <s-button type="submit" tone="critical">Cancel</s-button>
+                        </Form>
+                      )}
+                      {state === "ENDED" && !auction.winnerId && (
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="relist" />
+                          <input type="hidden" name="auctionId" value={auction.id} />
+                          <s-button type="submit" variant="primary">Relist</s-button>
+                        </Form>
+                      )}
                     </div>
                   </div>
                 </div>

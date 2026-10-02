@@ -198,3 +198,54 @@ if (!globalThis.__HELLFIRE_NOTIFY_STATUS__) {
       : `OFF (missing: ${[!process.env.RESEND_API_KEY && "RESEND_API_KEY", !process.env.NOTIFY_FROM && "NOTIFY_FROM"].filter(Boolean).join(", ")})`,
   );
 }
+
+// Tells the store owner the result of an auction (sold, unsold or reserve not met). Sent once.
+export async function notifyMerchantEnded({ auction, winnerId, reserveMet }) {
+  if (!notificationsEnabled()) return;
+  try {
+    const fresh = await claimNotice({ auctionId: auction.id, customerId: "merchant", type: "MERCHANT_ENDED", key: "1" });
+    if (!fresh) return;
+    const { admin } = await unauthenticated.admin(auction.shop);
+    const response = await admin.graphql(
+      `#graphql
+        query EndedLookup($product: ID!, $customer: ID!, $hasWinner: Boolean!) {
+          shop { name email contactEmail ianaTimezone }
+          product(id: $product) { title }
+          customer(id: $customer) @include(if: $hasWinner) { displayName email }
+        }`,
+      {
+        variables: {
+          product: auction.productId,
+          customer: winnerId ? `gid://shopify/Customer/${winnerId}` : "gid://shopify/Customer/0",
+          hasWinner: Boolean(winnerId),
+        },
+      },
+    );
+    const data = (await response.json())?.data || {};
+    const to = data?.shop?.email || data?.shop?.contactEmail;
+    if (!to) return;
+    const title = data?.product?.title || auction.title;
+    const lines = winnerId
+      ? [
+          `"${title}" sold for ${money(auction.currentBid)} with ${auction.bidCount} bid${auction.bidCount === 1 ? "" : "s"}.`,
+          `Winner: ${data?.customer?.displayName || "Customer " + winnerId}${data?.customer?.email ? " (" + data.customer.email + ")" : ""}.`,
+          "The winner has been sent a Shopify invoice automatically. You'll see the order once they pay.",
+        ]
+      : [
+          `"${title}" ended without a sale${reserveMet === false ? " because the reserve price wasn't met" : auction.bidCount ? "" : " (no bids)"}.`,
+          "You can relist it from the Hellfire Auctions app with one click.",
+        ];
+    await sendEmail({
+      to,
+      subject: winnerId ? `Sold: ${title} for ${money(auction.currentBid)}` : `Auction ended: ${title}`,
+      heading: winnerId ? "Your auction sold!" : "Your auction ended",
+      lines,
+      buttonLabel: "Open Hellfire Auctions",
+      buttonUrl: `https://admin.shopify.com/store/${auction.shop.replace(".myshopify.com", "")}/apps/${process.env.SHOPIFY_API_KEY}`,
+      shopName: data?.shop?.name || "your store",
+    });
+    console.log("[notify] merchant ended email sent", JSON.stringify({ auctionId: auction.id, sold: Boolean(winnerId) }));
+  } catch (error) {
+    console.error("[notify] merchant ended email failed:", error?.message || error);
+  }
+}

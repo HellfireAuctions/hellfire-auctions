@@ -1,6 +1,6 @@
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
-import { sendEndingSoonReminders } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded } from "./notifications.server.js";
 
 const INTERVAL_MS = 15_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -218,6 +218,12 @@ async function settleAuction(auction) {
   }
 
   await removeFromLiveAuctions(auction);
+
+  const settled = await prisma.auction.findUnique({ where: { id: auction.id } });
+  if (settled) {
+    const reserveMet = settled.reservePrice == null || Number(settled.currentBid) >= Number(settled.reservePrice);
+    notifyMerchantEnded({ auction: settled, winnerId: settled.winnerId, reserveMet });
+  }
 }
 
 async function tick() {

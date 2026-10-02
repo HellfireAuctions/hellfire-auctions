@@ -42,6 +42,7 @@ export const loader = async ({ request }) => {
 
   const auction = await prisma.auction.findFirst({
     where: { shop, productId },
+    orderBy: { createdAt: "desc" },
     include: {
       bids: {
         orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
@@ -129,7 +130,7 @@ export const action = async ({ request }) => {
     return Response.json({ error: "That bid is above the allowed maximum." }, { status: 400 });
   }
 
-  const auction = await prisma.auction.findFirst({ where: { shop, productId } });
+  const auction = await prisma.auction.findFirst({ where: { shop, productId }, orderBy: { createdAt: "desc" } });
   if (!auction) {
     return Response.json({ error: "Auction not found." }, { status: 404 });
   }

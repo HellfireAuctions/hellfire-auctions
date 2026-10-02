@@ -94,9 +94,22 @@ async function logSessions() {
   }
 }
 
+// Repair: a stored Shopify login without an access key is unusable (left over from the old app).
+// Deleting it makes Shopify issue a fresh one the next time the app is opened in the admin.
+async function repairSessions() {
+  try {
+    const result = await prisma.session.deleteMany({
+      where: { OR: [{ accessToken: null }, { accessToken: "" }] },
+    });
+    console.log("[startup-diagnostics] removed broken sessions:", result.count);
+  } catch (error) {
+    console.log("[startup-diagnostics] session repair failed:", String(error?.message || error).slice(0, 200));
+  }
+}
+
 if (!globalThis.__HELLFIRE_DIAGNOSTICS_RAN__) {
   globalThis.__HELLFIRE_DIAGNOSTICS_RAN__ = true;
   logMigrationState();
-  logSessions();
+  repairSessions().then(logSessions);
   checkEmailReadiness();
 }

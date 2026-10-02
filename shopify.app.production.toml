@@ -47,9 +47,10 @@ api_version = "2026-10"
 redirect_urls = [ "https://hellfire-auctions.onrender.com/api/auth" ]
 
 [build]
-automatically_update_urls_on_dev = true
+automatically_update_urls_on_dev = false
 
 [app_proxy]
 url = "/api/proxy"
 prefix = "apps"
 subpath = "hellfire-auctions"
+

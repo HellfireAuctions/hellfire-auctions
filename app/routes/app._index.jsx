@@ -1666,6 +1666,26 @@ function AuctionForm({
 
 export default function AuctionsPage() {
   const { auctions, storefrontActivationUrl, timezone, showMenuBanner } = useLoaderData();
+  const [backupBusy, setBackupBusy] = useState(false);
+  const downloadBackup = async () => {
+    setBackupBusy(true);
+    try {
+      const res = await fetch("/app/backup");
+      if (!res.ok) throw new Error("Backup failed");
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hellfire-auctions-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (error) {
+      window.alert("Sorry, the backup couldn't be downloaded. Please try again.");
+    } finally {
+      setBackupBusy(false);
+    }
+  };
   const actionData = useActionData();
 
   const [editingId, setEditingId] =
@@ -1825,6 +1845,15 @@ export default function AuctionsPage() {
           </div>
         )}
 
+      </s-section>
+
+      <s-section heading="Backup">
+        <s-stack gap="small">
+          <s-text>Download a copy of every auction and bid in your store, any time.</s-text>
+          <s-button type="button" onClick={downloadBackup} disabled={backupBusy}>
+            {backupBusy ? "Preparing backup..." : "Download backup"}
+          </s-button>
+        </s-stack>
       </s-section>
 
     </s-page>

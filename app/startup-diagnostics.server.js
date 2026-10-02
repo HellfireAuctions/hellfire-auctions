@@ -98,10 +98,12 @@ async function logSessions() {
 // Deleting it makes Shopify issue a fresh one the next time the app is opened in the admin.
 async function repairSessions() {
   try {
-    const result = await prisma.session.deleteMany({
-      where: { OR: [{ accessToken: null }, { accessToken: "" }] },
-    });
-    console.log("[startup-diagnostics] removed broken sessions:", result.count);
+    const all = await prisma.session.findMany({ select: { id: true, accessToken: true } });
+    const broken = all.filter((s) => !s.accessToken).map((s) => s.id);
+    const result = broken.length
+      ? await prisma.session.deleteMany({ where: { id: { in: broken } } })
+      : { count: 0 };
+    console.log("[startup-diagnostics] removed broken sessions:", result.count, JSON.stringify(broken));
   } catch (error) {
     console.log("[startup-diagnostics] session repair failed:", String(error?.message || error).slice(0, 200));
   }

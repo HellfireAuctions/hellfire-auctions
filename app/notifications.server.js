@@ -46,8 +46,8 @@ async function lookup(shop, customerId, productId) {
     `#graphql
       query NotifyLookup($customer: ID!, $product: ID!) {
         customer(id: $customer) { email }
-        product(id: $product) { title onlineStoreUrl }
-        shop { name contactEmail ianaTimezone }
+        product(id: $product) { title handle onlineStoreUrl }
+        shop { name contactEmail ianaTimezone primaryDomain { url } }
       }
     `,
     {
@@ -80,6 +80,12 @@ async function claimNotice({ auctionId, customerId, type, key }) {
     if (error?.code === "P2002") return false; // already sent
     throw error;
   }
+}
+
+function auctionLink(data) {
+  if (data?.product?.onlineStoreUrl) return data.product.onlineStoreUrl;
+  const base = data?.shop?.primaryDomain?.url;
+  return base && data?.product?.handle ? `${base.replace(/\/$/, "")}/products/${data.product.handle}` : null;
 }
 
 async function sendEmail({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo }) {
@@ -130,14 +136,14 @@ export async function notifyOutbid({ shop, auction, outbidCustomerId, currentBid
     await sendEmail({
       to: email,
       subject: `You've been outbid on ${title}`,
-      heading: "You've been outbid",
+      heading: "You've been outbid!",
       lines: [
-        "Hi there,",
-        `Someone placed a higher bid on "${title}". The current bid is now ${money(currentBid)}.`,
-        `The auction ends ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}.`,
+        "Hey there,",
+        `We're letting you know you've been outbid on "${title}". The current bid is now ${money(currentBid)}.`,
+        `The auction ends ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}, so jump back in and raise your bid before time runs out.`,
       ],
-      buttonLabel: "Bid again",
-      buttonUrl: data?.product?.onlineStoreUrl,
+      buttonLabel: "Bid Again Now",
+      buttonUrl: auctionLink(data),
       shopName: data?.shop?.name || "the store",
       replyTo: data?.shop?.contactEmail,
     });
@@ -177,14 +183,14 @@ export async function sendEndingSoonReminders() {
           subject: `1 hour left: ${title}`,
           heading: "Less than 1 hour left",
           lines: [
-            "Hi there,",
+            "Hey there,",
             `The auction for "${title}" ends at ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}, in under an hour. The current bid is ${money(auction.currentBid)}.`,
             winning
               ? "You're currently the high bidder. Keep watching in case someone outbids you."
               : "You're not the high bidder right now. Bid again before time runs out.",
           ],
           buttonLabel: winning ? "Watch the auction" : "Bid again",
-          buttonUrl: data?.product?.onlineStoreUrl,
+          buttonUrl: auctionLink(data),
           shopName: data?.shop?.name || "the store",
           replyTo: data?.shop?.contactEmail,
         });

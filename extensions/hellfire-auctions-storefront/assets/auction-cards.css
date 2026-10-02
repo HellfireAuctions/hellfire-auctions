@@ -140,3 +140,19 @@
   font-size: 0.625rem;
   opacity: 0.6;
 }
+
+/* HOT pinned top-right */
+.hellfire-card-badge { position: relative; }
+.hellfire-card-badge > .hellfire-card-badge__top { display: block; }
+.hellfire-card-badge[data-hot="true"] > .hellfire-card-badge__top { padding-right: 4.25rem; }
+.hellfire-card-badge__top > .hellfire-card-badge__state { white-space: normal; }
+.hellfire-card-badge__top > .hellfire-card-badge__hot {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.55rem;
+  margin: 0;
+  font-size: 0.625rem;
+  line-height: 1.5;
+  padding: 0 7px;
+  white-space: nowrap;
+}

@@ -23,6 +23,7 @@ export const action = async ({ request }) => {
       const customerId = String(payload?.customer?.id ?? "");
       if (customerId) {
         await db.bid.deleteMany({ where: { bidderId: customerId, auction: { shop } } });
+        await db.auctionNotification.deleteMany({ where: { customerId } });
         await db.auction.updateMany({
           where: { shop, winnerId: { in: [customerId, `gid://shopify/Customer/${customerId}`] } },
           data: { winnerId: null },
@@ -33,6 +34,8 @@ export const action = async ({ request }) => {
     }
 
     case "SHOP_REDACT": {
+      const auctionIds = (await db.auction.findMany({ where: { shop }, select: { id: true } })).map((a) => a.id);
+      await db.auctionNotification.deleteMany({ where: { auctionId: { in: auctionIds } } });
       await db.auction.deleteMany({ where: { shop } }); // bids cascade
       await db.session.deleteMany({ where: { shop } });
       console.log(`[compliance] shop data erased for ${shop}`);

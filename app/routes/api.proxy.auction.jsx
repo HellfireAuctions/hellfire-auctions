@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { notifyOutbid } from "../notifications.server";
 import {
   MAX_ALLOWED_BID,
   bidIncrement,
@@ -211,6 +212,7 @@ export const action = async ({ request }) => {
         nextIncrement: bidIncrement(outcome.price),
         bidCount: updated.bidCount,
         leaderChanged: preBids.length > 0 && outcome.leaderId !== (preBids.slice().sort((a, b) => Number(b.maxBid) - Number(a.maxBid) || new Date(a.createdAt) - new Date(b.createdAt))[0]?.bidderId),
+        previousLeaderId: preBids.slice().sort((a, b) => Number(b.maxBid) - Number(a.maxBid) || new Date(a.createdAt) - new Date(b.createdAt))[0]?.bidderId || null,
       };
     },
     { timeout: 10000 },
@@ -235,5 +237,17 @@ export const action = async ({ request }) => {
   if (result.error) {
     return Response.json(result, { status: 409 });
   }
-  return Response.json(result);
+
+  // Outbid notice for whoever just lost the lead (runs after the bid is saved; never blocks it).
+  if (result.leaderChanged && result.previousLeaderId && result.previousLeaderId !== customerId) {
+    notifyOutbid({
+      shop,
+      auction,
+      outbidCustomerId: result.previousLeaderId,
+      currentBid: result.currentBid,
+    });
+  }
+
+  const { previousLeaderId: _hidden, ...publicResult } = result;
+  return Response.json(publicResult);
 };

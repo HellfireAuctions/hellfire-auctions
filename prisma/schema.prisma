@@ -63,3 +63,15 @@ model Bid {
   @@index([bidderId])
   @@unique([auctionId, bidderId])
 }
+
+model AuctionNotification {
+  id         String   @id @default(cuid())
+  auctionId  String
+  customerId String
+  type       String
+  key        String
+  sentAt     DateTime @default(now())
+
+  @@unique([auctionId, customerId, type, key])
+  @@index([auctionId])
+}

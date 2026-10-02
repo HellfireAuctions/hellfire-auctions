@@ -1,5 +1,6 @@
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
+import { sendEndingSoonReminders } from "./notifications.server.js";
 
 const INTERVAL_MS = 15_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -253,6 +254,12 @@ async function tick() {
     },
     take: 25,
   });
+
+  try {
+    await sendEndingSoonReminders();
+  } catch (error) {
+    console.error("[notify] reminder pass failed:", error?.message || error);
+  }
 
   for (const auction of due) {
     try {

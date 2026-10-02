@@ -6,7 +6,7 @@ embedded = true
 name = "Hellfire Auctions"
 
 [access_scopes]
-scopes = "write_products,write_publications,read_inventory,write_inventory,read_locations,write_draft_orders,write_app_proxy,read_customers"
+scopes = "write_products,write_publications,read_inventory,write_inventory,read_locations,write_draft_orders,write_app_proxy,read_customers,write_online_store_navigation"
 
 [webhooks]
 api_version = "2026-10"

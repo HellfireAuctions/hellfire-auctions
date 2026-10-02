@@ -352,6 +352,63 @@ async function ensureAuctionVariantAvailable(admin, productId) {
   }
 }
 
+
+const MY_AUCTIONS_URL = "/apps/hellfire-auctions/my-auctions";
+const MENU_ITEM_FIELDS = "id title type url resourceId tags";
+
+// Finds the store's main menu and whether it already links to My Auctions.
+async function getMainMenu(admin) {
+  const response = await admin.graphql(`#graphql
+    query MainMenu {
+      menus(first: 25) {
+        nodes {
+          id handle title
+          items { ${MENU_ITEM_FIELDS} items { ${MENU_ITEM_FIELDS} items { ${MENU_ITEM_FIELDS} } } }
+        }
+      }
+    }`);
+  const json = await response.json();
+  const menus = json?.data?.menus?.nodes || [];
+  const menu = menus.find((m) => m.handle === "main-menu") || menus[0] || null;
+  if (!menu) return { menu: null, hasLink: false };
+  const has = (items) => (items || []).some((i) => (i.url || "").includes(MY_AUCTIONS_URL) || has(i.items));
+  return { menu, hasLink: has(menu.items) };
+}
+
+// Rebuilds the item list exactly as it is (menuUpdate replaces all items), then adds ours at the end.
+function toMenuInput(items) {
+  return (items || []).map((i) => ({
+    id: i.id,
+    title: i.title,
+    type: i.type,
+    ...(i.url ? { url: i.url } : {}),
+    ...(i.resourceId ? { resourceId: i.resourceId } : {}),
+    ...(i.tags?.length ? { tags: i.tags } : {}),
+    items: toMenuInput(i.items),
+  }));
+}
+
+async function addMyAuctionsToMenu(admin) {
+  const { menu, hasLink } = await getMainMenu(admin);
+  if (!menu) return { error: "Your store doesn't have a navigation menu yet." };
+  if (hasLink) return { success: "\u201CMy Auctions\u201D is already in your store menu." };
+  const items = [...toMenuInput(menu.items), { title: "My Auctions", type: "HTTP", url: MY_AUCTIONS_URL, items: [] }];
+  const response = await admin.graphql(
+    `#graphql
+      mutation AddMyAuctions($id: ID!, $title: String!, $handle: String, $items: [MenuItemUpdateInput!]!) {
+        menuUpdate(id: $id, title: $title, handle: $handle, items: $items) {
+          menu { id }
+          userErrors { field message }
+        }
+      }`,
+    { variables: { id: menu.id, title: menu.title, handle: menu.handle, items } },
+  );
+  const json = await response.json();
+  const errors = json?.data?.menuUpdate?.userErrors || [];
+  if (errors.length) return { error: "Couldn't update your menu: " + errors.map((e) => e.message).join(", ") };
+  return { success: "Added \u201CMy Auctions\u201D to your store menu. Customers can now find every auction they've bid on." };
+}
+
 async function ensureLiveAuctionsCollection(admin) {
   const response = await admin.graphql(
     `#graphql
@@ -683,7 +740,15 @@ export const loader = async ({ request }) => {
 
   const storefrontActivationUrl = "https://" + session.shop + "/admin/themes/current/editor?context=apps&template=product&activateAppId=" + process.env.SHOPIFY_API_KEY + "/auction-runtime";
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone };
+  let showMenuBanner = false;
+  try {
+    const { menu, hasLink } = await getMainMenu(admin);
+    showMenuBanner = Boolean(menu) && !hasLink;
+  } catch (error) {
+    console.error("[admin] menu check skipped:", error?.message || error);
+  }
+
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner };
 };
 
 export const action = async ({ request }) => {
@@ -693,6 +758,14 @@ export const action = async ({ request }) => {
 
   const intent =
     formData.get("intent")?.toString() || "create";
+
+  if (intent === "add-menu-link") {
+    try {
+      return await addMyAuctionsToMenu(admin);
+    } catch (error) {
+      return { error: "Couldn't update your menu. Please open the app again and approve the new permission, then retry." };
+    }
+  }
 
   if (intent === "cancel" || intent === "relist") {
     const target = await prisma.auction.findFirst({
@@ -1592,7 +1665,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner } = useLoaderData();
   const actionData = useActionData();
 
   const [editingId, setEditingId] =
@@ -1606,6 +1679,19 @@ export default function AuctionsPage() {
 
   return (
     <s-page heading="Hellfire Auctions">
+      {showMenuBanner && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", background: "linear-gradient(90deg,#1a0000,#7a0000,#ff3b30)", color: "#fff", borderRadius: 14, padding: "16px 20px", marginBottom: 16 }}>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>{"\u{1F525}"} Add &ldquo;My Auctions&rdquo; to your store menu</div>
+            <div style={{ fontSize: 13, opacity: 0.9 }}>One click gives your customers a page showing every auction they&rsquo;re bidding on, winning or outbid.</div>
+          </div>
+          <Form method="post">
+            <input type="hidden" name="intent" value="add-menu-link" />
+            <button type="submit" style={{ border: 0, cursor: "pointer", fontWeight: 800, padding: "10px 18px", borderRadius: 10, background: "#ffd60a", color: "#1a0000" }}>Add it</button>
+          </Form>
+        </div>
+      )}
+
 
       {actionData?.error && (
         <s-banner tone="critical">

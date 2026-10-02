@@ -63,3 +63,15 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
   .hellfire-auction-stat { padding: 10px; }
   .hellfire-auction-bid-form button { padding: 12px 14px; font-size: 15px; }
 }
+
+/* skeleton */
+.hellfire-auction-skeleton .hf-sk {
+  min-height: 74px;
+  background: linear-gradient(90deg, rgba(255,255,255,.06) 25%, rgba(255,255,255,.14) 50%, rgba(255,255,255,.06) 75%);
+  background-size: 200% 100%;
+  animation: hf-shimmer 1.2s linear infinite;
+}
+.hellfire-auction-skeleton .hf-sk-line { min-height: 28px; border-radius: 8px; margin: 14px 0; width: 60%; }
+.hellfire-auction-skeleton .hf-sk-input { min-height: 50px; border-radius: 8px; }
+@keyframes hf-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .hellfire-auction-skeleton .hf-sk { animation: none; } }

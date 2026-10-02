@@ -65,6 +65,15 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) product-price {
 </style>
 {% endif %}
 
+{%- if hellfire_product_is_auction -%}
+<link rel="preload" href="{{ 'auction.js' | asset_url }}" as="script">
+<script>
+  window.__hellfireAuctionPrefetch = fetch("/apps/hellfire-auctions/auction?product_id=" + encodeURIComponent("gid://shopify/Product/{{ hellfire_runtime_product.id }}"), { credentials: "same-origin", headers: { Accept: "application/json" }, cache: "no-store" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .catch(function () { return null; });
+</script>
+{%- endif -%}
+
 <meta id="hellfire-auction-runtime"
   data-auction-product="{{ hellfire_product_is_auction }}"
   data-product-id="{{ hellfire_runtime_product.id | default: '' }}"

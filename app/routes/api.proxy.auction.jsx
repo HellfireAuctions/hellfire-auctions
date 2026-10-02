@@ -71,18 +71,6 @@ export const loader = async ({ request }) => {
   }
   const hasReserve = auction?.reservePrice != null;
 
-  console.log(
-    "[HELLFIRE AUCTION PROXY]",
-    JSON.stringify({
-      shop,
-      productId,
-      found: Boolean(auction),
-      auctionId: auction?.id ?? null,
-      auctionStatus: auction ? auctionState(auction) : null,
-      currentBid: auction?.currentBid ?? null,
-      bidCount: auction?.bidCount ?? null,
-    }),
-  );
 
   return Response.json({
     loggedInCustomerId,

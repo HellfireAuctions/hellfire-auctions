@@ -1,0 +1,17 @@
+<script type="application/json" id="hellfire-auction-cards-config">
+  {
+    "endpoint": "/apps/hellfire-auctions/auction-cards",
+    "currency": {{ shop.currency | json }},
+    "locale": {{ request.locale.iso_code | json }}
+  }
+</script>
+
+{% schema %}
+{
+  "name": "Hellfire Auction Cards",
+  "target": "body",
+  "javascript": "auction-cards.js",
+  "stylesheet": "auction-cards.css",
+  "settings": []
+}
+{% endschema %}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Dawn-style collection</title>
+<link rel="stylesheet" href="/assets/auction-cards.css"></head>
+<body>
+<header><nav><a href="/products/test-1">Menu link to auction</a></nav></header>
+<main>
+<section>
+<ul class="grid product-grid" id="grid">
+  <li class="grid__item" id="card-auction">
+    <div class="card-wrapper product-card-wrapper">
+      <div class="card card--standard">
+        <div class="card__inner"><div class="card__media"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div></div>
+        <div class="card__content">
+          <div class="card__information">
+            <h3 class="card__heading"><a href="/products/test-1" class="full-unstyled-link">Test 1</a></h3>
+            <div class="card-information"><div class="price"><div class="price__container"><span class="price-item">$0.00</span></div></div></div>
+          </div>
+          <div class="quick-add"><form action="/cart/add" method="post"><button name="add">Add to cart</button></form></div>
+        </div>
+      </div>
+    </div>
+  </li>
+  <li class="grid__item" id="card-normal">
+    <div class="card-wrapper product-card-wrapper">
+      <div class="card card--standard">
+        <div class="card__inner"><div class="card__media"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></div></div>
+        <div class="card__content">
+          <div class="card__information">
+            <h3 class="card__heading"><a href="/products/normal-shirt" class="full-unstyled-link">Normal shirt</a></h3>
+            <div class="card-information"><div class="price"><span class="price-item">$25.00</span></div></div>
+          </div>
+          <div class="quick-add"><form action="/cart/add" method="post"><button name="add">Add to cart</button></form></div>
+        </div>
+      </div>
+    </div>
+  </li>
+  <li class="grid__item" id="card-upcoming">
+    <div class="card"><a href="/products/upcoming-item"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></a>
+      <h3><a href="/products/upcoming-item?variant=123">Upcoming item</a></h3></div>
+  </li>
+</ul>
+</section>
+</main>
+<footer><a href="/products/test-1">Footer link</a></footer>
+<script type="application/json" id="hellfire-auction-cards-config">{"endpoint":"/apps/hellfire-auctions/auction-cards","currency":"USD","locale":"en"}</script>
+<script src="/assets/auction-cards.js" defer></script>
+</body></html>

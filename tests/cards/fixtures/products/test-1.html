@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Auction product page</title>
+<link rel="stylesheet" href="/assets/auction-cards.css"></head>
+<body>
+<main>
+  <section id="main-product">
+    <h1>Test 1</h1>
+    <a href="/products/test-1?variant=67584487194735">Variant link</a>
+    <div id="hellfire-auction-root">Full bidding interface here</div>
+  </section>
+  <section id="related">
+    <ul>
+      <li id="related-ended"><a href="/products/ended-item">Ended item</a><div class="price">$5.00</div></li>
+      <li id="related-self"><a href="/products/test-1">Test 1 again</a><div class="price">$0.00</div></li>
+    </ul>
+  </section>
+</main>
+<script type="application/json" id="hellfire-auction-cards-config">{"endpoint":"/apps/hellfire-auctions/auction-cards","currency":"USD","locale":"en"}</script>
+<script src="/assets/auction-cards.js" defer></script>
+</body></html>

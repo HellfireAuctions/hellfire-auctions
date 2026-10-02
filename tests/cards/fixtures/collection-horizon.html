@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Horizon-style collection</title>
+<link rel="stylesheet" href="/assets/auction-cards.css"></head>
+<body>
+<main>
+<div class="section-resource-list">
+  <ul class="product-grid">
+    <li class="product-grid__item" id="card-auction">
+      <product-card class="product-card" data-product-id="15556503502959">
+        <a class="product-card__link" href="/products/test-1?variant=67584487194735"><span class="visually-hidden">Test 1</span></a>
+        <div class="product-card__content">
+          <slideshow-component><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></slideshow-component>
+          <div class="group-block">
+            <a class="contents" href="/products/test-1"><p>Test 1</p></a>
+            <product-price><div class="price">$0.00</div></product-price>
+          </div>
+          <quick-add-component><button>Quick add</button></quick-add-component>
+        </div>
+      </product-card>
+    </li>
+    <li class="product-grid__item" id="card-normal">
+      <product-card class="product-card">
+        <a class="product-card__link" href="/products/normal-shirt"><span class="visually-hidden">Normal</span></a>
+        <div class="product-card__content">
+          <div class="group-block"><a href="/products/normal-shirt"><p>Normal shirt</p></a><product-price><div class="price">$25.00</div></product-price></div>
+        </div>
+      </product-card>
+    </li>
+  </ul>
+</div>
+<!-- Homepage carousel without a list: cards are siblings inside one slider div -->
+<div class="slider" id="slider">
+  <div class="slide" id="slide-ended"><a href="/products/ended-item"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></a><span class="money">$5.00</span></div>
+  <div class="slide" id="slide-normal"><a href="/products/normal-hat"><img alt="" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></a><span class="money">$9.00</span></div>
+</div>
+<div id="late-container"></div>
+</main>
+<script type="application/json" id="hellfire-auction-cards-config">{"endpoint":"/apps/hellfire-auctions/auction-cards","currency":"USD","locale":"en"}</script>
+<script src="/assets/auction-cards.js" defer></script>
+<script>
+  // Simulate infinite scroll / AJAX filtering adding a card after load.
+  setTimeout(function () {
+    document.getElementById("late-container").innerHTML =
+      '<div class="card" id="late-card"><a href="/products/upcoming-item"><img alt=""></a><div class="price">$1.00</div></div>';
+  }, 1500);
+</script>
+</body></html>

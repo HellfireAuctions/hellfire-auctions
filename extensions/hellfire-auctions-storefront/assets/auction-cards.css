@@ -1,0 +1,55 @@
+/* Hellfire Auctions - product card badges. Scoped to .hellfire-card-badge only; never targets theme elements. */
+.hellfire-card-badge {
+  display: block;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 2;
+  max-width: 100%;
+  margin: 0.5rem 0 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  background: #151515;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  text-align: left;
+  text-decoration: none;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+}
+
+.hellfire-card-badge:hover,
+.hellfire-card-badge:focus-visible {
+  background: #262626;
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.hellfire-card-badge > span {
+  display: block;
+}
+
+.hellfire-card-badge__state {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #ff6a3d;
+}
+
+.hellfire-card-badge[data-state="upcoming"] .hellfire-card-badge__state {
+  color: #f5c542;
+}
+
+.hellfire-card-badge[data-state="ended"] .hellfire-card-badge__state {
+  color: #a8a8a8;
+}
+
+.hellfire-card-badge__amount {
+  font-weight: 700;
+}
+
+.hellfire-card-badge__meta {
+  opacity: 0.85;
+}

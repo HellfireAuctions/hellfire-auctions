@@ -43,6 +43,10 @@ api_version = "2026-10"
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
 
+  [[webhooks.subscriptions]]
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+  uri = "/webhooks/compliance"
+
 [auth]
 redirect_urls = [ "https://hellfire-auctions.onrender.com/auth/callback" ]
 

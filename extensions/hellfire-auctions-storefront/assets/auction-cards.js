@@ -100,7 +100,7 @@
     const state = stateOf(auction, now);
     const label =
       state === "LIVE" ? "Live auction" : state === "UPCOMING" ? "Upcoming auction" : "Auction ended";
-    const amountLabel = auction.hasBids ? (state === "ENDED" ? "Winning bid" : "Current bid") : "Starting bid";
+    const amountLabel = auction.hasBids ? (state === "ENDED" ? "Winning Bid" : "Current Bid") : "Starting Bid";
     let timing = "";
     if (state === "LIVE") timing = `${formatRemaining(Date.parse(auction.endsAt) - now)} left`;
     if (state === "UPCOMING") timing = `Starts in ${formatRemaining(Date.parse(auction.startsAt) - now)}`;
@@ -139,7 +139,7 @@
 
   // The theme's own price on an auction card (usually $0.00) is misleading, so it is hidden -
   // but only small, price-like elements inside cards that link to an auction product.
-  const PRICE_SELECTOR = '[class*="price"], product-price, [data-price], [data-product-price]';
+  const PRICE_SELECTOR = '[class*="price"], .money, product-price, [data-price], [data-product-price]';
   function hideThemePrices(root) {
     const candidates = [...root.querySelectorAll(PRICE_SELECTOR)].filter(
       (el) => !el.closest(`[${BADGE_ATTR}]`),

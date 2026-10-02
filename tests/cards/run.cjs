@@ -111,7 +111,7 @@ function check(name, condition) {
   check("Dawn: 2 badges (live auction + upcoming), none for normal product", count(dawn, BADGE) === 2);
   check("Dawn: auction card has badge", segment(dawn, "card-auction").includes(BADGE));
   check("Dawn: badge sits right after the theme price", /<\/span><\/div><\/div><a data-hellfire-card-badge/.test(segment(dawn, "card-auction")));
-  check("Dawn: shows current bid $325.00, 21 bids, time left", /Current bid.*\$325\.00.*21 bids.*left/s.test(segment(dawn, "card-auction")));
+  check("Dawn: shows current bid $325.00, 21 bids, time left", /Current Bid.*\$325\.00.*21 bids.*left/s.test(segment(dawn, "card-auction")));
   check("Dawn: countdown shows days, hours, minutes and seconds", /\d+d \d+h \d{2}m \d{2}s left/.test(segment(dawn, "card-auction")));
   check("Dawn: upcoming countdown shows minutes and seconds", /Starts in \d+h \d{2}m \d{2}s/.test(segment(dawn, "card-upcoming")));
   check("Dawn: normal product card untouched", !segment(dawn, "card-normal").includes(BADGE));
@@ -126,7 +126,9 @@ function check(name, condition) {
   check("Horizon: one badge on the auction card even with 2 links", count(segment(horizon, "card-auction"), BADGE) === 1);
   check("Horizon: badge placed after <product-price>", /<\/product-price><a data-hellfire-card-badge/.test(horizon));
   check("Horizon: normal card untouched", !segment(horizon, "card-normal").includes(BADGE));
-  check("Horizon: carousel ended card shows Auction ended + Winning bid", /Auction ended[\s\S]*Winning bid/.test(segment(horizon, "slide-ended")));
+  check("Horizon: carousel ended card shows Auction ended + Winning bid", /Auction ended[\s\S]*Winning Bid/.test(segment(horizon, "slide-ended")));
+  check("Horizon: older-theme .money price hidden on ended auction slide", /<span class="money" data-hellfire-price-hidden/.test(horizon));
+  check("Horizon: .money price NOT hidden on normal slide", /id="slide-normal">[^]*?<span class="money">\$9\.00/.test(horizon));
   check("Horizon: carousel normal slide untouched", !((horizon.match(/id="slide-normal">([\s\S]*?)<\/div>/) || [])[1] || "x").includes(BADGE) && /id="slide-normal"/.test(horizon));
   check("Horizon: card added later (infinite scroll) gets a badge", /id="late-card"[\s\S]*data-hellfire-card-badge/.test(horizon));
 

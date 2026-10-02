@@ -35,7 +35,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #ff6a3d;
+  color: #ffa31a;
 }
 
 .hellfire-card-badge[data-state="upcoming"] .hellfire-card-badge__state {
@@ -50,12 +50,18 @@
   color: #ff3b30;
 }
 
+.hellfire-card-badge__amount-label {
+  color: #ffd60a;
+  font-weight: 600;
+}
+
 .hellfire-card-badge__amount {
   font-weight: 700;
 }
 
 .hellfire-card-badge__meta {
-  opacity: 0.85;
+  color: #ffffff;
+  opacity: 1;
 }
 
 /* Theme price on auction cards (set by auction-cards.js only on auction cards). */

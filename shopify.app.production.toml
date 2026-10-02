@@ -1,10 +1,36 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
 client_id = "eb49cba90749e254b957cd1d618e6d38"
-application_url = "https://publishers-applications-tolerance-regular.trycloudflare.com"
+application_url = "https://hellfire-auctions.onrender.com"
 embedded = true
 name = "Hellfire Auctions"
 
 [access_scopes]
-scopes = "write_metaobject_definitions,write_metaobjects,write_products,write_publications,write_app_proxy"
+scopes = "write_metaobject_definitions,write_metaobjects,write_products,write_publications,read_inventory,write_inventory,read_locations,write_draft_orders,write_app_proxy"
+
+[product.metafields.app.demo_info]
+type = "single_line_text_field"
+name = "Demo Source Info"
+description = "Tracks products created by the Shopify app template for development"
+
+  [product.metafields.app.demo_info.access]
+  admin = "merchant_read_write"
+
+[metaobjects.app.example]
+name = "Example"
+description = "An example metaobject definition created by this template"
+
+  [metaobjects.app.example.access]
+  admin = "merchant_read_write"
+
+[metaobjects.app.example.fields.title]
+name = "Title"
+type = "single_line_text_field"
+required = true
+
+[metaobjects.app.example.fields.description]
+name = "Description"
+type = "multi_line_text_field"
 
 [webhooks]
 api_version = "2026-10"
@@ -18,10 +44,10 @@ api_version = "2026-10"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://publishers-applications-tolerance-regular.trycloudflare.com/auth/callback" ]
+redirect_urls = [ "https://hellfire-auctions.onrender.com/api/auth" ]
 
 [build]
-automatically_update_urls_on_dev = false
+automatically_update_urls_on_dev = true
 
 [app_proxy]
 url = "/api/proxy"

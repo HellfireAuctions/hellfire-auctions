@@ -1,5 +1,6 @@
 import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
+import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
 
 // Customer-facing "My Auctions" page at /apps/hellfire-auctions/my-auctions.
 // Returned as Liquid, so Shopify renders it inside the store's own theme (header, footer, fonts).
@@ -90,6 +91,7 @@ export const loader = async ({ request }) => {
   for (const b of allBids) if (!leader.has(b.auctionId)) leader.set(b.auctionId, b.bidderId);
   const myMax = new Map(myBids.map((b) => [b.auctionId, Number(b.maxBid)]));
   const links = await productLinks(shop, [...new Set(auctions.map((a) => a.productId))]);
+  const plan = await getShopPlan(shop);
 
   const now = new Date();
   const rows = auctions.map((a) => {
@@ -102,28 +104,39 @@ export const loader = async ({ request }) => {
   // Live auctions first (soonest ending), then ended ones.
   rows.sort((x, y) => Number(x.ended) - Number(y.ended));
 
+  // Each card = photo + title + the same black auction box shoppers see on product cards.
   const cards = rows
     .map(({ a, ended, key, link }) => {
-      const s = STATUS[key];
+      const upcoming = key === "UPCOMING";
+      const stateText = upcoming ? "Upcoming auction" : ended ? "Auction ended" : "Live auction";
+      const stateKey = upcoming ? "upcoming" : ended ? "ended" : "live";
+      const hot = !ended && !upcoming && plan.hotBadge && a.bidCount >= HOT_BID_THRESHOLD;
+      const mine = key === "WINNING" ? "winning" : key === "OUTBID" ? "outbid" : key === "WON" ? "won" : "";
+      const mineText = { winning: "\u2714 WINNING", outbid: "\u2716 OUTBID", won: "\u{1F3C6} WON" }[mine] || "";
+      const amountLabel = a.bidCount > 0 ? (ended ? "Winning Bid" : "Current Bid") : "Starting Bid";
+      const amount = a.bidCount > 0 ? a.currentBid : a.startingBid;
+      const bids = `${a.bidCount} bid${a.bidCount === 1 ? "" : "s"}`;
+      const timing = ended
+        ? ""
+        : ` &middot; <span data-hf-ends="${(upcoming ? a.startsAt : a.endsAt).toISOString()}" data-hf-prefix="${upcoming ? "Starts in " : ""}" data-hf-suffix="${upcoming ? "" : " left"}"></span>`;
       const img = a.imageUrl
         ? `<img src="${esc(a.imageUrl)}" alt="${esc(a.title)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block">`
         : `<div style="aspect-ratio:1/1;background:linear-gradient(135deg,#3d0000,#ff3b30)"></div>`;
       const open = link ? `<a href="${esc(link)}" style="color:inherit;text-decoration:none;display:block">` : "<div>";
       const close = link ? "</a>" : "</div>";
-      const action =
+      const bidAgain =
         key === "OUTBID" && link
-          ? `<a href="${esc(link)}" style="display:block;text-align:center;margin-top:10px;background:#ff3b30;color:#fff;padding:10px;border-radius:8px;text-decoration:none;font-weight:800">Bid again &rarr;</a>`
+          ? `<a href="${esc(link)}" style="display:block;text-align:center;margin-top:10px;background:#ff3b30;color:#fff;padding:11px;border-radius:8px;text-decoration:none;font-weight:800">Bid again &rarr;</a>`
           : "";
-      return `<div style="border:1px solid rgba(0,0,0,.12);border-radius:14px;overflow:hidden;background:#fff;color:#151515;display:flex;flex-direction:column">
-        ${open}${img}${close}
-        <div style="padding:12px 14px 14px">
-          <div style="display:inline-block;background:${s.bg};color:#fff;font-weight:800;font-size:12px;letter-spacing:.06em;padding:4px 10px;border-radius:999px">${s.text}</div>
-          <div style="font-weight:700;margin:8px 0 4px">${open}${esc(a.title)}${close}</div>
-          <div style="font-size:20px;font-weight:800;color:#d72c0d">${money(a.currentBid)} <span style="font-size:12px;color:#616161;font-weight:500">${ended ? "final" : "current"} &middot; ${a.bidCount} bid${a.bidCount === 1 ? "" : "s"}</span></div>
-          <div style="font-size:13px;color:#616161">Your maximum: ${money(myMax.get(a.id))}</div>
-          <div style="font-size:13px;color:#303030;margin-top:4px" data-hf-ends="${a.endsAt.toISOString()}">${ended ? "Auction ended" : ""}</div>
-          ${action}
+      return `<div>
+        ${open}${img}<div style="font-weight:700;margin:10px 0 0">${esc(a.title)}</div>${close}
+        <div class="hellfire-card-badge" data-state="${stateKey}" data-hot="${hot}">
+          <span class="hellfire-card-badge__top"><span class="hellfire-card-badge__state">${stateText}</span><span class="hellfire-card-badge__hot">${hot ? "\u{1F525} HOT" : ""}</span></span>
+          <span class="hellfire-card-badge__mine" data-mine="${mine}">${mineText}</span>
+          <span class="hellfire-card-badge__line"><span class="hellfire-card-badge__amount-label">${amountLabel}</span> <strong class="hellfire-card-badge__amount">${money(amount)}</strong></span>
+          <span class="hellfire-card-badge__meta">${bids}${timing}</span>
         </div>
+        ${bidAgain}
       </div>`;
     })
     .join("");
@@ -137,9 +150,12 @@ export const loader = async ({ request }) => {
       function tick() {
         document.querySelectorAll("[data-hf-ends]").forEach(function (el) {
           var ms = Date.parse(el.getAttribute("data-hf-ends")) - Date.now();
-          if (ms <= 0) { el.textContent = "Auction ended"; return; }
+          if (ms <= 0) { el.textContent = "ended"; return; }
           var s = Math.floor(ms / 1000), d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-          el.textContent = (d ? d + "d " : "") + h + "h " + String(m).padStart(2, "0") + "m " + String(sec).padStart(2, "0") + "s left";
+          var txt = d ? d + "d " + h + "h " + String(m).padStart(2, "0") + "m " + String(sec).padStart(2, "0") + "s"
+            : h ? h + "h " + String(m).padStart(2, "0") + "m " + String(sec).padStart(2, "0") + "s"
+            : m ? m + "m " + String(sec).padStart(2, "0") + "s" : sec + "s";
+          el.textContent = (el.getAttribute("data-hf-prefix") || "") + txt + (el.getAttribute("data-hf-suffix") || "");
         });
       }
       tick(); setInterval(tick, 1000);

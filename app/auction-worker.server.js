@@ -2,7 +2,7 @@ import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { sendEndingSoonReminders, notifyMerchantEnded, alertOwner } from "./notifications.server.js";
 
-const INTERVAL_MS = 15_000;
+const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
 const STALE_SETTLING_MS = 10 * 60_000; // recover a settlement that crashed mid-way
 const GIVE_UP_AFTER_MS = 24 * 60 * 60_000; // stop retrying a day after the auction ended
@@ -283,15 +283,52 @@ async function tick() {
   }
 }
 
+const MIN_SLEEP_MS = 5_000;
+const MAX_SLEEP_MS = 30 * 60_000; // safety net: never sleep longer than 30 minutes
+let workerTimer = null;
+
+// Works out when the next start, end, 1-hour reminder or retry is due.
+async function nextDelayMs() {
+  const now = new Date();
+  const hourAhead = new Date(now.getTime() + ENDING_SOON_WINDOW_MS);
+  const [nextStart, nextEnd, nextReminder, retrying, inLastHour] = await Promise.all([
+    prisma.auction.findFirst({ where: { startsAt: { gt: now } }, orderBy: { startsAt: "asc" }, select: { startsAt: true } }),
+    prisma.auction.findFirst({ where: { endsAt: { gt: now } }, orderBy: { endsAt: "asc" }, select: { endsAt: true } }),
+    prisma.auction.findFirst({ where: { endsAt: { gt: hourAhead } }, orderBy: { endsAt: "asc" }, select: { endsAt: true } }),
+    prisma.auction.count({ where: { status: { in: ["SETTLEMENT_RETRY", "SETTLING"] } } }),
+    prisma.auction.count({ where: { endsAt: { gt: now, lte: hourAhead } } }),
+  ]);
+  const waits = [MAX_SLEEP_MS];
+  if (nextStart) waits.push(nextStart.startsAt.getTime() - now.getTime() + 1000);
+  if (nextEnd) waits.push(nextEnd.endsAt.getTime() - now.getTime() + 1000);
+  if (nextReminder) waits.push(nextReminder.endsAt.getTime() - ENDING_SOON_WINDOW_MS - now.getTime() + 1000);
+  if (retrying) waits.push(RETRY_AFTER_MS + 1000);
+  if (inLastHour) waits.push(60_000); // last hour: check each minute so new bidders get their reminder
+  return Math.max(MIN_SLEEP_MS, Math.min(...waits));
+}
+
+function schedule(ms) {
+  clearTimeout(workerTimer);
+  workerTimer = setTimeout(runScheduledTick, ms);
+  globalThis.__HELLFIRE_AUCTION_WORKER__ = workerTimer;
+}
+
 async function runScheduledTick() {
+  let delay = 60_000;
   try {
     await tick();
+    delay = await nextDelayMs();
   } catch (error) {
     console.error("[hellfire-auctions] scheduled tick failed:", error);
     alertOwner("worker-tick", "The auction worker hit an error", [String(error?.message || error).slice(0, 300), "Auctions may not end or settle until this is fixed."]);
   } finally {
-    globalThis.__HELLFIRE_AUCTION_WORKER__ = setTimeout(runScheduledTick, INTERVAL_MS);
+    schedule(delay);
   }
+}
+
+// Called after the merchant creates, relists or cancels an auction.
+export function wakeWorker() {
+  schedule(1000);
 }
 
 if (!globalThis.__HELLFIRE_AUCTION_WORKER__) {

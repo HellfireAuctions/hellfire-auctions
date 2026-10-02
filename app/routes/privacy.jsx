@@ -57,7 +57,8 @@ export default function Privacy() {
       <p>We share information only with service providers needed to run the App:</p>
       <ul>
         <li><strong>Shopify</strong> &mdash; the platform the App runs on, including billing.</li>
-        <li><strong>Render</strong> &mdash; hosts the App&rsquo;s servers and database.</li>
+        <li><strong>Render</strong> &mdash; hosts the App&rsquo;s servers.</li>
+        <li><strong>Neon</strong> &mdash; hosts the App&rsquo;s database, encrypted at rest and in transit.</li>
         <li><strong>Resend</strong> &mdash; delivers auction emails to bidders.</li>
       </ul>
       <p>We may also disclose information if required by law.</p>

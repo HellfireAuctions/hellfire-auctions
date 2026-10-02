@@ -4,6 +4,7 @@ import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { canCreateAuction } from "../plans.server";
+import { wakeWorker } from "../auction-worker.server";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -751,7 +752,7 @@ export const loader = async ({ request }) => {
   return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner };
 };
 
-export const action = async ({ request }) => {
+const actionImpl = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const timezone = await shopTimezone(admin);
@@ -1859,3 +1860,10 @@ export default function AuctionsPage() {
     </s-page>
   );
 }
+
+// Every admin change (create, edit, relist, cancel) wakes the auction engine to re-plan its schedule.
+export const action = async (args) => {
+  const result = await actionImpl(args);
+  wakeWorker();
+  return result;
+};

@@ -636,7 +636,7 @@ export const loader = async ({ request }) => {
     ? await prisma.bid.findMany({
         where: { auctionId: { in: ids } },
         orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
-        select: { auctionId: true, bidderId: true, maxBid: true },
+        select: { auctionId: true, bidderId: true },
       })
     : [];
   const leaders = new Map();
@@ -672,7 +672,6 @@ export const loader = async ({ request }) => {
             customerId: String(lead.bidderId),
             name: customer?.displayName || `Customer ${lead.bidderId}`,
             email: customer?.email || null,
-            maxBid: Number(lead.maxBid),
           }
         : null,
     };
@@ -1643,7 +1642,6 @@ export default function AuctionsPage() {
                             </a>
                           </div>
                           {auction.highBidder.email && <div style={{ color: "#616161", wordBreak: "break-all" }}>{auction.highBidder.email}</div>}
-                          <div style={{ color: "#616161" }}>Their max bid: ${auction.highBidder.maxBid.toFixed(2)}</div>
                         </>
                       ) : (
                         <span style={{ color: "#616161" }}>No bids yet</span>

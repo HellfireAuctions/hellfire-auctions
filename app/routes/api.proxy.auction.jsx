@@ -1,4 +1,4 @@
-﻿import { authenticate, apiVersion, sessionStorage } from "../shopify.server";
+import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 function normalizeProductId(value) {
@@ -28,74 +28,6 @@ function maskedBidder(customerId) {
   return "Bidder #" + String(hash % 10000).padStart(4, "0");
 }
 
-async function recoverMissingAuction(shop, productId) {
-  const sessions = await sessionStorage.findSessionsByShop(shop);
-  const offlineSession = sessions.find((item) => !item.isOnline && item.accessToken);
-
-  if (!offlineSession?.accessToken) return null;
-
-  const response = await fetch(`https://${shop}/admin/api/${apiVersion}/graphql.json`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Shopify-Access-Token": offlineSession.accessToken,
-    },
-    body: JSON.stringify({
-      query: `query RecoverAuctionProduct($id: ID!) {
-        product(id: $id) {
-          id
-          title
-          descriptionHtml
-          tags
-          featuredImage { url }
-          variants(first: 1) { nodes { price } }
-        }
-      }`,
-      variables: { id: productId },
-    }),
-  });
-
-  if (!response.ok) return null;
-
-  const json = await response.json();
-  const product = json?.data?.product;
-  if (!product || !product.tags?.includes("Hellfire Auction")) return null;
-
-  const startingBid = Number(product.variants?.nodes?.[0]?.price) > 0
-    ? Number(product.variants?.nodes?.[0]?.price)
-    : 1;
-
-  const startsAt = new Date("2026-09-27T18:20:00.000Z");
-  const endsAt = new Date("2026-10-04T18:20:00.000Z");
-
-  const restored = await prisma.auction.create({
-    data: {
-      shop,
-      productId,
-      title: "Test",
-      description: product.descriptionHtml || "Testing Only",
-      imageUrl: product.featuredImage?.url || null,
-      startingBid,
-      currentBid: 3,
-      bidCount: 1,
-      startsAt,
-      endsAt,
-      status: "LIVE",
-    },
-  });
-
-  await prisma.bid.create({
-    data: {
-      auctionId: restored.id,
-      bidderId: "31238385893487",
-      amount: 3,
-      maxBid: 3,
-    },
-  });
-
-  return restored;
-}
-
 export const loader = async ({ request }) => {
   const { session } =
     await authenticate.public.appProxy(request);
@@ -120,7 +52,7 @@ export const loader = async ({ request }) => {
     );
   }
 
-  let auction =
+  const auction =
     await prisma.auction.findFirst({
       where: {
         shop,
@@ -139,24 +71,6 @@ export const loader = async ({ request }) => {
         },
       },
     });
-
-  if (!auction) {
-    try {
-      auction = await recoverMissingAuction(shop, productId);
-    } catch (error) {
-      console.error("[HELLFIRE AUCTION RECOVERY]", error);
-    }
-  }
-
-  console.log("[HELLFIRE AUCTION PROXY]", JSON.stringify({
-    shop,
-    productId,
-    found: Boolean(auction),
-    auctionId: auction?.id || null,
-    auctionStatus: auction ? auctionState(auction) : null,
-    currentBid: auction?.currentBid ?? null,
-    bidCount: auction?.bidCount ?? null,
-  }));
 
   const publicBids = auction?.bids || [];
   const loggedInCustomerId = url.searchParams.get("logged_in_customer_id") || null;

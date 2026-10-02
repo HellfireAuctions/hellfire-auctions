@@ -645,20 +645,24 @@ export const loader = async ({ request }) => {
   const customerIds = [...new Set([...leaders.values()].map((b) => String(b.bidderId)))];
   const customers = new Map();
   if (customerIds.length) {
-    try {
-      const response = await admin.graphql(
-        `#graphql
-          query HighBidders($ids: [ID!]!) {
-            nodes(ids: $ids) { ... on Customer { id displayName email } }
-          }`,
-        { variables: { ids: customerIds.map((id) => `gid://shopify/Customer/${id}`) } },
-      );
-      const json = await response.json();
-      for (const node of json?.data?.nodes || []) {
-        if (node?.id) customers.set(node.id.split("/").pop(), node);
+    const gids = customerIds.map((id) => `gid://shopify/Customer/${id}`);
+    for (const fields of ["id displayName email", "id email"]) {
+      try {
+        const response = await admin.graphql(
+          `#graphql
+            query HighBidders($ids: [ID!]!) {
+              nodes(ids: $ids) { ... on Customer { ${fields} } }
+            }`,
+          { variables: { ids: gids } },
+        );
+        const json = await response.json();
+        for (const node of json?.data?.nodes || []) {
+          if (node?.id) customers.set(node.id.split("/").pop(), node);
+        }
+        break;
+      } catch (error) {
+        console.error(`[admin] high bidder lookup (${fields}) failed:`, error?.message || error);
       }
-    } catch (error) {
-      console.error("[admin] high bidder lookup failed:", error?.message || error);
     }
   }
 
@@ -670,7 +674,7 @@ export const loader = async ({ request }) => {
       highBidder: lead
         ? {
             customerId: String(lead.bidderId),
-            name: customer?.displayName || `Customer ${lead.bidderId}`,
+            name: customer?.displayName || customer?.email || `Customer ${lead.bidderId}`,
             email: customer?.email || null,
           }
         : null,

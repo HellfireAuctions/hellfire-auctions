@@ -45,7 +45,7 @@ async function lookup(shop, customerId, productId) {
   const response = await admin.graphql(
     `#graphql
       query NotifyLookup($customer: ID!, $product: ID!) {
-        customer(id: $customer) { email firstName }
+        customer(id: $customer) { email }
         product(id: $product) { title onlineStoreUrl }
         shop { name contactEmail ianaTimezone }
       }
@@ -64,6 +64,12 @@ async function lookup(shop, customerId, productId) {
 }
 
 // Returns true only the first time this exact notice is recorded.
+async function releaseNotice({ auctionId, customerId, type, key }) {
+  try {
+    await prisma.auctionNotification.deleteMany({ where: { auctionId, customerId: String(customerId), type, key } });
+  } catch {}
+}
+
 async function claimNotice({ auctionId, customerId, type, key }) {
   try {
     await prisma.auctionNotification.create({
@@ -126,7 +132,7 @@ export async function notifyOutbid({ shop, auction, outbidCustomerId, currentBid
       subject: `You've been outbid on ${title}`,
       heading: "You've been outbid",
       lines: [
-        `Hi ${data?.customer?.firstName || "there"},`,
+        "Hi there,",
         `Someone placed a higher bid on "${title}". The current bid is now ${money(currentBid)}.`,
         `The auction ends ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}.`,
       ],
@@ -137,6 +143,7 @@ export async function notifyOutbid({ shop, auction, outbidCustomerId, currentBid
     });
     console.log("[notify] outbid email sent", JSON.stringify({ auctionId: auction.id, customerId: outbidCustomerId }));
   } catch (error) {
+    await releaseNotice({ auctionId: auction.id, customerId: outbidCustomerId, type: "OUTBID", key: String(Math.floor(Date.now() / OUTBID_WINDOW_MS)) });
     console.error("[notify] outbid email failed:", error?.message || error);
   }
 }
@@ -170,7 +177,7 @@ export async function sendEndingSoonReminders() {
           subject: `1 hour left: ${title}`,
           heading: "Less than 1 hour left",
           lines: [
-            `Hi ${data?.customer?.firstName || "there"},`,
+            "Hi there,",
             `The auction for "${title}" ends at ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}, in under an hour. The current bid is ${money(auction.currentBid)}.`,
             winning
               ? "You're currently the high bidder. Keep watching in case someone outbids you."
@@ -183,6 +190,7 @@ export async function sendEndingSoonReminders() {
         });
         console.log("[notify] 1-hour reminder sent", JSON.stringify({ auctionId: auction.id, customerId: bid.bidderId }));
       } catch (error) {
+        await releaseNotice({ auctionId: auction.id, customerId: bid.bidderId, type: "ENDING_SOON", key: "1h" });
         console.error("[notify] 1-hour reminder failed:", error?.message || error);
       }
     }
@@ -211,7 +219,7 @@ export async function notifyMerchantEnded({ auction, winnerId, reserveMet }) {
         query EndedLookup($product: ID!, $customer: ID!, $hasWinner: Boolean!) {
           shop { name email contactEmail ianaTimezone }
           product(id: $product) { title }
-          customer(id: $customer) @include(if: $hasWinner) { displayName email }
+          customer(id: $customer) @include(if: $hasWinner) { email }
         }`,
       {
         variables: {
@@ -228,7 +236,7 @@ export async function notifyMerchantEnded({ auction, winnerId, reserveMet }) {
     const lines = winnerId
       ? [
           `"${title}" sold for ${money(auction.currentBid)} with ${auction.bidCount} bid${auction.bidCount === 1 ? "" : "s"}.`,
-          `Winner: ${data?.customer?.displayName || "Customer " + winnerId}${data?.customer?.email ? " (" + data.customer.email + ")" : ""}.`,
+          `Winner: ${data?.customer?.email || "Customer " + winnerId}.`,
           "The winner has been sent a Shopify invoice automatically. You'll see the order once they pay.",
         ]
       : [
@@ -246,6 +254,7 @@ export async function notifyMerchantEnded({ auction, winnerId, reserveMet }) {
     });
     console.log("[notify] merchant ended email sent", JSON.stringify({ auctionId: auction.id, sold: Boolean(winnerId) }));
   } catch (error) {
+    await releaseNotice({ auctionId: auction.id, customerId: "merchant", type: "MERCHANT_ENDED", key: "1" });
     console.error("[notify] merchant ended email failed:", error?.message || error);
   }
 }

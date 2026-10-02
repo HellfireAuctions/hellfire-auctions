@@ -172,7 +172,7 @@
       try {
         const handle = handleFromHref(link.getAttribute("href"));
         if (!handle || handle === currentPageHandle || !auctions.has(handle)) continue;
-        if (link.closest("#hellfire-auction-root, form[action*='/cart'], header, nav, footer")) continue;
+        if (link.closest("#hellfire-auction-root, [data-hellfire-no-badges], form[action*='/cart'], header, nav, footer")) continue;
         const root = findCardRoot(link, handle);
         if (!root || root.querySelector(`[${BADGE_ATTR}]`)) continue;
         const badge = createBadge(handle, link.href);
@@ -229,6 +229,7 @@
   });
 
   function start() {
+    if (window.location.pathname.indexOf("/apps/hellfire-auctions/my-auctions") !== -1) return;
     load();
     observer.observe(document.body, { childList: true, subtree: true });
     setInterval(tick, 1000);

@@ -69,7 +69,7 @@
   display: none !important;
 }
 
-.hellfire-card-badge__top {
+.hellfire-card-badge > .hellfire-card-badge__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -78,8 +78,9 @@
   row-gap: 6px;
 }
 
-.hellfire-card-badge__hot {
+.hellfire-card-badge__top > .hellfire-card-badge__hot {
   margin-left: auto;
+  flex: 0 0 auto;
 }
 
 .hellfire-card-badge__mine:empty {
@@ -123,8 +124,8 @@
 }
 
 @keyframes hellfire-hot-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 122, 24, 0.7); }
-  50% { box-shadow: 0 0 10px 2px rgba(255, 122, 24, 0.9); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 122, 24, 0.6); }
+  50% { box-shadow: 0 0 6px 1px rgba(255, 122, 24, 0.85); }
 }
 
 @media (prefers-reduced-motion: reduce) {

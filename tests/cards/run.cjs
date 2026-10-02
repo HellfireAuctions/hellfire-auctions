@@ -25,7 +25,7 @@ function mockData() {
   return {
     now: new Date().toISOString(),
     auctions: [
-      { handle: "test-1", hasBids: true, amount: 325, bidCount: 21, startsAt: iso(-5 * 24 * H), endsAt: iso(48 * H), status: "LIVE" },
+      { handle: "test-1", hasBids: true, amount: 325, bidCount: 21, hot: true, myStatus: "WINNING", startsAt: iso(-5 * 24 * H), endsAt: iso(48 * H), status: "LIVE" },
       { handle: "upcoming-item", hasBids: false, amount: 10, bidCount: 0, startsAt: iso(3 * H), endsAt: iso(5 * 24 * H), status: "UPCOMING" },
       { handle: "ended-item", hasBids: true, amount: 40, bidCount: 3, startsAt: iso(-5 * 24 * H), endsAt: iso(-1 * H), status: "ENDED" },
     ],
@@ -121,6 +121,8 @@ function check(name, condition) {
 
   check("Dawn: theme price hidden on the auction card", /<div class="price" data-hellfire-price-hidden/.test(segment(dawn, "card-auction")));
   check("Dawn: theme price NOT hidden on the normal card", !segment(dawn, "card-normal").includes("data-hellfire-price-hidden"));
+
+  check("CSS: top row rule wins over the generic span rule (top row rule wins)", fs.readFileSync(path.join(ASSETS, "auction-cards.css"), "utf8").includes(".hellfire-card-badge > .hellfire-card-badge__top"));
 
   const horizon = await dumpDom(`${base}/collections/horizon`);
   check("Horizon: one badge on the auction card even with 2 links", count(segment(horizon, "card-auction"), BADGE) === 1);

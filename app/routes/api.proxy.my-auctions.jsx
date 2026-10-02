@@ -55,7 +55,7 @@ export const loader = async ({ request }) => {
   const shop = session?.shop || url.searchParams.get("shop");
   const customerId = url.searchParams.get("logged_in_customer_id");
 
-  const header = `<div style="max-width:1100px;margin:0 auto;padding:32px 20px 60px">
+  const header = `<div data-hellfire-no-badges style="max-width:1100px;margin:0 auto;padding:32px 20px 60px">
     <h1 style="margin:0 0 6px">My Auctions</h1>`;
 
   if (!customerId) {

@@ -32,6 +32,18 @@ async function shopTimezone(admin) {
   return DEFAULT_TZ;
 }
 
+// The store's own name (Settings > General), used as the product vendor.
+async function shopDisplayName(admin) {
+  try {
+    const response = await admin.graphql(`#graphql
+      query ShopName { shop { name } }`);
+    const json = await response.json();
+    return json?.data?.shop?.name || "Auction";
+  } catch {
+    return "Auction";
+  }
+}
+
 function easternOffset(date, tz = DEFAULT_TZ) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
@@ -603,6 +615,7 @@ export const loader = async ({ request }) => {
     select: {
       id: true,
       title: true,
+      description: true,
       imageUrl: true,
       startingBid: true,
       currentBid: true,
@@ -729,32 +742,7 @@ export const action = async ({ request }) => {
       };
     }
 
-    /*
-     * Fairness: once anyone has bid, the prices and schedule are locked.
-     * Title, description and image can still be edited.
-     */
-    const existingBidCount = await prisma.bid.count({
-      where: { auctionId },
-    });
-
-    if (existingBidCount > 0) {
-      const locked = [];
-      const oldReserve =
-        existingAuction.reservePrice == null ? null : Number(existingAuction.reservePrice);
-      const newReserve =
-        reservePrice !== null && Number.isFinite(reservePrice) ? reservePrice : null;
-
-      if (Number(startingBid) !== Number(existingAuction.startingBid)) locked.push("starting bid");
-      if (newReserve !== oldReserve) locked.push("reserve price");
-      if (Math.abs(startsAt.getTime() - new Date(existingAuction.startsAt).getTime()) >= 60_000) locked.push("start time");
-      if (Math.abs(endsAt.getTime() - new Date(existingAuction.endsAt).getTime()) >= 60_000) locked.push("end time");
-
-      if (locked.length) {
-        return {
-          error: `This auction already has ${existingBidCount} bidder(s), so its ${locked.join(", ")} can't be changed. You can still edit the title, description and image.`,
-        };
-      }
-    }
+    // Price and schedule are locked once listed: they are never changed below.
 
     /*
      * Update the existing Shopify product.
@@ -915,19 +903,6 @@ export const action = async ({ request }) => {
           title,
           description: description || null,
           imageUrl,
-          startingBid,
-          currentBid:
-            bidCount === 0
-              ? startingBid
-              : undefined,
-          reservePrice:
-            reservePrice !== null &&
-            Number.isFinite(reservePrice)
-              ? reservePrice
-              : null,
-          startsAt,
-          endsAt,
-          status: startsAt > new Date() ? "UPCOMING" : (new Date() < endsAt ? "LIVE" : "ENDED"),
         },
       });
 
@@ -1000,7 +975,7 @@ export const action = async ({ request }) => {
             descriptionHtml: cleanDescription,
             status: "ACTIVE",
             productType: "Hellfire Auction",
-            vendor: "Hellfire Frags",
+            vendor: await shopDisplayName(admin),
             tags: [
               "Hellfire Auction",
               "Live Auction",
@@ -1207,7 +1182,7 @@ function AuctionForm({
         <s-text-field
           label="Auction Title"
           name="title"
-          placeholder="Example: Holy Grail Torch"
+          placeholder="Example: One-of-a-kind collectible"
           value={auction?.title || undefined}
           required
         />
@@ -1215,7 +1190,7 @@ function AuctionForm({
         <s-text-area
           label="Description"
           name="description"
-          placeholder="Describe the coral or item being auctioned..."
+          placeholder="Describe the item being auctioned..."
           value={auction?.description || undefined}
         />
 
@@ -1258,6 +1233,32 @@ function AuctionForm({
           </s-stack>
         </s-section>
 
+        {isEdit ? (
+          <s-section heading="Price and schedule (locked)">
+            <s-stack gap="small">
+              <s-text>Starting Bid: ${Number(auction.startingBid).toFixed(2)}</s-text>
+              <s-text>
+                Reserve Price:{" "}
+                {auction.reservePrice != null
+                  ? `$${Number(auction.reservePrice).toFixed(2)}`
+                  : "None"}
+              </s-text>
+              <s-text>Starts: {formatEastern(new Date(auction.startsAt), timezone)}</s-text>
+              <s-text>Ends: {formatEastern(new Date(auction.endsAt), timezone)}</s-text>
+              <s-text>
+                Once an auction is listed, its price and schedule can't be changed, so every bidder is treated exactly the same.
+              </s-text>
+            </s-stack>
+            <input type="hidden" name="startingBid" value={String(auction.startingBid)} />
+            <input type="hidden" name="reservePrice" value={auction.reservePrice != null ? String(auction.reservePrice) : ""} />
+            <input type="hidden" name="startsAtDate" value={startDate} />
+            <input type="hidden" name="startsAtHour" value={startHour} />
+            <input type="hidden" name="startsAtMinute" value={startMinute} />
+            <input type="hidden" name="startsAtAmPm" value={startAmPm} />
+            <input type="hidden" name="durationDays" value={duration} />
+          </s-section>
+        ) : (
+          <>
         <s-number-field
           label="Starting Bid"
           name="startingBid"
@@ -1444,6 +1445,8 @@ function AuctionForm({
 
           </s-stack>
         </s-section>
+          </>
+        )}
 
         <s-stack
           direction="inline"

@@ -48,6 +48,9 @@ model Auction {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   bids          Bid[]
+
+  @@index([shop, productId])
+  @@index([endsAt])
 }
 
 model Bid {
@@ -61,6 +64,7 @@ model Bid {
   auction     Auction  @relation(fields: [auctionId], references: [id], onDelete: Cascade)
   @@index([auctionId])
   @@index([bidderId])
+  @@index([auctionId, maxBid])
   @@unique([auctionId, bidderId])
 }
 

@@ -8,6 +8,23 @@ import {
   resolveProxyBids,
 } from "../bidding.server";
 
+// Shared 1-second cache: 100 viewers refreshing every 2s cost about the same as one.
+const auctionCache = new Map(); // "shop|productId" -> { at, auction }
+const CACHE_MS = 1000;
+async function getAuctionCached(shop, productId) {
+  const key = shop + "|" + productId;
+  const hit = auctionCache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.auction;
+  const auction = await getAuctionCached(shop, productId);
+  if (auctionCache.size > 2000) auctionCache.clear();
+  auctionCache.set(key, { at: Date.now(), auction });
+  return auction;
+}
+
+// Bid spam protection: one bid per customer per second.
+const lastBidAt = new Map();
+const BID_COOLDOWN_MS = 1000;
+
 function normalizeProductId(value) {
   if (!value) return null;
   return value.startsWith("gid://") ? value : `gid://shopify/Product/${value}`;
@@ -112,6 +129,13 @@ export const action = async ({ request }) => {
   if (!customerId) {
     return Response.json({ error: "Please sign in to place a bid." }, { status: 401 });
   }
+
+  const lastAt = lastBidAt.get(customerId) || 0;
+  if (Date.now() - lastAt < BID_COOLDOWN_MS) {
+    return Response.json({ error: "You're bidding too fast. Please wait a second and try again." }, { status: 429 });
+  }
+  if (lastBidAt.size > 10000) lastBidAt.clear();
+  lastBidAt.set(customerId, Date.now());
 
   const formData = await request.formData();
   const productId = normalizeProductId(
@@ -234,6 +258,9 @@ export const action = async ({ request }) => {
   if (result.error) {
     return Response.json(result, { status: 409 });
   }
+
+  // New bid: everyone sees it on their very next refresh.
+  auctionCache.delete(shop + "|" + productId);
 
   // Outbid notice for whoever just lost the lead (runs after the bid is saved; never blocks it).
   if (result.leaderChanged && result.previousLeaderId && result.previousLeaderId !== customerId) {

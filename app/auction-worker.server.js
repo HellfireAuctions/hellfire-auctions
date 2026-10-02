@@ -1,6 +1,6 @@
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, alertOwner } from "./notifications.server.js";
 
 const INTERVAL_MS = 15_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -274,6 +274,11 @@ async function tick() {
       console.log(`[hellfire-auctions] settled ${auction.id}`);
     } catch (error) {
       console.error(`[hellfire-auctions] failed to settle ${auction.id}:`, error);
+      alertOwner("settle-" + auction.id, "An auction could not be settled", [
+        `Auction "${auction.title}" (${auction.id}) in ${auction.shop} ended but the winner could not be invoiced yet.`,
+        `Error: ${String(error?.message || error).slice(0, 300)}`,
+        "The app retries automatically every 2 minutes for 24 hours.",
+      ]);
     }
   }
 }
@@ -283,6 +288,7 @@ async function runScheduledTick() {
     await tick();
   } catch (error) {
     console.error("[hellfire-auctions] scheduled tick failed:", error);
+    alertOwner("worker-tick", "The auction worker hit an error", [String(error?.message || error).slice(0, 300), "Auctions may not end or settle until this is fixed."]);
   } finally {
     globalThis.__HELLFIRE_AUCTION_WORKER__ = setTimeout(runScheduledTick, INTERVAL_MS);
   }

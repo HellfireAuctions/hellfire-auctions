@@ -264,3 +264,26 @@ export async function notifyMerchantEnded({ auction, winnerId, reserveMet }) {
     console.error("[notify] merchant ended email failed:", error?.message || error);
   }
 }
+
+// Emails the app owner when something important fails (at most once an hour per problem).
+const alertSentAt = new Map();
+export async function alertOwner(kind, subject, lines) {
+  try {
+    if (!notificationsEnabled()) return;
+    const last = alertSentAt.get(kind) || 0;
+    if (Date.now() - last < 60 * 60_000) return;
+    alertSentAt.set(kind, Date.now());
+    await sendEmail({
+      to: process.env.ALERT_EMAIL || "support@hellfireauctions.com",
+      subject: "[Hellfire Auctions alert] " + subject,
+      heading: subject,
+      lines,
+      buttonLabel: "Open Render logs",
+      buttonUrl: "https://dashboard.render.com/web/srv-dauorhrncjis73fouj8g/logs",
+      shopName: "Hellfire Auctions",
+    });
+    console.log("[alert] sent:", kind);
+  } catch (error) {
+    console.error("[alert] could not send:", error?.message || error);
+  }
+}

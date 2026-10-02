@@ -46,6 +46,10 @@
   color: #a8a8a8;
 }
 
+.hellfire-card-badge__line {
+  color: #ff3b30;
+}
+
 .hellfire-card-badge__amount {
   font-weight: 700;
 }

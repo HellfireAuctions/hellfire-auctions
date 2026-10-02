@@ -77,10 +77,12 @@
     const d = Math.floor(s / 86400);
     const h = Math.floor((s % 86400) / 3600);
     const m = Math.floor((s % 3600) / 60);
-    if (d > 0) return `${d}d ${h}h`;
-    if (h > 0) return `${h}h ${m}m`;
-    if (m > 0) return `${m}m ${s % 60}s`;
-    return `${s}s`;
+    const sec = s % 60;
+    const pad = (n) => String(n).padStart(2, "0");
+    if (d > 0) return `${d}d ${h}h ${pad(m)}m ${pad(sec)}s`;
+    if (h > 0) return `${h}h ${pad(m)}m ${pad(sec)}s`;
+    if (m > 0) return `${m}m ${pad(sec)}s`;
+    return `${sec}s`;
   }
 
   function stateOf(auction, now) {

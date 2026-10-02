@@ -112,6 +112,8 @@ function check(name, condition) {
   check("Dawn: auction card has badge", segment(dawn, "card-auction").includes(BADGE));
   check("Dawn: badge sits right after the theme price", /<\/span><\/div><\/div><a data-hellfire-card-badge/.test(segment(dawn, "card-auction")));
   check("Dawn: shows current bid $325.00, 21 bids, time left", /Current bid.*\$325\.00.*21 bids.*left/s.test(segment(dawn, "card-auction")));
+  check("Dawn: countdown shows days, hours, minutes and seconds", /\d+d \d+h \d{2}m \d{2}s left/.test(segment(dawn, "card-auction")));
+  check("Dawn: upcoming countdown shows minutes and seconds", /Starts in \d+h \d{2}m \d{2}s/.test(segment(dawn, "card-upcoming")));
   check("Dawn: normal product card untouched", !segment(dawn, "card-normal").includes(BADGE));
   check("Dawn: upcoming card says Starts in", /Starts in/.test(segment(dawn, "card-upcoming")));
   check("Dawn: header and footer links untouched", !/<header>[\s\S]*data-hellfire-card-badge[\s\S]*<\/header>/.test(dawn) && !/<footer>[\s\S]*data-hellfire-card-badge/.test(dawn));

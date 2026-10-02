@@ -1,5 +1,6 @@
 import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
+import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
 
 // Read-only data for the product-card badges: one request per page returns every
 // auction the storefront might show, keyed by product handle (themes link cards by handle).
@@ -74,6 +75,8 @@ export const loader = async ({ request }) => {
     console.error("[auction-cards] handle lookup failed:", error?.message || error);
   }
 
+  const plan = await getShopPlan(shop);
+
   const payload = auctions
     .filter((a) => handles.has(a.productId))
     .map((a) => ({
@@ -84,10 +87,11 @@ export const loader = async ({ request }) => {
       startsAt: a.startsAt,
       endsAt: a.endsAt,
       status: auctionState(a, now),
+      hot: plan.hotBadge && a.bidCount >= HOT_BID_THRESHOLD,
     }));
 
   return Response.json(
-    { now: now.toISOString(), auctions: payload },
+    { now: now.toISOString(), branding: plan.branding, auctions: payload },
     { headers: { "Cache-Control": "no-store" } },
   );
 };

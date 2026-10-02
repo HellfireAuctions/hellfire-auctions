@@ -75,3 +75,10 @@ model AuctionNotification {
   @@unique([auctionId, customerId, type, key])
   @@index([auctionId])
 }
+
+model ShopPlan {
+  shop           String   @id
+  plan           String   @default("SPARK")
+  subscriptionId String?
+  updatedAt      DateTime @updatedAt
+}

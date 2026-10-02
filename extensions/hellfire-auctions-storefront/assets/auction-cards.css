@@ -68,3 +68,41 @@
 [data-hellfire-price-hidden] {
   display: none !important;
 }
+
+.hellfire-card-badge__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hellfire-card-badge__hot:empty,
+.hellfire-card-badge__brand:empty {
+  display: none;
+}
+
+.hellfire-card-badge__hot {
+  font-size: 0.6875rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #1a0000;
+  background: linear-gradient(90deg, #ffd60a, #ff7a18);
+  border-radius: 999px;
+  padding: 1px 8px;
+  animation: hellfire-hot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes hellfire-hot-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 122, 24, 0.7); }
+  50% { box-shadow: 0 0 10px 2px rgba(255, 122, 24, 0.9); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hellfire-card-badge__hot { animation: none; }
+}
+
+.hellfire-card-badge__brand {
+  margin-top: 4px;
+  font-size: 0.625rem;
+  opacity: 0.6;
+}

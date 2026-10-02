@@ -38,6 +38,7 @@ export const action = async ({ request }) => {
       await db.auctionNotification.deleteMany({ where: { auctionId: { in: auctionIds } } });
       await db.auction.deleteMany({ where: { shop } }); // bids cascade
       await db.session.deleteMany({ where: { shop } });
+      await db.shopPlan.deleteMany({ where: { shop } });
       console.log(`[compliance] shop data erased for ${shop}`);
       break;
     }

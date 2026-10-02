@@ -3,6 +3,7 @@
 // Every send is recorded, so a customer never gets the same notice twice.
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
+import { getShopPlan } from "./plans.server.js";
 
 const RESEND_URL = "https://api.resend.com/emails";
 const OUTBID_WINDOW_MS = 10 * 60_000; // at most one outbid email per bidder per auction per 10 minutes
@@ -110,6 +111,7 @@ async function sendEmail({ to, subject, heading, lines, buttonLabel, buttonUrl, 
 export async function notifyOutbid({ shop, auction, outbidCustomerId, currentBid }) {
   if (!notificationsEnabled() || !outbidCustomerId) return;
   try {
+    if (!(await getShopPlan(shop)).emails) return;
     const key = String(Math.floor(Date.now() / OUTBID_WINDOW_MS));
     const fresh = await claimNotice({ auctionId: auction.id, customerId: outbidCustomerId, type: "OUTBID", key });
     if (!fresh) return;
@@ -150,6 +152,7 @@ export async function sendEndingSoonReminders() {
   });
 
   for (const auction of auctions) {
+    if (!(await getShopPlan(auction.shop)).emails) continue;
     const leaderId = auction.bids[0]?.bidderId;
     for (const bid of auction.bids) {
       try {

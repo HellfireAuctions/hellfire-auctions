@@ -20,6 +20,7 @@
   const auctions = new Map(); // handle -> auction
   const badges = new Map(); // badge element -> handle
   let clockOffset = 0;
+  let showBranding = false;
 
   function money(value) {
     try {
@@ -107,6 +108,9 @@
     const bids = `${auction.bidCount} bid${auction.bidCount === 1 ? "" : "s"}`;
 
     badge.dataset.state = state.toLowerCase();
+    badge.dataset.hot = auction.hot && state === "LIVE" ? "true" : "false";
+    setText(badge.querySelector(".hellfire-card-badge__hot"), auction.hot && state === "LIVE" ? "\u{1F525} HOT" : "");
+    setText(badge.querySelector(".hellfire-card-badge__brand"), showBranding ? "Powered by Hellfire Auctions" : "");
     setText(badge.querySelector(".hellfire-card-badge__state"), label);
     setText(badge.querySelector(".hellfire-card-badge__amount-label"), amountLabel);
     setText(badge.querySelector(".hellfire-card-badge__amount"), money(auction.amount));
@@ -119,10 +123,11 @@
     badge.className = "hellfire-card-badge";
     badge.href = href;
     badge.innerHTML =
-      '<span class="hellfire-card-badge__state"></span>' +
+      '<span class="hellfire-card-badge__top"><span class="hellfire-card-badge__state"></span><span class="hellfire-card-badge__hot"></span></span>' +
       '<span class="hellfire-card-badge__line"><span class="hellfire-card-badge__amount-label"></span> ' +
       '<strong class="hellfire-card-badge__amount"></strong></span>' +
-      '<span class="hellfire-card-badge__meta"></span>';
+      '<span class="hellfire-card-badge__meta"></span>' +
+      '<span class="hellfire-card-badge__brand"></span>';
     badges.set(badge, handle);
     return badge;
   }
@@ -192,6 +197,7 @@
       if (!response.ok) return;
       const data = await response.json();
       if (data.now) clockOffset = Date.parse(data.now) - Date.now();
+      showBranding = Boolean(data.branding);
       auctions.clear();
       for (const auction of data.auctions || []) {
         if (auction && auction.handle) auctions.set(String(auction.handle).toLowerCase(), auction);

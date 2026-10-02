@@ -3,6 +3,7 @@ import { useActionData, useLoaderData, Form } from "react-router";
 import { useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { canCreateAuction } from "../plans.server";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -640,6 +641,15 @@ export const action = async ({ request }) => {
 
   const intent =
     formData.get("intent")?.toString() || "create";
+
+  if (intent === "create") {
+    const quota = await canCreateAuction(session.shop);
+    if (!quota.allowed) {
+      return {
+        error: `You've used all ${quota.limit} auctions on the ${quota.plan.name} plan this month. Upgrade on the "Plans & upgrades" page for more.`,
+      };
+    }
+  }
 
   const title =
     formData.get("title")?.toString().trim();

@@ -71,8 +71,32 @@ async function checkEmailReadiness() {
   }
 }
 
+// Read-only: which stored Shopify sessions exist (no tokens printed, only whether they are present).
+async function logSessions() {
+  try {
+    const rows = await prisma.session.findMany({
+      select: { id: true, shop: true, isOnline: true, scope: true, expires: true, accessToken: true, refreshToken: true, refreshTokenExpires: true },
+    });
+    console.log(
+      "[startup-diagnostics] sessions:",
+      JSON.stringify(rows.map((r) => ({
+        id: r.id,
+        online: r.isOnline,
+        hasToken: Boolean(r.accessToken),
+        hasRefresh: Boolean(r.refreshToken),
+        expires: r.expires,
+        refreshExpires: r.refreshTokenExpires,
+        scopes: (r.scope || "").split(",").length,
+      }))),
+    );
+  } catch (error) {
+    console.log("[startup-diagnostics] session list failed:", String(error?.message || error).slice(0, 200));
+  }
+}
+
 if (!globalThis.__HELLFIRE_DIAGNOSTICS_RAN__) {
   globalThis.__HELLFIRE_DIAGNOSTICS_RAN__ = true;
   logMigrationState();
+  logSessions();
   checkEmailReadiness();
 }

@@ -134,6 +134,23 @@
     }
   }
 
+
+  // The theme's own price on an auction card (usually $0.00) is misleading, so it is hidden -
+  // but only small, price-like elements inside cards that link to an auction product.
+  const PRICE_SELECTOR = '[class*="price"], product-price, [data-price], [data-product-price]';
+  function hideThemePrices(root) {
+    const candidates = [...root.querySelectorAll(PRICE_SELECTOR)].filter(
+      (el) => !el.closest(`[${BADGE_ATTR}]`),
+    );
+    for (const el of candidates) {
+      const insideOther = candidates.some((other) => other !== el && other.contains(el));
+      if (insideOther) continue;
+      const text = (el.textContent || "").trim();
+      if (text.length > 80 || !/\d/.test(text)) continue;
+      el.setAttribute("data-hellfire-price-hidden", "");
+    }
+  }
+
   function scan() {
     if (!auctions.size) return;
     for (const link of document.querySelectorAll(`a[href*="/products/"]:not([${BADGE_ATTR}])`)) {
@@ -145,6 +162,7 @@
         if (!root || root.querySelector(`[${BADGE_ATTR}]`)) continue;
         const badge = createBadge(handle, link.href);
         placeBadge(root, badge);
+        hideThemePrices(root);
         render(badge, auctions.get(handle));
       } catch (_) {
         // One odd card must never stop the others.

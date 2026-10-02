@@ -117,6 +117,9 @@ function check(name, condition) {
   check("Dawn: header and footer links untouched", !/<header>[\s\S]*data-hellfire-card-badge[\s\S]*<\/header>/.test(dawn) && !/<footer>[\s\S]*data-hellfire-card-badge/.test(dawn));
   check("Dawn: theme forms and buttons left in place", count(dawn, 'action="/cart/add"') === 2 && count(dawn, 'name="add"') === 2);
 
+  check("Dawn: theme price hidden on the auction card", /<div class="price" data-hellfire-price-hidden/.test(segment(dawn, "card-auction")));
+  check("Dawn: theme price NOT hidden on the normal card", !segment(dawn, "card-normal").includes("data-hellfire-price-hidden"));
+
   const horizon = await dumpDom(`${base}/collections/horizon`);
   check("Horizon: one badge on the auction card even with 2 links", count(segment(horizon, "card-auction"), BADGE) === 1);
   check("Horizon: badge placed after <product-price>", /<\/product-price><a data-hellfire-card-badge/.test(horizon));
@@ -124,6 +127,9 @@ function check(name, condition) {
   check("Horizon: carousel ended card shows Auction ended + Winning bid", /Auction ended[\s\S]*Winning bid/.test(segment(horizon, "slide-ended")));
   check("Horizon: carousel normal slide untouched", !((horizon.match(/id="slide-normal">([\s\S]*?)<\/div>/) || [])[1] || "x").includes(BADGE) && /id="slide-normal"/.test(horizon));
   check("Horizon: card added later (infinite scroll) gets a badge", /id="late-card"[\s\S]*data-hellfire-card-badge/.test(horizon));
+
+  check("Horizon: <product-price> hidden on the auction card", /<product-price data-hellfire-price-hidden/.test(segment(horizon, "card-auction")));
+  check("Horizon: normal card price NOT hidden", !segment(horizon, "card-normal").includes("data-hellfire-price-hidden"));
 
   const pdp = await dumpDom(`${base}/products/test-1`);
   check("Product page: no badge for the product being viewed", !pdp.slice(pdp.indexOf('id="main-product"'), pdp.indexOf('id="related"')).includes(BADGE) && !segment(pdp, "related-self").includes(BADGE));

@@ -53,3 +53,8 @@
 .hellfire-card-badge__meta {
   opacity: 0.85;
 }
+
+/* Theme price on auction cards (set by auction-cards.js only on auction cards). */
+[data-hellfire-price-hidden] {
+  display: none !important;
+}

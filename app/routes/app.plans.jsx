@@ -80,7 +80,7 @@ const TIERS = [
     key: "INFERNO",
     flames: "\u{1F525}\u{1F525}\u{1F525}",
     tagline: "Unleash the inferno",
-    price: "$30",
+    price: "$25",
     gradient: "linear-gradient(135deg,#ff1e1e 0%,#7a0000 55%,#1a0000 100%)",
     accent: "#ffd60a",
     badge: "UNLIMITED",

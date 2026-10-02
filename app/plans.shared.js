@@ -26,7 +26,7 @@ export const PLANS = {
   INFERNO: {
     key: "INFERNO",
     name: "Inferno",
-    price: 30,
+    price: 25,
     monthlyLimit: Infinity,
     emails: true,
     branding: false,

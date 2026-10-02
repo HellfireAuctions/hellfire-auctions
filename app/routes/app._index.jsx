@@ -626,12 +626,61 @@ export const loader = async ({ request }) => {
       status: true,
       reservePrice: true,
       productId: true,
+      winnerId: true,
     },
   });
 
-  const storefrontActivationUrl = "https://" + session.shop + "/admin/themes/current/editor?context=apps&template=product&activateAppId=eb49cba90749e254b957cd1d618e6d38/auction-runtime";
+  // Leading bidder for every auction (merchant-only view).
+  const ids = auctions.map((a) => a.id);
+  const bids = ids.length
+    ? await prisma.bid.findMany({
+        where: { auctionId: { in: ids } },
+        orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
+        select: { auctionId: true, bidderId: true, maxBid: true },
+      })
+    : [];
+  const leaders = new Map();
+  for (const bid of bids) if (!leaders.has(bid.auctionId)) leaders.set(bid.auctionId, bid);
 
-  return { auctions, storefrontActivationUrl, timezone };
+  const customerIds = [...new Set([...leaders.values()].map((b) => String(b.bidderId)))];
+  const customers = new Map();
+  if (customerIds.length) {
+    try {
+      const response = await admin.graphql(
+        `#graphql
+          query HighBidders($ids: [ID!]!) {
+            nodes(ids: $ids) { ... on Customer { id displayName email } }
+          }`,
+        { variables: { ids: customerIds.map((id) => `gid://shopify/Customer/${id}`) } },
+      );
+      const json = await response.json();
+      for (const node of json?.data?.nodes || []) {
+        if (node?.id) customers.set(node.id.split("/").pop(), node);
+      }
+    } catch (error) {
+      console.error("[admin] high bidder lookup failed:", error?.message || error);
+    }
+  }
+
+  const auctionsWithLeaders = auctions.map((auction) => {
+    const lead = leaders.get(auction.id);
+    const customer = lead ? customers.get(String(lead.bidderId)) : null;
+    return {
+      ...auction,
+      highBidder: lead
+        ? {
+            customerId: String(lead.bidderId),
+            name: customer?.displayName || `Customer ${lead.bidderId}`,
+            email: customer?.email || null,
+            maxBid: Number(lead.maxBid),
+          }
+        : null,
+    };
+  });
+
+  const storefrontActivationUrl = "https://" + session.shop + "/admin/themes/current/editor?context=apps&template=product&activateAppId=" + process.env.SHOPIFY_API_KEY + "/auction-runtime";
+
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone };
 };
 
 export const action = async ({ request }) => {
@@ -1549,83 +1598,76 @@ export default function AuctionsPage() {
             Create your first Hellfire auction above.
           </s-empty-state>
         ) : (
-          <s-stack gap="base">
-
-            {auctions.map((auction) => (
-              <s-card key={auction.id}>
-
-                <s-stack gap="small">
-
-                  {auction.imageUrl && (
-                    <img
-                      src={auction.imageUrl}
-                      alt={auction.title}
-                      style={{
-                        width: "160px",
-                        height: "160px",
-                        objectFit: "cover",
-                        borderRadius: "10px",
-                      }}
-                    />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 16 }}>
+            {auctions.map((auction) => {
+              const now = Date.now();
+              const state =
+                now < new Date(auction.startsAt).getTime()
+                  ? "UPCOMING"
+                  : now >= new Date(auction.endsAt).getTime()
+                    ? "ENDED"
+                    : "LIVE";
+              const stateColor = { LIVE: "#d72c0d", UPCOMING: "#b98900", ENDED: "#616161" }[state];
+              const reserveMet =
+                auction.reservePrice == null || Number(auction.currentBid) >= Number(auction.reservePrice);
+              return (
+                <div
+                  key={auction.id}
+                  style={{ border: "1px solid #e3e3e3", borderRadius: 12, overflow: "hidden", background: "#fff", display: "flex", flexDirection: "column" }}
+                >
+                  {auction.imageUrl ? (
+                    <img src={auction.imageUrl} alt={auction.title} style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
+                  ) : (
+                    <div style={{ height: 150, background: "linear-gradient(135deg,#3d0000,#ff3b30)" }} />
                   )}
-
-                  <s-heading>
-                    {auction.title}
-                  </s-heading>
-
-                  <s-text>
-                    Status: {auction.status}
-                  </s-text>
-
-                  <s-text>
-                    Starting Bid: $
-                    {auction.startingBid.toFixed(2)}
-                  </s-text>
-
-                  <s-text>
-                    Current Bid: $
-                    {auction.currentBid.toFixed(2)}
-                  </s-text>
-
-                  <s-text>
-                    Starts:{" "}
-                    {formatEastern(
-                      new Date(
-                        auction.startsAt,
-                      ),
-                      timezone,
+                  <div style={{ padding: "12px 14px", display: "grid", gap: 6, flexGrow: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                      <strong style={{ fontSize: 15, lineHeight: 1.3 }}>{auction.title}</strong>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: stateColor, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+                        {state}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: "#d72c0d" }}>
+                      ${Number(auction.bidCount > 0 ? auction.currentBid : auction.startingBid).toFixed(2)}
+                      <span style={{ fontSize: 12, fontWeight: 500, color: "#616161" }}>
+                        {" "}{auction.bidCount > 0 ? "current" : "starting"} · {auction.bidCount} bid{auction.bidCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 13, color: "#303030" }}>
+                      {auction.highBidder ? (
+                        <>
+                          <div>
+                            <strong>{state === "ENDED" ? "Winner" : "High bidder"}:</strong>{" "}
+                            <a href={`shopify://admin/customers/${auction.highBidder.customerId}`} target="_top" style={{ color: "#005bd3" }}>
+                              {auction.highBidder.name}
+                            </a>
+                          </div>
+                          {auction.highBidder.email && <div style={{ color: "#616161", wordBreak: "break-all" }}>{auction.highBidder.email}</div>}
+                          <div style={{ color: "#616161" }}>Their max bid: ${auction.highBidder.maxBid.toFixed(2)}</div>
+                        </>
+                      ) : (
+                        <span style={{ color: "#616161" }}>No bids yet</span>
+                      )}
+                    </div>
+                    {auction.reservePrice != null && (
+                      <div style={{ fontSize: 12, color: reserveMet ? "#008060" : "#b98900" }}>
+                        Reserve ${Number(auction.reservePrice).toFixed(2)} {reserveMet ? "met" : "not met"}
+                      </div>
                     )}
-                  </s-text>
-
-                  <s-text>
-                    Ends:{" "}
-                    {formatEastern(
-                      new Date(
-                        auction.endsAt,
-                      ),
-                      timezone,
-                    )}
-                  </s-text>
-
-                  <s-text>
-                    Bids: {auction.bidCount}
-                  </s-text>
-
-                  <s-button
-                    type="button"
-                    onClick={() =>
-                      setEditingId(auction.id)
-                    }
-                  >
-                    Edit Auction
-                  </s-button>
-
-                </s-stack>
-
-              </s-card>
-            ))}
-
-          </s-stack>
+                    <div style={{ fontSize: 12, color: "#616161" }}>
+                      {state === "UPCOMING" ? "Starts " : state === "LIVE" ? "Ends " : "Ended "}
+                      {formatEastern(new Date(state === "UPCOMING" ? auction.startsAt : auction.endsAt), timezone)}
+                    </div>
+                    <div style={{ marginTop: "auto", paddingTop: 6 }}>
+                      <s-button type="button" onClick={() => setEditingId(auction.id)}>
+                        Edit
+                      </s-button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
 
       </s-section>

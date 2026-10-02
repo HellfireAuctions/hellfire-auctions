@@ -62,6 +62,13 @@ export const loader = async ({ request }) => {
         })
       : null;
   const highestBid = publicBids[0] || null;
+  let myStatus = null;
+  if (auction && myBid && loggedInCustomerId) {
+    const iLead = highestBid?.bidderId === loggedInCustomerId;
+    const ended = new Date() >= auction.endsAt;
+    const reserveOk = auction.reservePrice == null || Number(auction.currentBid) >= Number(auction.reservePrice);
+    myStatus = ended ? (iLead && reserveOk ? "WON" : "LOST") : iLead ? "WINNING" : "OUTBID";
+  }
   const hasReserve = auction?.reservePrice != null;
 
   console.log(
@@ -92,6 +99,7 @@ export const loader = async ({ request }) => {
             hasBids: publicBids.length > 0,
           }),
           myMaximumBid: myBid ? Number(myBid.maxBid) : null,
+          myStatus,
           highestBidder: highestBid ? maskedBidder(highestBid.bidderId) : null,
           // The reserve amount itself is never sent to the storefront.
           hasReserve,

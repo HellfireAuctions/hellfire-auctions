@@ -19,3 +19,25 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
 [data-hellfire-auction-product="true"] form[action*="/cart/add"],[data-hellfire-auction-product="true"] button[name="add"],[data-hellfire-auction-product="true"] button[data-testid*="add-to-cart"],[data-hellfire-auction-product="true"] button[data-action="add-to-cart"],[data-hellfire-auction-product="true"] [data-add-to-cart],[data-hellfire-auction-product="true"] [data-add-to-cart-button],[data-hellfire-auction-product="true"] [data-quick-add],[data-hellfire-auction-product="true"] quick-add-component,[data-hellfire-auction-product="true"] add-to-cart-component,[data-hellfire-auction-product="true"] sticky-add-to-cart{display:none!important;visibility:hidden!important;pointer-events:none!important}
 .hellfire-auction-login{padding:14px;border-radius:8px;background:rgba(255,255,255,.08);font-weight:700;color:#f5f5f5}
 @container (max-width:700px){.hellfire-auction-bid-form{grid-template-columns:1fr}.hellfire-auction-bid-form button{width:100%}}
+
+.hellfire-auction-my-status:empty { display: none; }
+.hellfire-auction-my-status {
+  margin: 12px 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: #ffffff;
+}
+.hellfire-auction-my-status.is-winning,
+.hellfire-auction-my-status.is-won {
+  background: linear-gradient(90deg, #0f8a3c, #19b453);
+  box-shadow: 0 0 14px rgba(25, 180, 83, 0.55);
+}
+.hellfire-auction-my-status.is-outbid {
+  background: linear-gradient(90deg, #b40000, #ff3b30);
+  box-shadow: 0 0 14px rgba(255, 59, 48, 0.55);
+}
+.hellfire-auction-my-status.is-lost { background: #3a3a3a; }

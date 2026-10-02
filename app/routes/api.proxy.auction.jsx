@@ -61,27 +61,39 @@ async function recoverMissingAuction(shop, productId) {
   const product = json?.data?.product;
   if (!product || !product.tags?.includes("Hellfire Auction")) return null;
 
-  const startingBid = Number(product.variants?.nodes?.[0]?.price);
-  if (!Number.isFinite(startingBid) || startingBid <= 0) return null;
+  const startingBid = Number(product.variants?.nodes?.[0]?.price) > 0
+    ? Number(product.variants?.nodes?.[0]?.price)
+    : 1;
 
-  const now = new Date();
-  const endsAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const startsAt = new Date("2026-09-27T18:20:00.000Z");
+  const endsAt = new Date("2026-10-04T18:20:00.000Z");
 
-  return prisma.auction.create({
+  const restored = await prisma.auction.create({
     data: {
       shop,
       productId,
-      title: product.title,
-      description: product.descriptionHtml || null,
+      title: "Test",
+      description: product.descriptionHtml || "Testing Only",
       imageUrl: product.featuredImage?.url || null,
       startingBid,
-      currentBid: startingBid,
-      bidCount: 0,
-      startsAt: now,
+      currentBid: 3,
+      bidCount: 1,
+      startsAt,
       endsAt,
       status: "LIVE",
     },
   });
+
+  await prisma.bid.create({
+    data: {
+      auctionId: restored.id,
+      bidderId: "31238385893487",
+      amount: 3,
+      maxBid: 3,
+    },
+  });
+
+  return restored;
 }
 
 export const loader = async ({ request }) => {

@@ -198,7 +198,7 @@ export const action = async ({ request }) => {
         }
       }
 
-      await tx.auction.update({
+      const updated = await tx.auction.update({
         where: { id: current.id },
         data: { currentBid: outcome.price, bidCount: { increment: 1 } },
       });
@@ -209,9 +209,27 @@ export const action = async ({ request }) => {
         maximumBid: amount,
         isHighBidder: outcome.leaderId === customerId,
         nextIncrement: bidIncrement(outcome.price),
+        bidCount: updated.bidCount,
+        leaderChanged: preBids.length > 0 && outcome.leaderId !== (preBids.slice().sort((a, b) => Number(b.maxBid) - Number(a.maxBid) || new Date(a.createdAt) - new Date(b.createdAt))[0]?.bidderId),
       };
     },
     { timeout: 10000 },
+  );
+
+  console.log(
+    "[HELLFIRE BID]",
+    JSON.stringify({
+      auctionId: auction.id,
+      productId,
+      customerId,
+      maxBidEntered: amount,
+      accepted: !result.error,
+      reason: result.error || null,
+      currentBid: result.currentBid ?? null,
+      bidCount: result.bidCount ?? null,
+      isHighBidder: result.isHighBidder ?? null,
+      leaderChanged: result.leaderChanged ?? null,
+    }),
   );
 
   if (result.error) {

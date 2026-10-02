@@ -13,9 +13,28 @@ const DURATION_OPTIONS = [
   { value: "30", label: "30 Days" },
 ];
 
-function easternOffset(date) {
+const DEFAULT_TZ = "America/New_York";
+
+// The store's own time zone from Shopify (Settings > General). Falls back to Eastern.
+async function shopTimezone(admin) {
+  try {
+    const response = await admin.graphql(`#graphql
+      query ShopTimezone { shop { ianaTimezone } }`);
+    const json = await response.json();
+    const tz = json?.data?.shop?.ianaTimezone;
+    if (tz) {
+      new Intl.DateTimeFormat("en-US", { timeZone: tz }); // validate
+      return tz;
+    }
+  } catch (error) {
+    console.error("[hellfire-auctions] shop time zone lookup failed:", error?.message || error);
+  }
+  return DEFAULT_TZ;
+}
+
+function easternOffset(date, tz = DEFAULT_TZ) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
+    timeZone: tz,
     timeZoneName: "shortOffset",
   }).formatToParts(date);
 
@@ -34,7 +53,7 @@ function easternOffset(date) {
   );
 }
 
-function easternLocalToUtc(dateString, hour, minute, ampm) {
+function easternLocalToUtc(dateString, hour, minute, ampm, tz = DEFAULT_TZ) {
   let h = Number(hour);
 
   if (ampm === "PM" && h !== 12) h += 12;
@@ -44,24 +63,26 @@ function easternLocalToUtc(dateString, hour, minute, ampm) {
     `${dateString}T${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`,
   );
 
-  const offsetMinutes = easternOffset(naive);
+  // Two passes so the offset is correct on daylight-saving change days.
+  const firstGuess = new Date(naive.getTime() - easternOffset(naive, tz) * 60 * 1000);
+  const offsetMinutes = easternOffset(firstGuess, tz);
 
   return new Date(
     naive.getTime() - offsetMinutes * 60 * 1000,
   );
 }
 
-function formatEastern(date) {
+function formatEastern(date, tz = DEFAULT_TZ) {
   return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
+    timeZone: tz,
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
 }
 
-function easternToday() {
+function easternToday(tz = DEFAULT_TZ) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -73,11 +94,11 @@ function easternToday() {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
-function getEasternParts(dateValue) {
+function getEasternParts(dateValue, tz = DEFAULT_TZ) {
   const date = new Date(dateValue);
 
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -569,7 +590,8 @@ async function ensureAuctionStorefront(admin, productId) {
   }
 }
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
+  const timezone = await shopTimezone(admin);
 
   const auctions = await prisma.auction.findMany({
     where: {
@@ -595,12 +617,13 @@ export const loader = async ({ request }) => {
 
   const storefrontActivationUrl = "https://" + session.shop + "/admin/themes/current/editor?context=apps&template=product&activateAppId=eb49cba90749e254b957cd1d618e6d38/auction-runtime";
 
-  return { auctions, storefrontActivationUrl };
+  return { auctions, storefrontActivationUrl, timezone };
 };
 
 export const action = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
   const formData = await request.formData();
+  const timezone = await shopTimezone(admin);
 
   const intent =
     formData.get("intent")?.toString() || "create";
@@ -657,6 +680,7 @@ export const action = async ({ request }) => {
     startsAtHour,
     startsAtMinute,
     startsAtAmPm,
+    timezone,
   );
 
   const endsAt = new Date(
@@ -703,6 +727,33 @@ export const action = async ({ request }) => {
       return {
         error: "Auction could not be found.",
       };
+    }
+
+    /*
+     * Fairness: once anyone has bid, the prices and schedule are locked.
+     * Title, description and image can still be edited.
+     */
+    const existingBidCount = await prisma.bid.count({
+      where: { auctionId },
+    });
+
+    if (existingBidCount > 0) {
+      const locked = [];
+      const oldReserve =
+        existingAuction.reservePrice == null ? null : Number(existingAuction.reservePrice);
+      const newReserve =
+        reservePrice !== null && Number.isFinite(reservePrice) ? reservePrice : null;
+
+      if (Number(startingBid) !== Number(existingAuction.startingBid)) locked.push("starting bid");
+      if (newReserve !== oldReserve) locked.push("reserve price");
+      if (Math.abs(startsAt.getTime() - new Date(existingAuction.startsAt).getTime()) >= 60_000) locked.push("start time");
+      if (Math.abs(endsAt.getTime() - new Date(existingAuction.endsAt).getTime()) >= 60_000) locked.push("end time");
+
+      if (locked.length) {
+        return {
+          error: `This auction already has ${existingBidCount} bidder(s), so its ${locked.join(", ")} can't be changed. You can still edit the title, description and image.`,
+        };
+      }
     }
 
     /*
@@ -1036,16 +1087,17 @@ export const action = async ({ request }) => {
 function AuctionForm({
   auction,
   onCancel,
+  timezone,
 }) {
   const isEdit = Boolean(auction);
 
   const initialParts = auction
-    ? getEasternParts(auction.startsAt)
+    ? getEasternParts(auction.startsAt, timezone)
     : null;
 
   const [startDate, setStartDate] =
     useState(
-      initialParts?.date || easternToday(),
+      initialParts?.date || easternToday(timezone),
     );
 
   const [startHour, setStartHour] =
@@ -1095,6 +1147,7 @@ function AuctionForm({
         startHour,
         startMinute,
         startAmPm,
+        timezone,
       );
 
       const end = new Date(
@@ -1106,7 +1159,7 @@ function AuctionForm({
             1000,
       );
 
-      return formatEastern(end);
+      return formatEastern(end, timezone);
     } catch {
       return "Choose a valid start time";
     }
@@ -1236,7 +1289,7 @@ function AuctionForm({
           <s-stack gap="base">
 
             <s-text>
-              Eastern Time (ET)
+              Times are in your store's time zone ({timezone})
             </s-text>
 
             <s-date-picker
@@ -1421,7 +1474,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone } = useLoaderData();
   const actionData = useActionData();
 
   const [editingId, setEditingId] =
@@ -1466,12 +1519,13 @@ export default function AuctionsPage() {
           <AuctionForm
             key={editingAuction.id}
             auction={editingAuction}
+            timezone={timezone}
             onCancel={() =>
               setEditingId(null)
             }
           />
         ) : (
-          <AuctionForm />
+          <AuctionForm timezone={timezone} />
         )}
       </s-section>
 
@@ -1526,6 +1580,7 @@ export default function AuctionsPage() {
                       new Date(
                         auction.startsAt,
                       ),
+                      timezone,
                     )}
                   </s-text>
 
@@ -1535,6 +1590,7 @@ export default function AuctionsPage() {
                       new Date(
                         auction.endsAt,
                       ),
+                      timezone,
                     )}
                   </s-text>
 

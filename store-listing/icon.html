@@ -1,0 +1,36 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;padding:0;background:transparent}</style></head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#8f0a00"/>
+      <stop offset="55%" stop-color="#3d0000"/>
+      <stop offset="100%" stop-color="#120000"/>
+    </radialGradient>
+    <linearGradient id="outer" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#ff3b30"/>
+      <stop offset="55%" stop-color="#ff7a18"/>
+      <stop offset="100%" stop-color="#ffb347"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#ffd60a"/>
+      <stop offset="100%" stop-color="#fff6c2"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="28" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1200" height="1200" fill="url(#bg)"/>
+  <g filter="url(#glow)">
+    <path fill="url(#outer)" d="M600 150 C640 300 820 380 840 600 C860 820 740 1000 600 1010 C440 1020 330 890 340 720 C348 590 430 540 455 430 C500 520 560 540 575 470 C595 380 545 280 600 150 Z"/>
+    <path fill="url(#inner)" d="M610 520 C650 610 730 660 725 780 C720 880 670 945 600 948 C520 950 470 890 474 815 C478 740 530 715 545 650 C575 700 610 690 612 640 C614 600 590 570 610 520 Z"/>
+  </g>
+  <g transform="translate(600 850) rotate(-35)">
+    <rect x="-150" y="-52" width="300" height="104" rx="22" fill="#1a0000" stroke="#ffd60a" stroke-width="14"/>
+    <rect x="-22" y="40" width="44" height="230" rx="18" fill="#1a0000" stroke="#ffd60a" stroke-width="14"/>
+  </g>
+</svg>
+</body></html>

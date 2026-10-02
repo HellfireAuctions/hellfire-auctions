@@ -16,6 +16,21 @@ function money(value) {
   return `$${Number(value || 0).toFixed(2)}`;
 }
 
+function friendlyTime(date, timeZone) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone || "America/New_York",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      timeZoneName: "short",
+    }).format(new Date(date));
+  } catch {
+    return new Date(date).toUTCString();
+  }
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -31,7 +46,7 @@ async function lookup(shop, customerId, productId) {
       query NotifyLookup($customer: ID!, $product: ID!) {
         customer(id: $customer) { email firstName }
         product(id: $product) { title onlineStoreUrl }
-        shop { name }
+        shop { name contactEmail ianaTimezone }
       }
     `,
     {
@@ -60,7 +75,7 @@ async function claimNotice({ auctionId, customerId, type, key }) {
   }
 }
 
-async function sendEmail({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName }) {
+async function sendEmail({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo }) {
   const htmlLines = lines.map((line) => `<p style="margin:0 0 12px">${escapeHtml(line)}</p>`).join("");
   const button = buttonUrl
     ? `<p style="margin:20px 0"><a href="${escapeHtml(buttonUrl)}" style="background:#ff3b30;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">${escapeHtml(buttonLabel)}</a></p>`
@@ -83,7 +98,7 @@ async function sendEmail({ to, subject, heading, lines, buttonLabel, buttonUrl, 
       subject,
       html,
       text,
-      reply_to: process.env.NOTIFY_REPLY_TO || undefined,
+      reply_to: replyTo || process.env.NOTIFY_REPLY_TO || undefined,
     }),
   });
   if (!response.ok) {
@@ -111,11 +126,12 @@ export async function notifyOutbid({ shop, auction, outbidCustomerId, currentBid
       lines: [
         `Hi ${data?.customer?.firstName || "there"},`,
         `Someone placed a higher bid on "${title}". The current bid is now ${money(currentBid)}.`,
-        `The auction ends ${new Date(auction.endsAt).toUTCString()}.`,
+        `The auction ends ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}.`,
       ],
       buttonLabel: "Bid again",
       buttonUrl: data?.product?.onlineStoreUrl,
       shopName: data?.shop?.name || "the store",
+      replyTo: data?.shop?.contactEmail,
     });
     console.log("[notify] outbid email sent", JSON.stringify({ auctionId: auction.id, customerId: outbidCustomerId }));
   } catch (error) {
@@ -152,7 +168,7 @@ export async function sendEndingSoonReminders() {
           heading: "Less than 1 hour left",
           lines: [
             `Hi ${data?.customer?.firstName || "there"},`,
-            `The auction for "${title}" ends in under an hour. The current bid is ${money(auction.currentBid)}.`,
+            `The auction for "${title}" ends at ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}, in under an hour. The current bid is ${money(auction.currentBid)}.`,
             winning
               ? "You're currently the high bidder. Keep watching in case someone outbids you."
               : "You're not the high bidder right now. Bid again before time runs out.",
@@ -160,6 +176,7 @@ export async function sendEndingSoonReminders() {
           buttonLabel: winning ? "Watch the auction" : "Bid again",
           buttonUrl: data?.product?.onlineStoreUrl,
           shopName: data?.shop?.name || "the store",
+          replyTo: data?.shop?.contactEmail,
         });
         console.log("[notify] 1-hour reminder sent", JSON.stringify({ auctionId: auction.id, customerId: bid.bidderId }));
       } catch (error) {
@@ -167,4 +184,14 @@ export async function sendEndingSoonReminders() {
       }
     }
   }
+}
+
+if (!globalThis.__HELLFIRE_NOTIFY_STATUS__) {
+  globalThis.__HELLFIRE_NOTIFY_STATUS__ = true;
+  console.log(
+    "[notify] status:",
+    notificationsEnabled()
+      ? `ON (sending as ${process.env.NOTIFY_FROM})`
+      : `OFF (missing: ${[!process.env.RESEND_API_KEY && "RESEND_API_KEY", !process.env.NOTIFY_FROM && "NOTIFY_FROM"].filter(Boolean).join(", ")})`,
+  );
 }

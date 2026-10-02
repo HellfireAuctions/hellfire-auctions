@@ -49,3 +49,17 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
   font-weight: 700;
   text-decoration: underline;
 }
+
+/* phone fit */
+.hellfire-auction-card { max-width: 100%; overflow-wrap: anywhere; }
+.hellfire-auction-card * { min-width: 0; box-sizing: border-box; }
+.hellfire-auction-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr)); }
+.hellfire-auction-value { font-size: clamp(18px, 6cqi, 24px); }
+.hellfire-auction-bidder { font-size: clamp(15px, 4.5cqi, 18px); }
+.hellfire-auction-countdown { font-size: clamp(16px, 5cqi, 20px); }
+.hellfire-auction-bid-form button { min-width: 0; }
+@container (max-width: 420px) {
+  .hellfire-auction-card { padding: 14px; }
+  .hellfire-auction-stat { padding: 10px; }
+  .hellfire-auction-bid-form button { padding: 12px 14px; font-size: 15px; }
+}

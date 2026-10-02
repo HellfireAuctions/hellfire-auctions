@@ -79,8 +79,11 @@
 }
 
 .hellfire-card-badge__top > .hellfire-card-badge__hot {
-  margin-left: auto;
   flex: 0 0 auto;
+}
+
+.hellfire-card-badge__top > .hellfire-card-badge__state {
+  white-space: nowrap;
 }
 
 .hellfire-card-badge__mine:empty {

@@ -41,3 +41,11 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
   box-shadow: 0 0 14px rgba(255, 59, 48, 0.55);
 }
 .hellfire-auction-my-status.is-lost { background: #3a3a3a; }
+
+.hellfire-auction-my-link {
+  display: inline-block;
+  margin: 6px 0 4px;
+  color: #ffd60a;
+  font-weight: 700;
+  text-decoration: underline;
+}

@@ -2,7 +2,7 @@ import { randomUUID as hfUuid } from "node:crypto";
 import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -626,6 +626,7 @@ async function tick() {
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));
+  await sendWatcherReminders().catch((error) => console.error("[hellfire-auctions] watcher reminders error:", error?.message || error));
   const now = new Date();
 
   // Keep DRAFT/UPCOMING/LIVE labels in step with the clock (never touches ended ones).
@@ -647,6 +648,7 @@ async function tick() {
       throwUserErrors(result?.productUpdate?.userErrors);
       await prisma.auction.update({ where: { id: auction.id }, data: { status: "LIVE" } });
       console.log("[hellfire-auctions] auction started, product published:", auction.id);
+      notifyWatchersStarted({ auction }).catch(() => {});
     } catch (error) {
       console.error(`[hellfire-auctions] could not publish ${auction.id}:`, error?.message || error);
       alertOwner("publish-" + auction.id, "A scheduled auction could not go live", [

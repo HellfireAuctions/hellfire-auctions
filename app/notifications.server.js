@@ -514,3 +514,89 @@ export async function notifyLosers({ auction }) {
     }
   }
 }
+
+// Watchers: "starting now" when a scheduled auction goes live.
+export async function notifyWatchersStarted({ auction }) {
+  if (!notificationsEnabled()) return;
+  if (!(await getShopPlan(auction.shop)).emails) return;
+  const watchers = await prisma.watch.findMany({ where: { auctionId: auction.id }, select: { customerId: true }, take: 200 });
+  for (const w of watchers) {
+    const notice = { auctionId: auction.id, customerId: w.customerId, type: "WATCH_START", key: "1" };
+    try {
+      if (!(await claimNotice(notice))) continue;
+      const data = await lookup(auction.shop, w.customerId, auction.productId);
+      useCurrency(data);
+      const email = data?.customer?.email;
+      if (!email) {
+        await releaseNotice(notice);
+        continue;
+      }
+      const title = data?.product?.title || auction.title;
+      await sendEmail({
+        to: email,
+        subject: `Now live: ${title}`,
+        heading: "The auction you're watching has started",
+        lines: [
+          "Hey there,",
+          `"${title}" is live now at ${money(auction.startingBid)}. It ends ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}.`,
+        ],
+        buttonLabel: "Bid now",
+        buttonUrl: auctionLink(data),
+        imageUrl: auction.imageUrl,
+        shopName: data?.shop?.name || "the store",
+        replyTo: data?.shop?.contactEmail,
+      });
+      console.log("[notify] watcher start email sent", JSON.stringify({ auctionId: auction.id, customerId: w.customerId }));
+    } catch (error) {
+      await releaseNotice(notice);
+      console.error("[notify] watcher start email failed:", error?.message || error);
+    }
+  }
+}
+
+// Watchers: one hour before the end (bidders already got their own reminder, so they're skipped).
+export async function sendWatcherReminders() {
+  if (!notificationsEnabled()) return;
+  const now = new Date();
+  const auctions = await prisma.auction.findMany({
+    where: { startsAt: { lte: now }, endsAt: { gt: now, lte: new Date(now.getTime() + ENDING_SOON_MS) }, watches: { some: {} } },
+    include: { watches: { select: { customerId: true }, take: 200 } },
+    take: 25,
+  });
+  for (const auction of auctions) {
+    if (auction.endsAt.getTime() - auction.startsAt.getTime() <= ENDING_SOON_MS) continue;
+    if (!(await getShopPlan(auction.shop)).emails) continue;
+    for (const w of auction.watches) {
+      const notice = { auctionId: auction.id, customerId: w.customerId, type: "ENDING_SOON", key: "1h" };
+      try {
+        if (!(await claimNotice(notice))) continue;
+        const data = await lookup(auction.shop, w.customerId, auction.productId);
+        useCurrency(data);
+        const email = data?.customer?.email;
+        if (!email) {
+          await releaseNotice(notice);
+          continue;
+        }
+        const title = data?.product?.title || auction.title;
+        await sendEmail({
+          to: email,
+          subject: `1 hour left: ${title}`,
+          heading: "Less than 1 hour left",
+          lines: [
+            "Hey there,",
+            `The auction you're watching, "${title}", ends at ${friendlyTime(auction.endsAt, data?.shop?.ianaTimezone)}, in under an hour. The current bid is ${money(auction.currentBid)}.`,
+          ],
+          buttonLabel: "Bid now",
+          buttonUrl: auctionLink(data),
+          imageUrl: auction.imageUrl,
+          shopName: data?.shop?.name || "the store",
+          replyTo: data?.shop?.contactEmail,
+        });
+        console.log("[notify] watcher reminder sent", JSON.stringify({ auctionId: auction.id, customerId: w.customerId }));
+      } catch (error) {
+        await releaseNotice(notice);
+        console.error("[notify] watcher reminder failed:", error?.message || error);
+      }
+    }
+  }
+}

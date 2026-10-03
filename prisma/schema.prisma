@@ -49,6 +49,7 @@ model Auction {
   updatedAt     DateTime @updatedAt
   bids          Bid[]
   events        BidEvent[]
+  watches       Watch[]
 
   @@index([shop, productId])
   @@index([endsAt])
@@ -107,4 +108,16 @@ model BidEvent {
 
   @@index([auctionId, createdAt])
   @@index([bidderId])
+}
+
+model Watch {
+  id         String   @id @default(cuid())
+  shop       String
+  auctionId  String
+  customerId String
+  createdAt  DateTime @default(now())
+  auction    Auction  @relation(fields: [auctionId], references: [id], onDelete: Cascade)
+
+  @@unique([auctionId, customerId])
+  @@index([customerId])
 }

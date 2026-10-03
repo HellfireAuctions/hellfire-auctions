@@ -73,7 +73,8 @@ export const loader = async ({ request }) => {
     where: { bidderId: customerId, auction: { shop } },
     select: { auctionId: true, maxBid: true },
   });
-  const ids = myBids.map((b) => b.auctionId);
+  const watched = await prisma.watch.findMany({ where: { customerId, auction: { shop } }, select: { auctionId: true } });
+  const ids = [...new Set([...myBids.map((b) => b.auctionId), ...watched.map((w) => w.auctionId)])];
   const auctions = ids.length
     ? await prisma.auction.findMany({ where: { id: { in: ids } }, orderBy: { endsAt: "asc" } })
     : [];
@@ -101,7 +102,7 @@ export const loader = async ({ request }) => {
     const ended = now >= a.endsAt;
     const iLead = leader.get(a.id) === customerId;
     const reserveOk = a.reservePrice == null || Number(a.currentBid) >= Number(a.reservePrice);
-    const key = now < a.startsAt ? "UPCOMING" : ended ? (iLead && reserveOk ? "WON" : "LOST") : iLead ? "WINNING" : "OUTBID";
+    const key = !myMax.has(a.id) ? "WATCHING" : now < a.startsAt ? "UPCOMING" : ended ? (iLead && reserveOk ? "WON" : "LOST") : iLead ? "WINNING" : "OUTBID";
     return { a, ended, key, link: links.get(a.productId) || null };
   });
   // Live auctions first (soonest ending), then ended ones.
@@ -147,7 +148,7 @@ export const loader = async ({ request }) => {
     .join("");
 
   return liquid(`${header}
-    <p style="margin:0 0 22px;color:#616161">Every auction you've bid on. This page updates itself.</p>
+    <p style="margin:0 0 22px;color:#616161">Every auction you've bid on or are watching. This page updates itself.</p>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px">${cards}</div>
   </div>
   <script>

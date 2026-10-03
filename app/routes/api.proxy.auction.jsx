@@ -2,6 +2,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { shopCurrency } from "../currency.server";
 import { notifyOutbid } from "../notifications.server";
+import { getShopPlan } from "../plans.server";
 import {
   MAX_ALLOWED_BID,
   bidIncrement,
@@ -95,6 +96,12 @@ export const loader = async ({ request }) => {
   const hasReserve = auction?.reservePrice != null;
 
 
+  const watchPlan = shop ? await getShopPlan(shop) : null;
+  const watching =
+    auction && loggedInCustomerId
+      ? Boolean(await prisma.watch.findUnique({ where: { auctionId_customerId: { auctionId: auction.id, customerId: loggedInCustomerId } } }))
+      : false;
+
   return Response.json({
     now: new Date().toISOString(),
     currency: await shopCurrency(shop),
@@ -122,6 +129,8 @@ export const loader = async ({ request }) => {
           startsAt: auction.startsAt,
           endsAt: auction.endsAt,
           status: auctionState(auction),
+          canWatch: Boolean(watchPlan?.emails),
+          watching,
           history: (auction.events || []).map((e) => ({
             bidder: maskedBidder(e.bidderId),
             mine: Boolean(loggedInCustomerId) && e.bidderId === loggedInCustomerId,

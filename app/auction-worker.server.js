@@ -3,7 +3,7 @@ import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { isDevelopmentStore } from "./plans.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -242,6 +242,7 @@ async function settleAuction(auction) {
 
   let testOnLiveStore = false;
   let testTopBidder = null;
+  let productGone = false;
 
   try {
     const topBid = await prisma.bid.findFirst({
@@ -256,7 +257,11 @@ async function settleAuction(auction) {
     // A test auction on a live store can never produce a winner, an order or an invoice.
     testOnLiveStore = Boolean(auction.isTest) && !(await isDevStore(auction.shop));
     testTopBidder = topBid && reserveMet ? topBid.bidderId : null;
-    const winnerId = topBid && reserveMet && !testOnLiveStore ? topBid.bidderId : null;
+    let winnerId = topBid && reserveMet && !testOnLiveStore ? topBid.bidderId : null;
+    if (winnerId && !(await productStillExists(auction))) {
+      winnerId = null;
+      productGone = true;
+    }
 
     let checkoutUrl = auction.winnerCheckoutUrl || null;
     let draftOrderId = auction.winnerDraftOrderId || null;
@@ -286,9 +291,13 @@ async function settleAuction(auction) {
     throw error;
   }
 
-  await removeFromLiveAuctions(auction);
+  await removeFromLiveAuctions(auction).catch((error) => console.error("[hellfire-auctions] could not remove from Live Auctions:", error?.message || error));
 
   const settled = await prisma.auction.findUnique({ where: { id: auction.id } });
+  if (settled && productGone) {
+    notifyMerchantProductGone({ auction: settled }).catch(() => {});
+    return;
+  }
   if (settled && testOnLiveStore) {
     notifyMerchantTestEnded({ auction: settled, topBidderId: testTopBidder }).catch(() => {});
     return;
@@ -562,15 +571,24 @@ export async function remindWinnerNow(shop, auctionId) {
   return { error: r.reason === "plan" ? "Reminder emails are part of the Blaze plan." : "Couldn't send the reminder. Please try again." };
 }
 
-export async function cancelUnpaidSale(shop, auctionId) {
+export async function cancelUnpaidSale(shop, auctionId, blockBidder = false) {
   const a = await prisma.auction.findFirst({ where: { id: auctionId, shop } });
   if (!a?.winnerId) return { error: "This auction has no winner." };
   if ((await draftStatus(shop, a.winnerDraftOrderId)) === "COMPLETED") return { error: "The winner already paid, so the sale can't be cancelled here." };
+  const previousWinner = a.winnerId;
   await deleteDraft(shop, a.winnerDraftOrderId);
   await prisma.auction.update({
     where: { id: a.id },
     data: { winnerId: null, winnerCheckoutUrl: null, winnerDraftOrderId: null, winnerNotifiedAt: null },
   });
+  if (blockBidder) {
+    await prisma.blockedBidder.upsert({
+      where: { shop_customerId: { shop, customerId: previousWinner } },
+      create: { shop, customerId: previousWinner },
+      update: {},
+    });
+    return { success: "Sale cancelled and the bidder is blocked. You can now relist this item or sell it again." };
+  }
   return { success: "Sale cancelled. You can now relist this item or sell it again." };
 }
 
@@ -751,11 +769,104 @@ async function retentionSweep() {
   console.log("[hellfire-auctions] retention: removed", ids.length, "auctions older than 24 months");
 }
 
+async function productStillExists(auction) {
+  try {
+    const d = await adminGraphql(auction.shop, `#graphql
+      query ProductExists($id: ID!) { product(id: $id) { id } }`, { id: auction.productId });
+    return Boolean(d?.product?.id);
+  } catch {
+    return true; // can't tell: don't close the auction on a guess
+  }
+}
+
+// ---------- storefront embed check: is the bidding panel really loading on a live store? ----------
+const embedMisses = new Map();
+let lastEmbedCheck = 0;
+async function checkStorefrontEmbeds() {
+  if (Date.now() - lastEmbedCheck < 30 * 60_000) return;
+  lastEmbedCheck = Date.now();
+  const now = new Date();
+  const live = await prisma.auction.findMany({
+    where: { startsAt: { lte: now }, endsAt: { gt: now }, isTest: false },
+    select: { id: true, shop: true, productId: true, title: true },
+    take: 25,
+  });
+  for (const a of live) {
+    try {
+      if (await isDevStore(a.shop)) continue; // development stores are password protected
+      const d = await adminGraphql(a.shop, `#graphql
+        query EmbedCheck($id: ID!) { product(id: $id) { handle } shop { primaryDomain { url } } }`, { id: a.productId });
+      const handle = d?.product?.handle;
+      const base = d?.shop?.primaryDomain?.url;
+      if (!handle || !base) continue;
+      const res = await fetch(`${base.replace(/\/$/, "")}/products/${handle}`, {
+        headers: { "User-Agent": "HellfireAuctionsHealthCheck/1.0" },
+        redirect: "follow",
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) continue;
+      const html = await res.text();
+      if (/\/password/i.test(res.url) || /storefront_password/.test(html)) continue; // locked store: can't tell
+      const row = { auctionId: a.id, customerId: "merchant", type: "EMBED_OFF", key: "1" };
+      if (html.includes("hellfire-auction-runtime")) {
+        embedMisses.delete(a.id);
+        await prisma.auctionNotification.deleteMany({ where: row });
+        continue;
+      }
+      const misses = (embedMisses.get(a.id) || 0) + 1;
+      embedMisses.set(a.id, misses);
+      if (misses >= 2) {
+        const fresh = await prisma.auctionNotification.create({ data: row }).then(() => true).catch(() => false);
+        if (fresh) notifyMerchantEmbedOff({ auction: a }).catch(() => {});
+      }
+    } catch (error) {
+      console.error("[hellfire-auctions] embed check failed:", a.id, error?.message || error);
+    }
+  }
+}
+
+// ---------- weekly encrypted backup emailed to the owner ----------
+function weekKey(d = new Date()) {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const y = t.getUTCFullYear();
+  const w = Math.ceil(((t - Date.UTC(y, 0, 1)) / 86400000 + 1) / 7);
+  return `${y}-W${String(w).padStart(2, "0")}`;
+}
+let lastBackupCheck = 0;
+async function weeklyBackup() {
+  if (Date.now() - lastBackupCheck < 6 * 3600_000) return;
+  lastBackupCheck = Date.now();
+  if (!process.env.RESEND_API_KEY) return;
+  const key = "OWNER_BACKUP_" + weekKey();
+  if (await repairDone(key)) return;
+  const [auctions, bids, events, watches, plans] = await Promise.all([
+    prisma.auction.findMany(),
+    prisma.bid.findMany(),
+    prisma.bidEvent.findMany(),
+    prisma.watch.findMany(),
+    prisma.shopPlan.findMany(),
+  ]);
+  const counts = `${auctions.length} auctions, ${bids.length} bids, ${events.length} history rows, ${watches.length} watches`;
+  const json = JSON.stringify({ exportedAt: new Date().toISOString(), counts, auctions, bids, events, watches, plans });
+  if (Buffer.byteLength(json) > 15 * 1024 * 1024) {
+    await alertOwner("backup-too-big", "The weekly backup is too large to email", ["The database export is over 15 MB. Time to move backups to storage (or a paid database plan with longer history)."]);
+    return;
+  }
+  if (await emailEncryptedBackup({ json, counts })) {
+    console.log("[hellfire-auctions] weekly backup emailed:", counts);
+    await markRepairDone(key);
+  }
+}
+
 async function tick() {
   await winnerCatchUpOnce().catch((error) => console.error("[hellfire-auctions] winner catch-up error:", error?.message || error));
   await backfillBidHistoryOnce().catch((error) => console.error("[hellfire-auctions] history backfill error:", error?.message || error));
   await ownerWatchdog().catch((error) => console.error("[hellfire-auctions] owner watchdog error:", error?.message || error));
   await retentionSweep().catch((error) => console.error("[hellfire-auctions] retention error:", error?.message || error));
+  await checkStorefrontEmbeds().catch((error) => console.error("[hellfire-auctions] embed check error:", error?.message || error));
+  await weeklyBackup().catch((error) => console.error("[hellfire-auctions] weekly backup error:", error?.message || error));
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));

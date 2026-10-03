@@ -29,6 +29,7 @@ function isDurationOption(value) {
 }
 
 const DEFAULT_TZ = "America/New_York";
+const storeEmailCache = new Map(); // shop -> { at, emails }
 
 // The store's own time zone from Shopify (Settings > General). Falls back to Eastern.
 async function shopTimezone(admin) {
@@ -751,6 +752,12 @@ export const loader = async ({ request }) => {
 
   const planNow = await getShopPlan(session.shop);
   const totalAuctions = await prisma.auction.count({ where: { shop: session.shop } });
+  const liveIds = auctions
+    .filter((a) => new Date(a.startsAt).getTime() <= Date.now() && new Date(a.endsAt).getTime() > Date.now())
+    .map((a) => a.id);
+  const embedOff = liveIds.length
+    ? (await prisma.auctionNotification.count({ where: { type: "EMBED_OFF", auctionId: { in: liveIds } } })) > 0
+    : false;
   const sinceInsights = new Date(Date.now() - 30 * 24 * 3600_000);
   const endedRecent = await prisma.auction.findMany({
     where: { shop: session.shop, endsAt: { gte: sinceInsights, lte: new Date() }, status: { not: "CANCELLED" } },
@@ -811,6 +818,23 @@ export const loader = async ({ request }) => {
     }
   }
 
+  // The store's own email addresses, so a bidder using one can be flagged (possible seller bidding).
+  let storeEmails = new Set();
+  const cachedEmails = storeEmailCache.get(session.shop);
+  if (cachedEmails && Date.now() - cachedEmails.at < 3600_000) {
+    storeEmails = cachedEmails.emails;
+  } else {
+    try {
+      const sr = await admin.graphql(`#graphql
+        query StoreEmails { shop { email contactEmail } }`);
+      const sj = (await sr.json())?.data?.shop;
+      for (const e of [sj?.email, sj?.contactEmail]) if (e) storeEmails.add(String(e).toLowerCase());
+      storeEmailCache.set(session.shop, { at: Date.now(), emails: storeEmails });
+    } catch {
+      // flag simply won't show
+    }
+  }
+
   const auctionsWithLeaders = auctions.map((auction) => {
     const lead = auction.winnerId
       ? (bidsByAuction.get(auction.id) || []).find((b) => b.bidderId === auction.winnerId) || leaders.get(auction.id)
@@ -827,6 +851,7 @@ export const loader = async ({ request }) => {
           customerId: String(b.bidderId),
           name: c?.displayName || c?.email || `Customer ${b.bidderId}`,
           email: c?.email || null,
+          isStoreEmail: Boolean(c?.email && storeEmails.has(String(c.email).toLowerCase())),
           amount: outcome ? Number(outcome.amounts[b.id] ?? 0) : 0,
           isLeader: outcome ? outcome.leaderId === b.bidderId : false,
         };
@@ -890,7 +915,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -914,7 +939,7 @@ const actionImpl = async ({ request }) => {
     try {
       if (intent === "remind-winner") return await remindWinnerNow(session.shop, id);
       if (intent === "offer-next") return await offerToNextBidder(session.shop, id);
-      return await cancelUnpaidSale(session.shop, id);
+      return await cancelUnpaidSale(session.shop, id, formData.get("blockBidder") === "1");
     } catch (error) {
       console.error("[admin] unpaid-winner action failed:", intent, error?.message || error);
       return { error: "That didn't work: " + (error?.message || "unknown error") };
@@ -2035,7 +2060,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff } = useLoaderData();
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
   const revalidator = useRevalidator();
@@ -2262,8 +2287,9 @@ export default function AuctionsPage() {
                                   <s-button type="submit" variant="tertiary">Offer to next bidder</s-button>
                                 </Form>
                               )}
-                              <Form method="post" onSubmit={(e) => { if (!window.confirm("Cancel this sale? The winner's invoice is cancelled and you can relist the item.")) e.preventDefault(); }}>
+                              <Form method="post" onSubmit={(e) => { if (!window.confirm("Cancel this sale? The winner's invoice is cancelled and you can relist the item.")) { e.preventDefault(); return; } e.currentTarget.elements.blockBidder.value = window.confirm("Also block this bidder from your future auctions?") ? "1" : ""; }}>
                                 <input type="hidden" name="intent" value="cancel-sale" />
+                                <input type="hidden" name="blockBidder" value="" />
                                 <input type="hidden" name="auctionId" value={auction.id} />
                                 <s-button type="submit" tone="critical" variant="tertiary">Cancel sale</s-button>
                               </Form>
@@ -2289,6 +2315,7 @@ export default function AuctionsPage() {
                               <div>
                                 <a href={`shopify://admin/customers/${b.customerId}`} target="_top" style={{ color: "#005bd3" }}>{b.name}</a>
                                 {b.isLeader && <strong style={{ color: "#008060" }}> {"\u00B7"} leading</strong>}
+                                {b.isStoreEmail && <strong style={{ color: "#d72c0d" }}> {"\u00B7"} your store's email</strong>}
                               </div>
                               {b.email && <div style={{ color: "#616161", wordBreak: "break-all" }}>{b.email}</div>}
                               <div style={{ color: "#616161" }}>Bid: ${b.amount.toFixed(2)}</div>
@@ -2361,6 +2388,13 @@ export default function AuctionsPage() {
         )}
 
       </s-section>
+
+      {embedOff && (
+        <s-banner tone="critical" heading="Your storefront isn't showing your live auction">
+          Shoppers can't bid until the app embed is on. This usually happens after publishing a new theme.{" "}
+          <s-link href={storefrontActivationUrl} target="_top">Open the theme editor</s-link>, switch on <em>Hellfire Auctions Runtime</em>, and click Save.
+        </s-banner>
+      )}
 
       {moreAuctions && (
         <s-text>

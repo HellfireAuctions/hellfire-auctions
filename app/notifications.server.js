@@ -645,3 +645,70 @@ export async function notifyMerchantTestEnded({ auction, topBidderId }) {
     console.error("[notify] test-auction summary failed:", error?.message || error);
   }
 }
+
+// Weekly backup: encrypted (AES-256-GCM) and emailed to the owner. Key = BACKUP_PASSPHRASE, or the app secret if unset.
+export async function emailEncryptedBackup({ json, counts }) {
+  if (!notificationsEnabled()) return false;
+  const secret = process.env.BACKUP_PASSPHRASE || process.env.SHOPIFY_API_SECRET;
+  if (!secret) return false;
+  const crypto = await import("node:crypto");
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = crypto.scryptSync(secret, salt, 32);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(json, "utf8"), cipher.final()]);
+  const file = Buffer.concat([Buffer.from("HFB1"), salt, iv, cipher.getAuthTag(), encrypted]);
+  const day = new Date().toISOString().slice(0, 10);
+  const response = await fetch(RESEND_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: process.env.NOTIFY_FROM,
+      to: [process.env.ALERT_EMAIL || "support@hellfireauctions.com"],
+      subject: `Hellfire Auctions weekly backup ${day}`,
+      text: `Encrypted weekly backup attached (${counts}). Keep this email. To restore or inspect it, ask Claude to decrypt it; the key is your app's secret unless you set BACKUP_PASSPHRASE.`,
+      attachments: [{ filename: `hellfire-backup-${day}.enc`, content: file.toString("base64") }],
+    }),
+  });
+  if (!response.ok) throw new Error(`backup email HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  return true;
+}
+
+// The theme embed looks switched off: tell the merchant how to fix it.
+export async function notifyMerchantEmbedOff({ auction }) {
+  if (!notificationsEnabled()) return;
+  const data = await lookup(auction.shop, "0", auction.productId);
+  const to = data?.shop?.email || data?.shop?.contactEmail;
+  if (!to) return;
+  const title = data?.product?.title || auction.title;
+  await sendEmail({
+    to,
+    subject: "Action needed: turn on Hellfire Auctions in your theme",
+    heading: "Your auction isn't showing on your storefront",
+    lines: [
+      `Your auction "${title}" is live, but your storefront isn't loading the bidding panel. This usually happens after publishing a new theme.`,
+      "Open the theme editor, switch on \"Hellfire Auctions Runtime\" under App embeds, and click Save. Until then shoppers can't bid.",
+    ],
+    buttonLabel: "Open the theme editor",
+    buttonUrl: `https://admin.shopify.com/store/${auction.shop.replace(".myshopify.com", "")}/themes/current/editor?context=apps`,
+    shopName: data?.shop?.name || "your store",
+  });
+}
+
+// The product was deleted in Shopify before the auction settled.
+export async function notifyMerchantProductGone({ auction }) {
+  if (!notificationsEnabled()) return;
+  const data = await lookup(auction.shop, "0", auction.productId);
+  const to = data?.shop?.email || data?.shop?.contactEmail;
+  if (!to) return;
+  await sendEmail({
+    to,
+    subject: `Auction closed: the product was deleted (${auction.title})`,
+    heading: "An auction closed without a winner",
+    lines: [
+      `The product for the auction "${auction.title}" was deleted from Shopify before the auction ended, so no winner, order or invoice was created.`,
+      "Please contact your bidders if needed. To sell the item again, create a new auction.",
+    ],
+    shopName: data?.shop?.name || "your store",
+  });
+}

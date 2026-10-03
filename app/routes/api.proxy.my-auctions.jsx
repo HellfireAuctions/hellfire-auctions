@@ -51,6 +51,45 @@ const STATUS = {
   UPCOMING: { text: "UPCOMING", bg: "#b98900" },
 };
 
+// Unpaid wins: a Pay now / Pay for all together banner (statuses cached for 45 seconds).
+const unpaidCache = new Map();
+async function combineBanner(shop, auctions, customerId, money) {
+  const wins = auctions.filter((a) => String(a.winnerId) === String(customerId) && a.winnerDraftOrderId && a.winnerCheckoutUrl);
+  if (!wins.length) return "";
+  const key = `${shop}|${customerId}|${wins.map((w) => w.id).join(",")}`;
+  let hit = unpaidCache.get(key);
+  if (!hit || Date.now() - hit.at > 45_000) {
+    const statuses = new Map();
+    try {
+      const { admin } = await unauthenticated.admin(shop);
+      const r = await admin.graphql(
+        `#graphql
+          query DraftStatuses($ids: [ID!]!) { nodes(ids: $ids) { ... on DraftOrder { id status } } }`,
+        { variables: { ids: [...new Set(wins.map((w) => w.winnerDraftOrderId))].slice(0, 50) } },
+      );
+      for (const n of (await r.json())?.data?.nodes || []) if (n?.id) statuses.set(n.id, n.status);
+    } catch {
+      // no banner if Shopify can't be reached
+    }
+    hit = { at: Date.now(), statuses };
+    if (unpaidCache.size > 500) unpaidCache.clear();
+    unpaidCache.set(key, hit);
+  }
+  const unpaid = wins.filter((w) => ["OPEN", "INVOICE_SENT"].includes(hit.statuses.get(w.winnerDraftOrderId)));
+  if (!unpaid.length) return "";
+  const total = unpaid.reduce((s, w) => s + Number(w.currentBid || 0), 0);
+  const drafts = new Set(unpaid.map((w) => w.winnerDraftOrderId));
+  const box = "background:#fff8e1;border:2px solid #ffd60a;border-radius:12px;padding:14px 16px;margin:0 0 22px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between";
+  const btn = "background:#ff3b30;color:#fff;font-weight:800;padding:11px 20px;border-radius:8px;border:0;text-decoration:none;cursor:pointer;font-size:15px";
+  if (unpaid.length === 1) {
+    return `<div style="${box}"><div><strong>You have an unpaid win</strong><br>${esc(unpaid[0].title)} &middot; ${money(unpaid[0].currentBid)}</div><a href="${esc(unpaid[0].winnerCheckoutUrl)}" style="${btn}">Pay now</a></div>`;
+  }
+  if (drafts.size === 1) {
+    return `<div style="${box}"><div><strong>Your ${unpaid.length} wins are on one invoice</strong><br>${money(total)} in total, one shipping charge</div><a href="${esc(unpaid[0].winnerCheckoutUrl)}" style="${btn}">Pay now</a></div>`;
+  }
+  return `<div style="${box}"><div><strong>You have ${unpaid.length} unpaid wins</strong> (${money(total)})<br>Pay for all together and pay shipping once.<div id="hf-combine-msg" style="color:#8a1c13;margin-top:4px"></div></div><button id="hf-combine-btn" type="button" style="${btn}">Pay for all together</button></div>`;
+}
+
 export const loader = async ({ request }) => {
   const { session } = await authenticate.public.appProxy(request);
   const url = new URL(request.url);
@@ -107,6 +146,7 @@ export const loader = async ({ request }) => {
   });
   // Live auctions first (soonest ending), then ended ones.
   rows.sort((x, y) => Number(x.ended) - Number(y.ended));
+  const banner = await combineBanner(shop, auctions, customerId, money);
 
   // Each card = photo + title + the same black auction box shoppers see on product cards.
   const cards = rows
@@ -149,6 +189,7 @@ export const loader = async ({ request }) => {
 
   return liquid(`${header}
     <p style="margin:0 0 22px;color:#616161">Every auction you've bid on or are watching. This page updates itself.</p>
+    ${banner}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px">${cards}</div>
   </div>
   <script>
@@ -164,8 +205,20 @@ export const loader = async ({ request }) => {
           el.textContent = (el.getAttribute("data-hf-prefix") || "") + txt + (el.getAttribute("data-hf-suffix") || "");
         });
       }
+      var cb = document.getElementById("hf-combine-btn");
+      if (cb) cb.addEventListener("click", function () {
+        window.__hfBusy = true; cb.disabled = true; cb.textContent = "Preparing your invoice...";
+        function fail(msg) {
+          document.getElementById("hf-combine-msg").textContent = msg || "Couldn't combine your wins. Please try again.";
+          cb.disabled = false; cb.textContent = "Pay for all together"; window.__hfBusy = false;
+        }
+        fetch("/apps/hellfire-auctions/combine-invoice", { method: "POST", credentials: "same-origin" })
+          .then(function (r) { return r.json(); })
+          .then(function (j) { if (j && j.url) { location.href = j.url; } else { fail(j && j.error); } })
+          .catch(function () { fail(); });
+      });
       tick(); setInterval(tick, 1000);
-      setTimeout(function () { location.reload(); }, 15000);
+      setTimeout(function () { if (!window.__hfBusy) location.reload(); }, 15000);
     })();
   </script>`);
 };

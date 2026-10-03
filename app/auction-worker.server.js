@@ -3,7 +3,7 @@ import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { isDevelopmentStore } from "./plans.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -547,7 +547,10 @@ async function paymentFollowUps() {
     },
     take: 50,
   });
+  const seenDrafts = new Set();
   for (const a of rows) {
+    if (seenDrafts.has(a.winnerDraftOrderId)) continue; // a combined invoice is followed up once
+    seenDrafts.add(a.winnerDraftOrderId);
     try {
       const st = await draftStatus(a.shop, a.winnerDraftOrderId);
       if (st !== "OPEN" && st !== "INVOICE_SENT") continue;
@@ -576,7 +579,7 @@ export async function cancelUnpaidSale(shop, auctionId, blockBidder = false) {
   if (!a?.winnerId) return { error: "This auction has no winner." };
   if ((await draftStatus(shop, a.winnerDraftOrderId)) === "COMPLETED") return { error: "The winner already paid, so the sale can't be cancelled here." };
   const previousWinner = a.winnerId;
-  await deleteDraft(shop, a.winnerDraftOrderId);
+  await releaseDraftFor(shop, a);
   await prisma.auction.update({
     where: { id: a.id },
     data: { winnerId: null, winnerCheckoutUrl: null, winnerDraftOrderId: null, winnerNotifiedAt: null },
@@ -602,7 +605,7 @@ export async function offerToNextBidder(shop, auctionId) {
   const next = bids.find((b) => b.bidderId !== a.winnerId && !blocked.has(b.bidderId));
   if (!next) return { error: "There's no other bidder to offer this item to." };
   const price = Number(next.maxBid);
-  await deleteDraft(shop, a.winnerDraftOrderId);
+  await releaseDraftFor(shop, a);
   const updated = await prisma.auction.update({
     where: { id: a.id },
     data: { winnerId: next.bidderId, currentBid: price, winnerDraftOrderId: null, winnerCheckoutUrl: null, winnerNotifiedAt: null },
@@ -857,6 +860,114 @@ async function weeklyBackup() {
   if (await emailEncryptedBackup({ json, counts })) {
     console.log("[hellfire-auctions] weekly backup emailed:", counts);
     await markRepairDone(key);
+  }
+}
+
+// ---------- combined invoices ----------
+async function variantLine(shop, auction) {
+  const d = await adminGraphql(shop, `#graphql
+    query CombineVariant($id: ID!) { shop { currencyCode } product(id: $id) { variants(first: 1) { nodes { id } } } }`, { id: auction.productId });
+  const variantId = d?.product?.variants?.nodes?.[0]?.id;
+  if (!variantId) return null;
+  return {
+    variantId,
+    quantity: 1,
+    priceOverride: { amount: Number(auction.currentBid).toFixed(2), currencyCode: d?.shop?.currencyCode || "USD" },
+  };
+}
+
+// An item leaves a shared invoice: keep the others payable (or delete the invoice if it was the only one).
+export async function releaseDraftFor(shop, a) {
+  if (!a?.winnerDraftOrderId) return;
+  const siblings = await prisma.auction.findMany({
+    where: { shop, winnerDraftOrderId: a.winnerDraftOrderId, id: { not: a.id } },
+    select: { id: true, productId: true, currentBid: true },
+  });
+  if (!siblings.length) {
+    await deleteDraft(shop, a.winnerDraftOrderId);
+    return;
+  }
+  const lines = [];
+  for (const s of siblings) {
+    const line = await variantLine(shop, s);
+    if (line) lines.push(line);
+  }
+  if (!lines.length) return;
+  await adminGraphql(shop, `#graphql
+    mutation TrimSharedDraft($id: ID!, $input: DraftOrderInput!) {
+      draftOrderUpdate(id: $id, input: $input) { draftOrder { id } userErrors { message } }
+    }`, { id: a.winnerDraftOrderId, input: { lineItems: lines } });
+}
+
+const combining = new Set();
+
+// Merge ALL of one buyer's unpaid wins in a store into a single invoice (one shipping charge).
+export async function combineWinnerInvoices(shop, customerId, { notifyBuyer = false } = {}) {
+  const lockKey = `${shop}|${customerId}`;
+  if (combining.has(lockKey)) return { error: "Your combined invoice is already being prepared. Please wait a moment." };
+  combining.add(lockKey);
+  try {
+    const wins = await prisma.auction.findMany({
+      where: { shop, winnerId: String(customerId), status: "ENDED", winnerDraftOrderId: { not: null } },
+      orderBy: { endsAt: "asc" },
+      take: 25,
+    });
+    if (wins.length < 2) return { error: "There aren't two or more unpaid wins to combine." };
+    const draftIds = [...new Set(wins.map((w) => w.winnerDraftOrderId))];
+    const st = await adminGraphql(shop, `#graphql
+      query DraftStatuses($ids: [ID!]!) { nodes(ids: $ids) { ... on DraftOrder { id status } } }`, { ids: draftIds });
+    const statusById = new Map((st?.nodes || []).filter(Boolean).map((n) => [n.id, n.status]));
+    const unpaid = wins.filter((w) => ["OPEN", "INVOICE_SENT"].includes(statusById.get(w.winnerDraftOrderId)));
+    if (unpaid.length < 2) return { error: "There aren't two or more unpaid wins to combine." };
+    const oldDrafts = [...new Set(unpaid.map((w) => w.winnerDraftOrderId))];
+    if (oldDrafts.length === 1) return { url: unpaid[0].winnerCheckoutUrl, count: unpaid.length, already: true };
+
+    const lines = [];
+    for (const w of unpaid) {
+      await ensureInvoiceStock(w).catch((error) => console.error("[hellfire-auctions] stock re-check failed:", error?.message || error));
+      const line = await variantLine(shop, w);
+      if (!line) return { error: `"${w.title}" can no longer be found in the store, so these wins can't be combined. Please contact the seller.` };
+      lines.push(line);
+    }
+    const total = unpaid.reduce((s, w) => s + Number(w.currentBid || 0), 0);
+    const customerGid = String(customerId).startsWith("gid://") ? String(customerId) : `gid://shopify/Customer/${customerId}`;
+    const created = await adminGraphql(shop, `#graphql
+      mutation CreateCombinedDraft($input: DraftOrderInput!) {
+        draftOrderCreate(input: $input) { draftOrder { id invoiceUrl } userErrors { field message } }
+      }`, {
+      input: {
+        purchasingEntity: { customerId: customerGid },
+        note: `Hellfire Auctions winner: ${unpaid.length} combined items`,
+        tags: ["Hellfire Auction", "Combined"],
+        lineItems: lines,
+        customAttributes: [
+          { key: "Auction IDs", value: unpaid.map((w) => w.id).join(", ") },
+          { key: "Winning bids", value: total.toFixed(2) },
+        ],
+      },
+    });
+    throwUserErrors(created?.draftOrderCreate?.userErrors);
+    const draft = created?.draftOrderCreate?.draftOrder;
+    if (!draft?.id || !draft?.invoiceUrl) return { error: "Shopify couldn't create the combined invoice. Please try again." };
+
+    // Point every item at the new invoice FIRST, then retire the old ones (never leaves an item without an invoice).
+    await prisma.auction.updateMany({
+      where: { id: { in: unpaid.map((w) => w.id) } },
+      data: { winnerDraftOrderId: draft.id, winnerCheckoutUrl: draft.invoiceUrl, winnerNotifiedAt: new Date() },
+    });
+    for (const old of oldDrafts) await deleteDraft(shop, old);
+    console.log("[hellfire-auctions] combined invoice created", JSON.stringify({ shop, customerId, items: unpaid.length }));
+    if (notifyBuyer) {
+      await notifyCombinedInvoice({ shop, customerId, count: unpaid.length, total, url: draft.invoiceUrl }).catch((error) =>
+        console.error("[hellfire-auctions] combined invoice email failed:", error?.message || error),
+      );
+    }
+    return { url: draft.invoiceUrl, count: unpaid.length, total };
+  } catch (error) {
+    console.error("[hellfire-auctions] combine failed:", error?.message || error);
+    return { error: "Couldn't combine the invoices. Please try again, or pay each one separately." };
+  } finally {
+    combining.delete(lockKey);
   }
 }
 

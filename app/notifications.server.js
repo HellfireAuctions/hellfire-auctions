@@ -359,6 +359,15 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
     const email = data?.customer?.email;
     if (!email) return false;
     const title = data?.product?.title || auction.title;
+    const otherWins = secondChance
+      ? 0
+      : await prisma.auction.count({
+          where: { shop: auction.shop, winnerId: String(customerId), id: { not: auction.id }, winnerNotifiedAt: { gte: new Date(Date.now() - 7 * 24 * 3600_000) } },
+        });
+    const myAuctionsUrl = data?.shop?.primaryDomain?.url ? `${data.shop.primaryDomain.url.replace(/\/$/, "")}/apps/hellfire-auctions/my-auctions` : null;
+    const extraWinsLine = otherWins > 0 && myAuctionsUrl
+      ? `You have other recent wins. To pay for everything at once and pay shipping once, open your My Auctions page: ${myAuctionsUrl}`
+      : null;
     await sendEmail({
       to: email,
       subject: secondChance ? `A second chance to buy "${title}" at ${data?.shop?.name || "our store"}` : `You won the auction at ${data?.shop?.name || "our store"}!`,
@@ -373,6 +382,7 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
             "Hey there,",
             `Congratulations! You won "${title}" with a winning bid of ${money(auction.currentBid)}.`,
             "Use the secure checkout link below to complete your purchase. Please pay within 4 days.",
+            ...(extraWinsLine ? [extraWinsLine] : []),
           ],
       buttonLabel: "Complete your purchase",
       buttonUrl: checkoutUrl,
@@ -423,6 +433,12 @@ export async function sendPaymentReminder({ auction, key }) {
     }
     const title = data?.product?.title || auction.title;
     const base = auction.winnerNotifiedAt || auction.endsAt;
+    const sameInvoice = await prisma.auction.findMany({
+      where: { shop: auction.shop, winnerDraftOrderId: auction.winnerDraftOrderId },
+      select: { currentBid: true },
+    });
+    const combinedItems = sameInvoice.length > 1;
+    const combinedTotal = sameInvoice.reduce((s, x) => s + Number(x.currentBid || 0), 0);
     const due = new Date(new Date(base).getTime() + PAY_WINDOW_HOURS * 3600_000);
     await sendEmail({
       to: email,
@@ -430,7 +446,9 @@ export async function sendPaymentReminder({ auction, key }) {
       heading: "Your purchase is waiting",
       lines: [
         "Hey there,",
-        `You won "${title}" with a winning bid of ${money(auction.currentBid)}, but your purchase isn't complete yet.`,
+        combinedItems
+          ? `You won ${sameInvoice.length} items (${money(combinedTotal)} in total), and your combined purchase isn't complete yet.`
+          : `You won "${title}" with a winning bid of ${money(auction.currentBid)}, but your purchase isn't complete yet.`,
         `Please pay by ${friendlyTime(due, data?.shop?.ianaTimezone)} so the seller can ship it to you.`,
       ],
       buttonLabel: "Complete your purchase",
@@ -731,5 +749,28 @@ export async function emailDataRequest({ shop, customerId, report }) {
       "The app stores no name, address or payment details. Please share this with the customer if they asked for it.",
     ],
     shopName: data?.shop?.name || "your store",
+  });
+}
+
+// The buyer's wins were merged into one invoice (seller pressed "Combine").
+export async function notifyCombinedInvoice({ shop, customerId, count, total, url }) {
+  if (!notificationsEnabled()) return;
+  const data = await lookup(shop, customerId, "gid://shopify/Product/0");
+  useCurrency(data);
+  const email = data?.customer?.email;
+  if (!email) return;
+  await sendEmail({
+    to: email,
+    subject: `Your ${count} items are on one invoice`,
+    heading: "One invoice for all your wins",
+    lines: [
+      "Hey there,",
+      `We combined your ${count} unpaid wins into one invoice (${money(total)} before shipping and tax), so you only pay shipping once.`,
+      "Your earlier separate invoice links no longer work. Please use the button below and pay within 4 days.",
+    ],
+    buttonLabel: "Pay for all together",
+    buttonUrl: url,
+    shopName: data?.shop?.name || "the store",
+    replyTo: data?.shop?.contactEmail,
   });
 }

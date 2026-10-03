@@ -5,7 +5,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction, getShopPlan } from "../plans.server";
-import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale } from "../auction-worker.server";
+import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor } from "../auction-worker.server";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -835,6 +835,17 @@ export const loader = async ({ request }) => {
     }
   }
 
+  const unpaidByWinner = new Map();
+  for (const a of auctions) {
+    if (!a.winnerId || !a.winnerDraftOrderId) continue;
+    const s = draftStatuses.get(a.winnerDraftOrderId);
+    if (s !== "OPEN" && s !== "INVOICE_SENT") continue;
+    const e = unpaidByWinner.get(a.winnerId) || { n: 0, drafts: new Set() };
+    e.n += 1;
+    e.drafts.add(a.winnerDraftOrderId);
+    unpaidByWinner.set(a.winnerId, e);
+  }
+
   const auctionsWithLeaders = auctions.map((auction) => {
     const lead = auction.winnerId
       ? (bidsByAuction.get(auction.id) || []).find((b) => b.bidderId === auction.winnerId) || leaders.get(auction.id)
@@ -862,6 +873,8 @@ export const loader = async ({ request }) => {
       ...auction,
       bidders,
       paymentStatus: auction.winnerDraftOrderId ? draftStatuses.get(auction.winnerDraftOrderId) || null : null,
+      winnerUnpaidCount: unpaidByWinner.get(auction.winnerId)?.n || 0,
+      winnerDraftCount: unpaidByWinner.get(auction.winnerId)?.drafts.size || 0,
       payDeadline: auction.winnerId
         ? new Date(new Date(auction.winnerNotifiedAt || auction.endsAt).getTime() + 96 * 3600_000).toISOString()
         : null,
@@ -934,9 +947,15 @@ const actionImpl = async ({ request }) => {
     }
   }
 
-  if (["remind-winner", "offer-next", "cancel-sale"].includes(intent)) {
+  if (["remind-winner", "offer-next", "cancel-sale", "combine-wins"].includes(intent)) {
     const id = formData.get("auctionId")?.toString() || "";
     try {
+      if (intent === "combine-wins") {
+        const one = await prisma.auction.findFirst({ where: { id, shop: session.shop } });
+        if (!one?.winnerId) return { error: "This auction has no winner." };
+        const r = await combineWinnerInvoices(session.shop, one.winnerId, { notifyBuyer: true });
+        return r.error ? { error: r.error } : { success: `Combined ${r.count} wins into one invoice and emailed the buyer the new link.` };
+      }
       if (intent === "remind-winner") return await remindWinnerNow(session.shop, id);
       if (intent === "offer-next") return await offerToNextBidder(session.shop, id);
       return await cancelUnpaidSale(session.shop, id);
@@ -1117,13 +1136,7 @@ const actionImpl = async ({ request }) => {
             return { error: "The winner hasn't paid their invoice yet. Use Cancel sale first, or confirm the deletion prompt to cancel their invoice and delete the auction." };
           }
           try {
-            await admin.graphql(
-              `#graphql
-                mutation DropWinnerDraft($input: DraftOrderDeleteInput!) {
-                  draftOrderDelete(input: $input) { deletedId userErrors { message } }
-                }`,
-              { variables: { input: { id: target.winnerDraftOrderId } } },
-            );
+            await releaseDraftFor(session.shop, target);
           } catch {
             // the invoice may already be gone; continue with the deletion
           }
@@ -2294,6 +2307,16 @@ export default function AuctionsPage() {
                                 <input type="hidden" name="auctionId" value={auction.id} />
                                 <s-button type="submit" variant="tertiary">Send reminder</s-button>
                               </Form>
+                              {auction.winnerUnpaidCount >= 2 && auction.winnerDraftCount >= 2 && (
+                                <Form method="post" onSubmit={(e) => { if (!window.confirm("Combine all of this buyer's unpaid wins into one invoice? Their separate invoices are cancelled and they get one new link by email.")) e.preventDefault(); }}>
+                                  <input type="hidden" name="intent" value="combine-wins" />
+                                  <input type="hidden" name="auctionId" value={auction.id} />
+                                  <s-button type="submit" variant="tertiary">Combine this buyer's wins</s-button>
+                                </Form>
+                              )}
+                              {auction.winnerUnpaidCount >= 2 && auction.winnerDraftCount === 1 && (
+                                <div style={{ fontSize: 12, color: "#616161", alignSelf: "center" }}>Combined invoice ({auction.winnerUnpaidCount} items)</div>
+                              )}
                               {auction.hasOtherBidders && (
                                 <Form method="post" onSubmit={(e) => { if (!window.confirm("Offer this item to the next-highest bidder at their bid? The current winner's invoice will be cancelled.")) e.preventDefault(); }}>
                                   <input type="hidden" name="intent" value="offer-next" />

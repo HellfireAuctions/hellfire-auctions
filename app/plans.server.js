@@ -71,9 +71,12 @@ export function monthStart(now = new Date()) {
 }
 
 export async function auctionsCreatedThisMonth(shop) {
-  return prisma.auction.count({
-    where: { shop, createdAt: { gte: monthStart() } },
-  });
+  const rows = await prisma.$queryRaw`
+    SELECT COUNT(*)::int AS n FROM "Auction"
+    WHERE "shop" = ${shop}
+      AND "createdAt" >= ${monthStart()}
+      AND ("endsAt" - "startsAt") >= interval '1 hour'`;
+  return Number(rows?.[0]?.n || 0);
 }
 
 export async function canCreateAuction(shop) {

@@ -13,7 +13,19 @@ const DURATION_OPTIONS = [
   { value: "7", label: "7 Days" },
   { value: "14", label: "14 Days" },
   { value: "30", label: "30 Days" },
+  { value: "m10", label: "Test \u2014 10 minutes" },
+  { value: "m5", label: "Test \u2014 5 minutes" },
 ];
+
+// "7" = 7 days, "m5" = 5 minutes (test auctions).
+function durationMs(value) {
+  const v = String(value || "");
+  return v.startsWith("m") ? Number(v.slice(1)) * 60 * 1000 : Number(v) * 24 * 60 * 60 * 1000;
+}
+
+function isDurationOption(value) {
+  return DURATION_OPTIONS.some((o) => o.value === String(value));
+}
 
 const DEFAULT_TZ = "America/New_York";
 
@@ -825,8 +837,8 @@ const actionImpl = async ({ request }) => {
     if (intent === "relist") {
       if (!ended) return { error: "Only ended auctions can be relisted." };
       if (target.winnerId) return { error: "This auction sold, so it can't be relisted." };
-      const days = Number(formData.get("durationDays"));
-      if (!DURATION_OPTIONS.some((o) => Number(o.value) === days)) return { error: "Choose how long the relisted auction should run." };
+      const durationValue = formData.get("durationDays")?.toString() || "";
+      if (!isDurationOption(durationValue)) return { error: "Choose how long the relisted auction should run." };
       const quota = await canCreateAuction(session.shop);
       if (!quota.allowed) {
         return { error: `You've used all ${quota.limit} auctions on the ${quota.plan.name} plan this month. Upgrade on the "Plans & upgrades" page for more.` };
@@ -848,11 +860,11 @@ const actionImpl = async ({ request }) => {
           currentBid: target.startingBid,
           reservePrice: target.reservePrice,
           startsAt: now,
-          endsAt: new Date(now.getTime() + days * 24 * 60 * 60 * 1000),
+          endsAt: new Date(now.getTime() + durationMs(durationValue)),
           status: "LIVE",
         },
       });
-      return { success: `Relisted! The auction is live again for ${DURATION_OPTIONS.find((o) => Number(o.value) === days).label.toLowerCase()}.` };
+      return { success: `Relisted! The auction is live again for ${DURATION_OPTIONS.find((o) => o.value === durationValue).label.toLowerCase()}.` };
     }
 
     // Delete an ended auction (and its product, unless another auction still uses it).
@@ -929,8 +941,8 @@ const actionImpl = async ({ request }) => {
   const startsAtAmPm =
     formData.get("startsAtAmPm")?.toString();
 
-  const durationDays =
-    Number(formData.get("durationDays"));
+  const durationValue =
+    formData.get("durationDays")?.toString() || "";
 
   const imageFile = formData.get("image");
 
@@ -942,10 +954,7 @@ const actionImpl = async ({ request }) => {
     !startsAtHour ||
     !startsAtMinute ||
     !startsAtAmPm ||
-    !DURATION_OPTIONS.some(
-      (option) =>
-        Number(option.value) === durationDays,
-    )
+    !isDurationOption(durationValue)
   ) {
     return {
       error: "Please complete all required auction fields.",
@@ -962,7 +971,7 @@ const actionImpl = async ({ request }) => {
 
   const endsAt = new Date(
     startsAt.getTime() +
-      durationDays * 24 * 60 * 60 * 1000,
+      durationMs(durationValue),
   );
 
   const reservePrice =
@@ -1362,20 +1371,13 @@ function AuctionForm({
     useState(() => {
       if (!auction) return "7";
 
-      const days = Math.round(
-        (
-          new Date(auction.endsAt).getTime() -
-          new Date(auction.startsAt).getTime()
-        ) /
-          (24 * 60 * 60 * 1000),
+      const length =
+        new Date(auction.endsAt).getTime() -
+        new Date(auction.startsAt).getTime();
+      const match = DURATION_OPTIONS.find(
+        (option) => Math.abs(durationMs(option.value) - length) < 60 * 1000,
       );
-
-      return DURATION_OPTIONS.some(
-        (option) =>
-          Number(option.value) === days,
-      )
-        ? String(days)
-        : "7";
+      return match ? match.value : "7";
     });
 
   const [imagePreview, setImagePreview] =
@@ -1395,11 +1397,7 @@ function AuctionForm({
 
       const end = new Date(
         start.getTime() +
-          Number(duration) *
-            24 *
-            60 *
-            60 *
-            1000,
+          durationMs(duration),
       );
 
       return formatEastern(end, timezone);

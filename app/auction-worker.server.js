@@ -43,6 +43,7 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
       auction.shop,
       `#graphql
         query AuctionVariant($productId: ID!) {
+          shop { currencyCode }
           product(id: $productId) {
             variants(first: 1) {
               nodes { id }
@@ -75,7 +76,10 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
             {
               variantId,
               quantity: 1,
-              originalUnitPrice: Number(auction.currentBid).toFixed(2),
+              priceOverride: {
+                amount: Number(auction.currentBid).toFixed(2),
+                currencyCode: productData?.shop?.currencyCode || "USD",
+              },
             },
           ],
           customAttributes: [
@@ -256,7 +260,68 @@ async function settleAuction(auction) {
   }
 }
 
+let zeroDraftsRepaired = false;
+async function repairZeroPriceDrafts() {
+  if (zeroDraftsRepaired) return;
+  zeroDraftsRepaired = true;
+  const recent = await prisma.auction.findMany({
+    where: { winnerDraftOrderId: { not: null }, endsAt: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } },
+    take: 50,
+  });
+  for (const a of recent) {
+    try {
+      if (!(Number(a.currentBid) > 0)) continue;
+      const d = await adminGraphql(
+        a.shop,
+        `#graphql
+          query DraftPriceCheck($id: ID!) {
+            shop { currencyCode }
+            draftOrder(id: $id) {
+              status
+              totalPriceSet { shopMoney { amount } }
+              lineItems(first: 5) { nodes { quantity variant { id } } }
+            }
+          }
+        `,
+        { id: a.winnerDraftOrderId },
+      );
+      const draft = d?.draftOrder;
+      if (!draft || draft.status !== "OPEN" || Number(draft.totalPriceSet?.shopMoney?.amount) > 0) continue;
+      const variantId = draft.lineItems?.nodes?.[0]?.variant?.id;
+      if (!variantId) continue;
+      const u = await adminGraphql(
+        a.shop,
+        `#graphql
+          mutation FixDraftPrice($id: ID!, $input: DraftOrderInput!) {
+            draftOrderUpdate(id: $id, input: $input) {
+              draftOrder { id totalPriceSet { shopMoney { amount } } }
+              userErrors { field message }
+            }
+          }
+        `,
+        {
+          id: a.winnerDraftOrderId,
+          input: {
+            lineItems: [
+              {
+                variantId,
+                quantity: 1,
+                priceOverride: { amount: Number(a.currentBid).toFixed(2), currencyCode: d?.shop?.currencyCode || "USD" },
+              },
+            ],
+          },
+        },
+      );
+      throwUserErrors(u?.draftOrderUpdate?.userErrors);
+      console.log("[hellfire-auctions] fixed $0 winner draft", JSON.stringify({ auctionId: a.id, total: u?.draftOrderUpdate?.draftOrder?.totalPriceSet?.shopMoney?.amount }));
+    } catch (error) {
+      console.error("[hellfire-auctions] draft price repair failed:", a.id, error?.message || error);
+    }
+  }
+}
+
 async function tick() {
+  await repairZeroPriceDrafts().catch((error) => console.error("[hellfire-auctions] draft repair error:", error?.message || error));
   try {
     const recentWins = await prisma.auction.findMany({
       where: {

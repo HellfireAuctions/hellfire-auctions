@@ -737,7 +737,24 @@ export const loader = async ({ request }) => {
   }
   const blockedRows = await prisma.blockedBidder.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" }, take: 100 });
 
-  const customerIds = [...new Set([...bids.map((b) => String(b.bidderId)), ...blockedRows.map((r) => String(r.customerId))])].slice(0, 240);
+  const sinceInsights = new Date(Date.now() - 30 * 24 * 3600_000);
+  const endedRecent = await prisma.auction.findMany({
+    where: { shop: session.shop, endsAt: { gte: sinceInsights, lte: new Date() }, status: { not: "CANCELLED" } },
+    select: { title: true, currentBid: true, bidCount: true, winnerId: true },
+  });
+  const soldRecent = endedRecent.filter((a) => a.winnerId);
+  const soldValue = soldRecent.reduce((sum, a) => sum + Number(a.currentBid || 0), 0);
+  const best = [...soldRecent].sort((a, b) => Number(b.currentBid) - Number(a.currentBid))[0] || null;
+  const liveNow = await prisma.auction.count({ where: { shop: session.shop, startsAt: { lte: new Date() }, endsAt: { gt: new Date() } } });
+  const topRows = await prisma.bid.groupBy({
+    by: ["bidderId"],
+    where: { auction: { shop: session.shop } },
+    _count: { _all: true },
+    orderBy: { _count: { bidderId: "desc" } },
+    take: 5,
+  });
+
+  const customerIds = [...new Set([...bids.map((b) => String(b.bidderId)), ...blockedRows.map((r) => String(r.customerId)), ...topRows.map((r) => String(r.bidderId))])].slice(0, 240);
   const customers = new Map();
   if (customerIds.length) {
     const gids = customerIds.map((id) => `gid://shopify/Customer/${id}`);
@@ -820,6 +837,26 @@ export const loader = async ({ request }) => {
     };
   });
 
+  const insights = {
+    endedCount: endedRecent.length,
+    soldCount: soldRecent.length,
+    sellThrough: endedRecent.length ? Math.round((100 * soldRecent.length) / endedRecent.length) : null,
+    soldValue,
+    avgPrice: soldRecent.length ? soldValue / soldRecent.length : 0,
+    avgBids: endedRecent.length ? endedRecent.reduce((s, a) => s + (a.bidCount || 0), 0) / endedRecent.length : 0,
+    best: best ? { title: best.title, price: Number(best.currentBid) } : null,
+    liveNow,
+    topBidders: topRows.map((r) => {
+      const c = customers.get(String(r.bidderId));
+      return {
+        customerId: String(r.bidderId),
+        name: c?.displayName || c?.email || `Customer ${r.bidderId}`,
+        email: c?.email || null,
+        auctions: r._count._all,
+      };
+    }),
+  };
+
   const blocked = blockedRows.map((r) => {
     const c = customers.get(String(r.customerId));
     return {
@@ -839,7 +876,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights };
 };
 
 const actionImpl = async ({ request }) => {
@@ -1958,7 +1995,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [] } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights } = useLoaderData();
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
   const revalidator = useRevalidator();
@@ -2268,6 +2305,48 @@ export default function AuctionsPage() {
           </div>
         )}
 
+      </s-section>
+
+      <s-section heading="Insights (last 30 days)">
+        {!insights || insights.endedCount === 0 ? (
+          <s-text>Your numbers appear here after your first auction ends.</s-text>
+        ) : (
+          <s-stack gap="base">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+              {[
+                ["Auctions ended", String(insights.endedCount)],
+                ["Sold", `${insights.soldCount} (${insights.sellThrough}%)`],
+                ["Sold value", `${insights.soldValue.toFixed(2)}`],
+                ["Average price", insights.soldCount ? `${insights.avgPrice.toFixed(2)}` : "\u2014"],
+                ["Bids per auction", insights.avgBids.toFixed(1)],
+                ["Live right now", String(insights.liveNow)],
+              ].map(([label, value]) => (
+                <div key={label} style={{ border: "1px solid #e3e3e3", borderRadius: 12, padding: "12px 14px", background: "#fff" }}>
+                  <div style={{ fontSize: 12, color: "#616161" }}>{label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            {insights.best && (
+              <s-text>
+                Best sale: <strong>{insights.best.title}</strong> for <strong>${insights.best.price.toFixed(2)}</strong>
+              </s-text>
+            )}
+            {insights.topBidders.length > 0 && (
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>Most active bidders (all time)</div>
+                <div style={{ display: "grid", gap: 4, fontSize: 14 }}>
+                  {insights.topBidders.map((b) => (
+                    <div key={b.customerId}>
+                      <a href={`shopify://admin/customers/${b.customerId}`} target="_top" style={{ color: "#005bd3" }}>{b.name}</a>
+                      <span style={{ color: "#616161" }}> {"\u00B7"} {b.auctions} auction{b.auctions === 1 ? "" : "s"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </s-stack>
+        )}
       </s-section>
 
       {blocked.length > 0 && (

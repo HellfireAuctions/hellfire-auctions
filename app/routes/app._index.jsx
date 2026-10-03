@@ -2051,8 +2051,13 @@ export default function AuctionsPage() {
   const [editingId, setEditingId] =
     useState(null);
 
+  const [formNonce, setFormNonce] = useState(0);
   useEffect(() => {
     if (actionData?.success) setCloneFrom(null);
+    // A successful create (not an edit, and not a message-style result) clears the form for the next listing.
+    if (actionData?.success && typeof actionData.success !== "string" && actionData?.mode !== "update") {
+      setFormNonce((n) => n + 1);
+    }
   }, [actionData]);
 
   const editingAuction =
@@ -2141,7 +2146,7 @@ export default function AuctionsPage() {
                 <s-button type="button" variant="tertiary" onClick={() => setCloneFrom(null)}>Clear</s-button>
               </div>
             )}
-            <AuctionForm key={cloneFrom?.id || "new"} timezone={timezone} prefill={cloneFrom} allowAutoExtend={Boolean(planFlags?.autoExtend)} />
+            <AuctionForm key={`${cloneFrom?.id || "new"}-${formNonce}`} timezone={timezone} prefill={cloneFrom} allowAutoExtend={Boolean(planFlags?.autoExtend)} />
           </>
         )}
       </s-section>

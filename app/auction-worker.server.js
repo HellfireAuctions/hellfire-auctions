@@ -3,7 +3,7 @@ import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { isDevelopmentStore } from "./plans.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyMerchantShipTogether, notifyShipTogetherDecision } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -969,90 +969,6 @@ export async function combineWinnerInvoices(shop, customerId, { notifyBuyer = fa
   } finally {
     combining.delete(lockKey);
   }
-}
-
-// ---------- ship with an existing order ----------
-async function unpaidWinsFor(shop, customerId) {
-  const wins = await prisma.auction.findMany({
-    where: { shop, winnerId: String(customerId), status: "ENDED", winnerDraftOrderId: { not: null } },
-    orderBy: { endsAt: "desc" },
-    take: 25,
-  });
-  if (!wins.length) return [];
-  const ids = [...new Set(wins.map((w) => w.winnerDraftOrderId))];
-  const st = await adminGraphql(shop, `#graphql
-    query DraftStatuses($ids: [ID!]!) { nodes(ids: $ids) { ... on DraftOrder { id status } } }`, { ids });
-  const statusById = new Map((st?.nodes || []).filter(Boolean).map((n) => [n.id, n.status]));
-  return wins.filter((w) => ["OPEN", "INVOICE_SENT"].includes(statusById.get(w.winnerDraftOrderId)));
-}
-
-// Buyer: "ship my unpaid wins together with my existing order".
-export async function requestShipTogether(shop, customerId, orderRef) {
-  const unpaid = await unpaidWinsFor(shop, customerId);
-  if (!unpaid.length) return { error: "You don't have an unpaid win to attach to an order." };
-  const existing = await prisma.auctionNotification.findFirst({
-    where: { customerId: String(customerId), auctionId: { in: unpaid.map((w) => w.id) }, type: { in: ["SHIP_TOGETHER", "SHIP_TOGETHER_OK"] } },
-  });
-  if (existing) return { error: `You already asked about order ${existing.key}. The seller will reply by email.` };
-  await prisma.auctionNotification.createMany({
-    data: unpaid.map((w) => ({ auctionId: w.id, customerId: String(customerId), type: "SHIP_TOGETHER", key: orderRef })),
-    skipDuplicates: true,
-  });
-  notifyMerchantShipTogether({ shop, customerId, orderRef, titles: unpaid.map((w) => w.title) }).catch(() => {});
-  return { message: "Request sent. The seller will reply by email, and your invoice stays payable in the meantime." };
-}
-
-// Free shipping on an invoice, labelled with the order it ships with (keeps the existing tags/attributes).
-async function applyFreeShipping(shop, draftId, ref) {
-  const d = await adminGraphql(shop, `#graphql
-    query ShipDraft($id: ID!) { shop { currencyCode } draftOrder(id: $id) { tags customAttributes { key value } } }`, { id: draftId });
-  const tags = [...new Set([...(d?.draftOrder?.tags || []), "Ship Together"])];
-  const attrs = [...(d?.draftOrder?.customAttributes || []).filter((a) => a.key !== "Ship with order"), { key: "Ship with order", value: ref }]
-    .map(({ key, value }) => ({ key, value }));
-  const currency = d?.shop?.currencyCode || "USD";
-  const title = `Ships with order ${ref}`;
-  const lines = [{ title, priceWithCurrency: { amount: "0.00", currencyCode: currency } }, { title, price: "0.00" }];
-  for (const shippingLine of lines) {
-    try {
-      const r = await adminGraphql(shop, `#graphql
-        mutation FreeShipping($id: ID!, $input: DraftOrderInput!) {
-          draftOrderUpdate(id: $id, input: $input) { draftOrder { id } userErrors { message } }
-        }`, { id: draftId, input: { shippingLine, tags, customAttributes: attrs } });
-      if (!(r?.draftOrderUpdate?.userErrors || []).length && r?.draftOrderUpdate?.draftOrder?.id) return true;
-    } catch {
-      // try the next shipping-line format
-    }
-  }
-  return false;
-}
-
-// Seller: approve (free shipping) or decline a buyer's ship-together request.
-export async function decideShipTogether(shop, auctionId, approve) {
-  const row = await prisma.auctionNotification.findFirst({ where: { auctionId, type: "SHIP_TOGETHER" } });
-  if (!row) return { error: "There's no pending request on this auction." };
-  const all = await prisma.auctionNotification.findMany({ where: { customerId: row.customerId, key: row.key, type: "SHIP_TOGETHER" } });
-  const autos = await prisma.auction.findMany({ where: { id: { in: all.map((r) => r.auctionId) }, shop } });
-  if (!autos.length) return { error: "That request no longer applies." };
-  const ownRows = all.filter((r) => autos.some((a) => a.id === r.auctionId));
-  const url = autos.find((a) => a.winnerCheckoutUrl)?.winnerCheckoutUrl || null;
-
-  if (!approve) {
-    await prisma.auctionNotification.deleteMany({ where: { id: { in: ownRows.map((r) => r.id) } } });
-    notifyShipTogetherDecision({ shop, customerId: row.customerId, approve: false, orderRef: row.key, url }).catch(() => {});
-    return { success: "Declined. The buyer was told standard shipping applies." };
-  }
-  const drafts = [...new Set(autos.map((a) => a.winnerDraftOrderId).filter(Boolean))];
-  let failed = false;
-  for (const d of drafts) {
-    if ((await draftStatus(shop, d)) === "COMPLETED") continue;
-    if (!(await applyFreeShipping(shop, d, row.key))) failed = true;
-  }
-  if (failed) {
-    return { error: "Shopify wouldn't let the app change the shipping automatically. Open the draft order in Shopify admin (Orders, then Drafts), set shipping to free, and resend the invoice." };
-  }
-  await prisma.auctionNotification.updateMany({ where: { id: { in: ownRows.map((r) => r.id) } }, data: { type: "SHIP_TOGETHER_OK" } });
-  notifyShipTogetherDecision({ shop, customerId: row.customerId, approve: true, orderRef: row.key, url }).catch(() => {});
-  return { success: "Approved. Shipping on their invoice is now free, and the buyer was emailed." };
 }
 
 async function tick() {

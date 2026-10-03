@@ -5,7 +5,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction, getShopPlan } from "../plans.server";
-import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, decideShipTogether } from "../auction-worker.server";
+import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor } from "../auction-worker.server";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -835,13 +835,6 @@ export const loader = async ({ request }) => {
     }
   }
 
-  const requestRows = auctions.length
-    ? await prisma.auctionNotification.findMany({
-        where: { type: { in: ["SHIP_TOGETHER", "SHIP_TOGETHER_OK"] }, auctionId: { in: auctions.map((a) => a.id) } },
-      })
-    : [];
-  const requestByAuction = new Map(requestRows.map((r) => [r.auctionId, { ref: r.key, approved: r.type === "SHIP_TOGETHER_OK" }]));
-
   const unpaidByWinner = new Map();
   for (const a of auctions) {
     if (!a.winnerId || !a.winnerDraftOrderId) continue;
@@ -882,7 +875,6 @@ export const loader = async ({ request }) => {
       paymentStatus: auction.winnerDraftOrderId ? draftStatuses.get(auction.winnerDraftOrderId) || null : null,
       winnerUnpaidCount: unpaidByWinner.get(auction.winnerId)?.n || 0,
       winnerDraftCount: unpaidByWinner.get(auction.winnerId)?.drafts.size || 0,
-      shipRequest: requestByAuction.get(auction.id) || null,
       payDeadline: auction.winnerId
         ? new Date(new Date(auction.winnerNotifiedAt || auction.endsAt).getTime() + 96 * 3600_000).toISOString()
         : null,
@@ -936,7 +928,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -955,10 +947,9 @@ const actionImpl = async ({ request }) => {
     }
   }
 
-  if (["remind-winner", "offer-next", "cancel-sale", "combine-wins", "ship-approve", "ship-decline"].includes(intent)) {
+  if (["remind-winner", "offer-next", "cancel-sale", "combine-wins"].includes(intent)) {
     const id = formData.get("auctionId")?.toString() || "";
     try {
-      if (intent === "ship-approve" || intent === "ship-decline") return await decideShipTogether(session.shop, id, intent === "ship-approve");
       if (intent === "combine-wins") {
         const one = await prisma.auction.findFirst({ where: { id, shop: session.shop } });
         if (!one?.winnerId) return { error: "This auction has no winner." };
@@ -2095,7 +2086,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl } = useLoaderData();
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
   const revalidator = useRevalidator();
@@ -2201,6 +2192,10 @@ export default function AuctionsPage() {
           </li>
           <li>
             <strong>About the $99,999 price in your Shopify product list.</strong> Auction items are saved with a placeholder price so nobody can buy them outside the auction. It is never shown to shoppers on auction pages, and the winner always pays exactly their winning bid.
+          </li>
+          <li>
+            <strong>Let winners add to an order they already have.</strong> Winners already see every shipping option your store offers on their invoice and pick the one they want. To support "add to my existing order," open{" "}
+            <s-link href={shippingSettingsUrl} target="_top">Settings, Shipping and delivery</s-link>, open your shipping profile, and add a rate named <em>Add to my existing order (free)</em> at $0.00. When a winner picks it, add the item to their earlier order (it's on their customer page) before shipping.
           </li>
         </ol>
       </details>
@@ -2325,26 +2320,6 @@ export default function AuctionsPage() {
                               )}
                               {auction.winnerUnpaidCount >= 2 && auction.winnerDraftCount === 1 && (
                                 <div style={{ fontSize: 12, color: "#616161", alignSelf: "center" }}>Combined invoice ({auction.winnerUnpaidCount} items)</div>
-                              )}
-                              {auction.shipRequest && !auction.shipRequest.approved && (
-                                <div style={{ width: "100%", background: "#fff8e1", border: "1px solid #ffd60a", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
-                                  <div><strong>Buyer asked to ship with order {auction.shipRequest.ref}</strong></div>
-                                  <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                                    <Form method="post" onSubmit={(e) => { if (!window.confirm("Approve? Shipping on this buyer's invoice becomes free, labelled \"Ships with order " + auction.shipRequest.ref + "\". Please make sure that order hasn't shipped yet.")) e.preventDefault(); }}>
-                                      <input type="hidden" name="intent" value="ship-approve" />
-                                      <input type="hidden" name="auctionId" value={auction.id} />
-                                      <s-button type="submit" variant="tertiary">Approve: free shipping</s-button>
-                                    </Form>
-                                    <Form method="post" onSubmit={(e) => { if (!window.confirm("Decline? The buyer is told standard shipping applies.")) e.preventDefault(); }}>
-                                      <input type="hidden" name="intent" value="ship-decline" />
-                                      <input type="hidden" name="auctionId" value={auction.id} />
-                                      <s-button type="submit" tone="critical" variant="tertiary">Decline</s-button>
-                                    </Form>
-                                  </div>
-                                </div>
-                              )}
-                              {auction.shipRequest?.approved && (
-                                <div style={{ fontSize: 12, color: "#008060" }}>Ships with order {auction.shipRequest.ref} (free shipping)</div>
                               )}
                               {auction.hasOtherBidders && (
                                 <Form method="post" onSubmit={(e) => { if (!window.confirm("Offer this item to the next-highest bidder at their bid? The current winner's invoice will be cancelled.")) e.preventDefault(); }}>

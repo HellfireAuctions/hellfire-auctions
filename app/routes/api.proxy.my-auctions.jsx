@@ -53,7 +53,7 @@ const STATUS = {
 
 // Unpaid wins: a Pay now / Pay for all together banner (statuses cached for 45 seconds).
 const unpaidCache = new Map();
-async function combineBannerCore(shop, auctions, customerId, money) {
+async function combineBanner(shop, auctions, customerId, money) {
   const wins = auctions.filter((a) => String(a.winnerId) === String(customerId) && a.winnerDraftOrderId && a.winnerCheckoutUrl);
   if (!wins.length) return "";
   const key = `${shop}|${customerId}|${wins.map((w) => w.id).join(",")}`;
@@ -88,33 +88,6 @@ async function combineBannerCore(shop, auctions, customerId, money) {
     return `<div style="${box}"><div><strong>Your ${unpaid.length} wins are on one invoice</strong><br>${money(total)} in total, one shipping charge</div><a href="${esc(unpaid[0].winnerCheckoutUrl)}" style="${btn}">Pay now</a></div>`;
   }
   return `<div style="${box}"><div><strong>You have ${unpaid.length} unpaid wins</strong> (${money(total)})<br>Pay for all together and pay shipping once.<div id="hf-combine-msg" style="color:#8a1c13;margin-top:4px"></div></div><button id="hf-combine-btn" type="button" style="${btn}">Pay for all together</button></div>`;
-}
-
-// The banner plus the "ship with an existing order" box (only when something is unpaid).
-async function combineBanner(shop, auctions, customerId, money) {
-  const html = await combineBannerCore(shop, auctions, customerId, money);
-  if (!html) return "";
-  const ids = auctions.filter((a) => String(a.winnerId) === String(customerId) && a.winnerDraftOrderId).map((a) => a.id);
-  const row = ids.length
-    ? await prisma.auctionNotification.findFirst({
-        where: {
-          type: { in: ["SHIP_TOGETHER", "SHIP_TOGETHER_OK"] },
-          customerId: String(customerId),
-          auctionId: { in: ids },
-          sentAt: { gte: new Date(Date.now() - 14 * 24 * 3600_000) },
-        },
-        orderBy: { sentAt: "desc" },
-      })
-    : null;
-  let ship;
-  if (row && row.type === "SHIP_TOGETHER_OK") {
-    ship = `<p style="margin:-10px 0 22px;color:#0f6b34">&#10004; Approved: this ships with your order ${esc(row.key)}, so shipping is free on your invoice.</p>`;
-  } else if (row) {
-    ship = `<p style="margin:-10px 0 22px;color:#616161">Your request to ship with order ${esc(row.key)} was sent. The seller will reply by email, and your invoice stays payable in the meantime.</p>`;
-  } else {
-    ship = `<details id="hf-ship-details" style="margin:-10px 0 22px"><summary style="cursor:pointer;color:#616161">Want this to ship with an order you already have?</summary><div style="margin-top:8px"><input id="hf-ship-ref" maxlength="30" placeholder="Order number, e.g. #1042" style="padding:10px;border:1px solid #ccc;border-radius:8px;margin-right:8px"><button id="hf-ship-btn" type="button" style="padding:10px 16px;border-radius:8px;border:2px solid #151515;background:#fff;font-weight:700;cursor:pointer">Ask the seller</button><div id="hf-ship-msg" style="margin-top:6px;color:#8a1c13"></div></div><p style="color:#616161;font-size:13px;margin:8px 0 0">The seller reviews your request. If approved, shipping is removed from this invoice and everything ships together.</p></details>`;
-  }
-  return html + ship;
 }
 
 export const loader = async ({ request }) => {
@@ -232,23 +205,6 @@ export const loader = async ({ request }) => {
           el.textContent = (el.getAttribute("data-hf-prefix") || "") + txt + (el.getAttribute("data-hf-suffix") || "");
         });
       }
-      var det = document.getElementById("hf-ship-details");
-      if (det) det.addEventListener("toggle", function () { window.__hfBusy = det.open; });
-      var sr = document.getElementById("hf-ship-ref"), sb = document.getElementById("hf-ship-btn");
-      if (sb) sb.addEventListener("click", function () {
-        var v = (sr.value || "").trim();
-        var msg = document.getElementById("hf-ship-msg");
-        if (!v) { msg.textContent = "Enter your order number first."; return; }
-        window.__hfBusy = true; sb.disabled = true;
-        var fd = new FormData(); fd.append("order", v);
-        fetch("/apps/hellfire-auctions/ship-together", { method: "POST", credentials: "same-origin", body: fd })
-          .then(function (r) { return r.json(); })
-          .then(function (j) {
-            if (j && j.message) { msg.style.color = "#0f6b34"; msg.textContent = j.message; setTimeout(function () { location.reload(); }, 2500); }
-            else { msg.style.color = "#8a1c13"; msg.textContent = (j && j.error) || "Couldn't send your request."; sb.disabled = false; window.__hfBusy = false; }
-          })
-          .catch(function () { msg.textContent = "Couldn't send your request."; sb.disabled = false; window.__hfBusy = false; });
-      });
       var cb = document.getElementById("hf-combine-btn");
       if (cb) cb.addEventListener("click", function () {
         window.__hfBusy = true; cb.disabled = true; cb.textContent = "Preparing your invoice...";

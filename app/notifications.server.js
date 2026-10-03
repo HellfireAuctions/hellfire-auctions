@@ -381,7 +381,7 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
         : [
             "Hey there,",
             `Congratulations! You won "${title}" with a winning bid of ${money(auction.currentBid)}.`,
-            "Use the secure checkout link below to complete your purchase. Please pay within 4 days.",
+            "Use the secure checkout link below to complete your purchase. Please pay within 4 days. At checkout you can choose from all of the shipping options the store offers.",
             ...(extraWinsLine ? [extraWinsLine] : []),
           ],
       buttonLabel: "Complete your purchase",
@@ -769,54 +769,6 @@ export async function notifyCombinedInvoice({ shop, customerId, count, total, ur
       "Your earlier separate invoice links no longer work. Please use the button below and pay within 4 days.",
     ],
     buttonLabel: "Pay for all together",
-    buttonUrl: url,
-    shopName: data?.shop?.name || "the store",
-    replyTo: data?.shop?.contactEmail,
-  });
-}
-
-// A buyer asked to ship new wins together with an existing order: tell the seller.
-export async function notifyMerchantShipTogether({ shop, customerId, orderRef, titles }) {
-  if (!notificationsEnabled()) return;
-  const data = await lookup(shop, customerId, "gid://shopify/Product/0");
-  const to = data?.shop?.email || data?.shop?.contactEmail;
-  if (!to) return;
-  await sendEmail({
-    to,
-    subject: "Ship-together request from a buyer",
-    heading: "A buyer wants their items to ship together",
-    lines: [
-      `${data?.customer?.email || "A buyer"} asked to ship ${titles.length} won item${titles.length === 1 ? "" : "s"} (${titles.join(", ")}) together with their existing order ${orderRef}.`,
-      "Check that order hasn't shipped yet. In Hellfire Auctions you can approve (shipping on their new invoice becomes free) or decline.",
-    ],
-    buttonLabel: "Open Hellfire Auctions",
-    buttonUrl: `https://admin.shopify.com/store/${shop.replace(".myshopify.com", "")}/apps/${process.env.SHOPIFY_API_KEY}`,
-    shopName: data?.shop?.name || "your store",
-  });
-}
-
-// The seller's answer, sent to the buyer.
-export async function notifyShipTogetherDecision({ shop, customerId, approve, orderRef, url }) {
-  if (!notificationsEnabled()) return;
-  const data = await lookup(shop, customerId, "gid://shopify/Product/0");
-  const email = data?.customer?.email;
-  if (!email) return;
-  await sendEmail({
-    to: email,
-    subject: approve ? `Approved: your items ship with order ${orderRef}` : "About shipping your items together",
-    heading: approve ? "Your items will ship together" : "Standard shipping applies",
-    lines: approve
-      ? [
-          "Hey there,",
-          `The seller approved your request. Shipping is now free on your invoice because it ships with your order ${orderRef}.`,
-          "Please complete your purchase with the button below.",
-        ]
-      : [
-          "Hey there,",
-          `The seller couldn't add these items to order ${orderRef}, so standard shipping applies on your invoice.`,
-          "You can still pay with the link below.",
-        ],
-    buttonLabel: "Complete your purchase",
     buttonUrl: url,
     shopName: data?.shop?.name || "the store",
     replyTo: data?.shop?.contactEmail,

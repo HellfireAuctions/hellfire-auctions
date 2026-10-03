@@ -296,7 +296,16 @@ async function ensureAuctionVariantAvailable(admin, productId) {
 
   const json = await productResponse.json();
   const variant = json?.data?.product?.variants?.nodes?.[0];
-  const locationId = json?.data?.locations?.nodes?.[0]?.id;
+  let locationId = json?.data?.locations?.nodes?.[0]?.id;
+  try {
+    const lr = await admin.graphql(`#graphql
+      query OnlineLocations { locations(first: 20) { nodes { id isActive fulfillsOnlineOrders } } }`);
+    const nodes = (await lr.json())?.data?.locations?.nodes || [];
+    const best = nodes.find((l) => l.isActive && l.fulfillsOnlineOrders) || nodes.find((l) => l.isActive);
+    if (best?.id) locationId = best.id;
+  } catch {
+    // keep the first location
+  }
 
   if (!variant?.inventoryItem?.id || !locationId) {
     throw new Error("Shopify could not prepare the auction product inventory.");
@@ -699,6 +708,7 @@ export const loader = async ({ request }) => {
     orderBy: {
       createdAt: "desc",
     },
+    take: new URL(request.url).searchParams.get("all") === "1" ? 500 : 60,
     select: {
       id: true,
       title: true,
@@ -740,6 +750,7 @@ export const loader = async ({ request }) => {
   const blockedRows = await prisma.blockedBidder.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" }, take: 100 });
 
   const planNow = await getShopPlan(session.shop);
+  const totalAuctions = await prisma.auction.count({ where: { shop: session.shop } });
   const sinceInsights = new Date(Date.now() - 30 * 24 * 3600_000);
   const endedRecent = await prisma.auction.findMany({
     where: { shop: session.shop, endsAt: { gte: sinceInsights, lte: new Date() }, status: { not: "CANCELLED" } },
@@ -879,7 +890,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -2024,16 +2035,18 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions } = useLoaderData();
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
   const revalidator = useRevalidator();
   useEffect(() => {
+    const hasActive = auctions.some((a) => new Date(a.endsAt).getTime() > Date.now() - 5 * 60_000);
+    if (!hasActive) return undefined;
     const id = setInterval(() => {
       if (document.visibilityState === "visible" && revalidator.state === "idle") revalidator.revalidate();
     }, 10000);
     return () => clearInterval(id);
-  }, [revalidator]);
+  }, [revalidator, auctions]);
   const [backupBusy, setBackupBusy] = useState(false);
   const downloadBackup = async () => {
     setBackupBusy(true);
@@ -2348,6 +2361,12 @@ export default function AuctionsPage() {
         )}
 
       </s-section>
+
+      {moreAuctions && (
+        <s-text>
+          Showing your 60 most recent auctions. <s-link href="/app?all=1">Show all</s-link>
+        </s-text>
+      )}
 
       <s-section heading="Insights (last 30 days)">
         {!planFlags?.insights ? (

@@ -257,7 +257,7 @@
     load();
     observer.observe(document.body, { childList: true, subtree: true });
     setInterval(tick, 1000);
-    setInterval(load, REFRESH_MS);
+    setInterval(function () { if (!document.hidden) load(); }, REFRESH_MS);
   }
 
   if (document.readyState === "loading") {

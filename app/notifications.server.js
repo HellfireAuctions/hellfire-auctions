@@ -96,7 +96,18 @@ function auctionLink(data) {
   return base && data?.product?.handle ? `${base.replace(/\/$/, "")}/products/${data.product.handle}` : null;
 }
 
-async function sendEmail({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo, imageUrl }) {
+async function sendEmail(args) {
+  try {
+    const result = await sendEmailRaw(args);
+    globalThis.__HF_EMAIL_FAILS__ = 0;
+    return result;
+  } catch (error) {
+    globalThis.__HF_EMAIL_FAILS__ = (globalThis.__HF_EMAIL_FAILS__ || 0) + 1;
+    throw error;
+  }
+}
+
+async function sendEmailRaw({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo, imageUrl }) {
   const htmlLines = lines.map((line) => `<p style="margin:0 0 12px">${escapeHtml(line)}</p>`).join("");
   const button = buttonUrl
     ? `<p style="margin:20px 0"><a href="${escapeHtml(buttonUrl)}" style="background:#ff3b30;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">${escapeHtml(buttonLabel)}</a></p>`

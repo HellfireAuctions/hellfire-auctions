@@ -68,6 +68,7 @@ export default function Privacy() {
         <li>When a merchant uninstalls the App, their store&rsquo;s access credentials are removed right away.</li>
         <li>When Shopify sends the store data-erasure request (about 48 hours after uninstall), we delete that store&rsquo;s auctions, bids, notice records and plan record.</li>
         <li>When Shopify sends a customer data-erasure request, we delete that customer&rsquo;s bids and notice records and remove them as a recorded winner.</li>
+        <li>Auction records, including bids and notice records, are also deleted automatically 24 months after the auction ends.</li>
         <li>We respond to customer data requests that Shopify forwards to us.</li>
       </ul>
 

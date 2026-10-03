@@ -34,6 +34,8 @@ function throwUserErrors(userErrors) {
 }
 
 async function createAndSendWinnerInvoice(auction, winnerId, opts = {}) {
+  // Inventory apps or manual edits can set the item to 0, which would break the winner's checkout.
+  await ensureInvoiceStock(auction).catch((error) => console.error("[hellfire-auctions] stock re-check failed:", error?.message || error));
   let draftOrderId = auction.winnerDraftOrderId || null;
   let checkoutUrl = auction.winnerCheckoutUrl || null;
 
@@ -698,10 +700,62 @@ async function ownerWatchdog() {
   await markRepairDone("OWNER_WATCHDOG_" + day);
 }
 
+async function ensureInvoiceStock(auction) {
+  const d = await adminGraphql(
+    auction.shop,
+    `#graphql
+      query InvoiceStock($id: ID!) {
+        product(id: $id) { variants(first: 1) { nodes { id inventoryItem { id } } } }
+        locations(first: 20) { nodes { id isActive fulfillsOnlineOrders } }
+      }
+    `,
+    { id: auction.productId },
+  );
+  const variant = d?.product?.variants?.nodes?.[0];
+  const nodes = d?.locations?.nodes || [];
+  const loc = nodes.find((l) => l.isActive && l.fulfillsOnlineOrders) || nodes.find((l) => l.isActive) || nodes[0];
+  if (!variant?.inventoryItem?.id || !loc?.id) return;
+  await adminGraphql(
+    auction.shop,
+    `#graphql
+      mutation KeepInvoiceStock($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+        inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) { userErrors { message } }
+      }
+    `,
+    {
+      input: {
+        name: "available",
+        reason: "correction",
+        quantities: [{ inventoryItemId: variant.inventoryItem.id, locationId: loc.id, quantity: 1, changeFromQuantity: null }],
+      },
+      idempotencyKey: hfUuid(),
+    },
+  );
+}
+
+// ---------- retention: auction records are deleted 24 months after they end ----------
+let lastRetention = 0;
+async function retentionSweep() {
+  if (Date.now() - lastRetention < 12 * 3600_000) return;
+  lastRetention = Date.now();
+  const cutoff = new Date(Date.now() - 730 * 24 * 3600_000);
+  const old = await prisma.auction.findMany({
+    where: { endsAt: { lt: cutoff }, status: { in: ["ENDED", "CANCELLED", "SETTLEMENT_FAILED"] } },
+    select: { id: true },
+    take: 500,
+  });
+  if (!old.length) return;
+  const ids = old.map((a) => a.id);
+  await prisma.auctionNotification.deleteMany({ where: { auctionId: { in: ids } } });
+  await prisma.auction.deleteMany({ where: { id: { in: ids } } });
+  console.log("[hellfire-auctions] retention: removed", ids.length, "auctions older than 24 months");
+}
+
 async function tick() {
   await winnerCatchUpOnce().catch((error) => console.error("[hellfire-auctions] winner catch-up error:", error?.message || error));
   await backfillBidHistoryOnce().catch((error) => console.error("[hellfire-auctions] history backfill error:", error?.message || error));
   await ownerWatchdog().catch((error) => console.error("[hellfire-auctions] owner watchdog error:", error?.message || error));
+  await retentionSweep().catch((error) => console.error("[hellfire-auctions] retention error:", error?.message || error));
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));
@@ -816,6 +870,7 @@ function schedule(ms) {
 }
 
 async function runScheduledTick() {
+  globalThis.__HF_LAST_TICK__ = Date.now();
   let delay = 60_000;
   try {
     await tick();

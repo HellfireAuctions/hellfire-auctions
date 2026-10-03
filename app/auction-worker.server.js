@@ -596,8 +596,33 @@ async function winnerCatchUpOnce() {
   await markRepairDone("WINNER_CATCHUP_V3");
 }
 
+// One-time: auctions that had bids before bid history existed get one history row per bidder
+// (their latest bid). Earlier intermediate bids on those auctions weren't recorded and can't be recovered.
+let historyBackfilled = false;
+async function backfillBidHistoryOnce() {
+  if (historyBackfilled) return;
+  historyBackfilled = true;
+  if (await repairDone("BID_HISTORY_BACKFILL_V1")) return;
+  const auctions = await prisma.auction.findMany({
+    where: { bids: { some: {} }, events: { none: {} } },
+    select: { id: true },
+    take: 500,
+  });
+  for (const a of auctions) {
+    const bids = await prisma.bid.findMany({ where: { auctionId: a.id }, select: { bidderId: true, amount: true, createdAt: true } });
+    if (bids.length) {
+      await prisma.bidEvent.createMany({
+        data: bids.map((b) => ({ auctionId: a.id, bidderId: b.bidderId, amount: Number(b.amount), createdAt: b.createdAt })),
+      });
+    }
+  }
+  console.log("[hellfire-auctions] bid history backfilled for", auctions.length, "auctions");
+  await markRepairDone("BID_HISTORY_BACKFILL_V1");
+}
+
 async function tick() {
   await winnerCatchUpOnce().catch((error) => console.error("[hellfire-auctions] winner catch-up error:", error?.message || error));
+  await backfillBidHistoryOnce().catch((error) => console.error("[hellfire-auctions] history backfill error:", error?.message || error));
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));

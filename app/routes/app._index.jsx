@@ -1207,6 +1207,7 @@ const actionImpl = async ({ request }) => {
       .getAll("image")
       .filter((f) => f && typeof f === "object" && f.size > 0)
       .slice(0, 10);
+    console.log("[admin] photos received on edit:", newFiles.length);
     if (newFiles.some((f) => !f.type?.startsWith("image/"))) {
       return { error: "Photos must be image files." };
     }
@@ -1320,6 +1321,7 @@ const actionImpl = async ({ request }) => {
     .getAll("image")
     .filter((f) => f && typeof f === "object" && f.size > 0)
     .slice(0, 10);
+  console.log("[admin] photos received on create:", uploadFiles.length);
   if (uploadFiles.some((f) => !f.type?.startsWith("image/"))) {
     return { error: "Photos must be image files." };
   }
@@ -1491,6 +1493,7 @@ function AuctionForm({
     );
 
   const [photoCount, setPhotoCount] = useState(0);
+  const [thumbs, setThumbs] = useState([]);
 
   const calculateEndPreview = () => {
     try {
@@ -1515,6 +1518,12 @@ function AuctionForm({
 
   const handleImageChange = (event) => {
     setPhotoCount(event.currentTarget.files?.length || 0);
+    setThumbs(
+      Array.from(event.currentTarget.files || [])
+        .filter((f) => f.type?.startsWith("image/"))
+        .slice(0, 10)
+        .map((f) => URL.createObjectURL(f)),
+    );
     const file =
       event.currentTarget.files?.[0];
 
@@ -1597,25 +1606,52 @@ function AuctionForm({
         >
           <s-stack gap="small">
 
-            <s-drop-zone
-              name="image"
-              label={
-                isEdit
+            <label
+              style={{
+                display: "block",
+                border: "2px dashed #8a8a8a",
+                borderRadius: 12,
+                padding: "16px",
+                textAlign: "center",
+                cursor: "pointer",
+                background: "#fafafa",
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                {isEdit
                   ? "Add more photos (optional, up to 10)"
                   : prefill
-                    ? "Keep this photo or choose a new one"
-                    : "Upload auction photos (up to 10, the first is the main photo)"
-              }
-              accessibilityLabel="Auction image"
-              accept="image/*"
-              multiple
-              required={!isEdit && !prefill}
-              onChange={handleImageChange}
-            />
+                    ? "Keep this photo or choose new ones (up to 10)"
+                    : "Upload auction photos (up to 10, the first is the main photo)"}
+              </div>
+              <div style={{ fontSize: 13, color: "#616161", marginBottom: 8 }}>
+                Click below to choose photos. Select several at once by holding Ctrl (or Cmd) or Shift.
+              </div>
+              <input
+                type="file"
+                name="image"
+                accept="image/*"
+                multiple
+                required={!isEdit && !prefill}
+                onChange={handleImageChange}
+                style={{ maxWidth: "100%" }}
+              />
+            </label>
 
             {prefill?.imageUrl && <input type="hidden" name="cloneImageUrl" value={prefill.imageUrl} />}
 
-            {photoCount > 1 && <s-text>{photoCount} photos selected. The first one is the main photo shown on cards, invoices and packing slips.</s-text>}
+            {photoCount > 0 && (
+              <div>
+                <div style={{ fontSize: 13, marginBottom: 6 }}>
+                  {photoCount} photo{photoCount === 1 ? "" : "s"} selected{photoCount > 10 ? " (only the first 10 will be used)" : ""}. The first one is the main photo shown on cards, invoices and packing slips.
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {thumbs.map((src, i) => (
+                    <img key={src} src={src} alt={`Photo ${i + 1}`} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: i === 0 ? "3px solid #008060" : "1px solid #ccc" }} />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {imagePreview && (
               <img

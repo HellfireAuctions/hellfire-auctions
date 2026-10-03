@@ -620,9 +620,62 @@ async function backfillBidHistoryOnce() {
   await markRepairDone("BID_HISTORY_BACKFILL_V1");
 }
 
+// ---------- owner watchdog: warns you BEFORE a free-tier limit is hit ----------
+// Limits default to Resend's free plan and Neon's free plan. After you upgrade a service, set
+// EMAIL_DAILY_LIMIT, EMAIL_MONTHLY_LIMIT and DB_LIMIT_MB in Render so the warnings stay accurate.
+let lastWatchdog = 0;
+async function ownerWatchdog() {
+  if (Date.now() - lastWatchdog < 6 * 3600_000) return;
+  lastWatchdog = Date.now();
+  const day = new Date().toISOString().slice(0, 10);
+  if (await repairDone("OWNER_WATCHDOG_" + day)) return;
+
+  const lim = {
+    daily: Number(process.env.EMAIL_DAILY_LIMIT || 100),
+    monthly: Number(process.env.EMAIL_MONTHLY_LIMIT || 3000),
+    dbMb: Number(process.env.DB_LIMIT_MB || 500),
+  };
+  const dayAgo = new Date(Date.now() - 24 * 3600_000);
+  const monthAgo = new Date(Date.now() - 30 * 24 * 3600_000);
+  const [emails24h, emails30d, dbRows, storeRows] = await Promise.all([
+    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" } } }),
+    prisma.$queryRaw`SELECT pg_database_size(current_database())::bigint AS bytes`,
+    prisma.auction.groupBy({ by: ["shop"], where: { createdAt: { gte: monthAgo } } }),
+  ]);
+  const dbMb = Math.round(Number(dbRows?.[0]?.bytes || 0) / 1048576);
+  const stores = storeRows.length;
+
+  const warnings = [];
+  if (emails24h >= lim.daily * 0.7) warnings.push(`Emails sent in the last 24 hours: ${emails24h} (your plan allows about ${lim.daily} a day).`);
+  if (emails30d >= lim.monthly * 0.7) warnings.push(`Emails sent in the last 30 days: ${emails30d} (your plan allows about ${lim.monthly} a month).`);
+  if (dbMb >= lim.dbMb * 0.7) warnings.push(`Database size: ${dbMb} MB (your plan allows about ${lim.dbMb} MB).`);
+  if (warnings.length) {
+    await alertOwner("owner-limits-" + day, "You're approaching a usage limit", [
+      ...warnings,
+      "What to do: upgrade the email plan (Resend Pro is about $20/month for 50,000 emails) or switch to Amazon SES (about $0.10 per 1,000 emails), and upgrade the database plan if the database is the one filling up.",
+      "After upgrading, update EMAIL_DAILY_LIMIT, EMAIL_MONTHLY_LIMIT and DB_LIMIT_MB in Render so these warnings stay accurate.",
+    ]);
+  }
+
+  const month = day.slice(0, 7);
+  if (new Date().getUTCDate() === 1 && !(await repairDone("OWNER_REPORT_" + month))) {
+    await alertOwner("owner-report-" + month, "Hellfire Auctions monthly owner report", [
+      `Active stores (created an auction in the last 30 days): ${stores}`,
+      `Emails sent in the last 30 days: ${emails30d} (plan allows about ${lim.monthly})`,
+      `Database size: ${dbMb} MB (plan allows about ${lim.dbMb} MB)`,
+      "Standing reminders: (1) the free Render server sleeps when idle, so keep UptimeRobot pinging /healthz or move to an always-on plan (about $7/month) before relying on real merchants. (2) Resend's free plan is 100 emails a day and 3,000 a month. (3) Neon's free plan is 0.5 GB and 100 compute-hours a month. (4) Renew hellfireauctions.com at IONOS before it expires. (5) Check your Shopify Partner dashboard for review emails.",
+      ...(process.env.OWNER_REMINDERS ? process.env.OWNER_REMINDERS.split(";").map((s) => s.trim()).filter(Boolean) : []),
+    ]);
+    await markRepairDone("OWNER_REPORT_" + month);
+  }
+  await markRepairDone("OWNER_WATCHDOG_" + day);
+}
+
 async function tick() {
   await winnerCatchUpOnce().catch((error) => console.error("[hellfire-auctions] winner catch-up error:", error?.message || error));
   await backfillBidHistoryOnce().catch((error) => console.error("[hellfire-auctions] history backfill error:", error?.message || error));
+  await ownerWatchdog().catch((error) => console.error("[hellfire-auctions] owner watchdog error:", error?.message || error));
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));

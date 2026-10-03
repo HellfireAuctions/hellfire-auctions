@@ -301,6 +301,21 @@ async function ensureAuctionVariantAvailable(admin, productId) {
     throw new Error("Shopify could not prepare the auction product inventory.");
   }
 
+  try {
+    await admin.graphql(
+      `#graphql
+        mutation DenyOversell($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+            userErrors { message }
+          }
+        }
+      `,
+      { variables: { productId, variants: [{ id: variant.id, inventoryPolicy: "DENY" }] } },
+    );
+  } catch (error) {
+    console.error("[admin] could not set stock policy:", error?.message || error);
+  }
+
   const trackingResponse = await admin.graphql(
     `#graphql
       mutation TrackAuctionInventory($id: ID!, $input: InventoryItemInput!) {
@@ -349,7 +364,7 @@ async function ensureAuctionVariantAvailable(admin, productId) {
           quantities: [{
             inventoryItemId: variant.inventoryItem.id,
             locationId,
-            quantity: 1,
+            quantity: 0,
             changeFromQuantity: null,
           }],
         },
@@ -924,7 +939,7 @@ const actionImpl = async ({ request }) => {
     formData.get("description")?.toString().trim() || "";
 
   const startingBid =
-    Number(formData.get("startingBid"));
+    Math.round(Number(formData.get("startingBid")) * 100) / 100;
 
   const reservePriceValue =
     formData.get("reservePrice");
@@ -985,7 +1000,7 @@ const actionImpl = async ({ request }) => {
   const reservePrice =
     reservePriceValue !== null &&
     reservePriceValue !== ""
-      ? Number(reservePriceValue)
+      ? Math.round(Number(reservePriceValue) * 100) / 100
       : null;
 
   if (intent === "create" && reservePrice !== null && !(Number.isFinite(reservePrice) && reservePrice > startingBid)) {

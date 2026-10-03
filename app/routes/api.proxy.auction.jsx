@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { shopCurrency } from "../currency.server";
 import { notifyOutbid } from "../notifications.server";
 import {
   MAX_ALLOWED_BID,
@@ -90,6 +91,8 @@ export const loader = async ({ request }) => {
 
 
   return Response.json({
+    now: new Date().toISOString(),
+    currency: await shopCurrency(shop),
     loggedInCustomerId,
     auction: auction
       ? {

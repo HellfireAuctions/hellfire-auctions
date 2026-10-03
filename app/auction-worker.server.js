@@ -1,3 +1,5 @@
+import { randomUUID as hfUuid } from "node:crypto";
+import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner } from "./notifications.server.js";
@@ -109,7 +111,7 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
     const shopInfo = await adminGraphql(
       auction.shop,
       `#graphql
-        query InvoiceShopName { shop { name } }
+        query InvoiceShopName { shop { name currencyCode } }
       `,
     );
     const shopName = shopInfo?.shop?.name || "our store";
@@ -127,7 +129,7 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
         id: draftOrderId,
         email: {
           subject: `You won the auction at ${shopName}!`,
-          customMessage: `Congratulations! You won "${auction.title}" with a winning bid of $${Number(auction.currentBid).toFixed(2)}. Use the secure checkout link below to complete your purchase.`,
+          customMessage: `Congratulations! You won "${auction.title}" with a winning bid of ${formatMoney(auction.currentBid, shopInfo?.shop?.currencyCode)}. Use the secure checkout link below to complete your purchase.`,
         },
       },
     );
@@ -324,7 +326,62 @@ async function repairZeroPriceDrafts() {
   }
 }
 
+let inventoryLocked = false;
+async function lockExistingAuctionInventory() {
+  if (inventoryLocked) return;
+  inventoryLocked = true;
+  const rows = await prisma.auction.findMany({ select: { shop: true, productId: true }, distinct: ["shop", "productId"] });
+  for (const r of rows) {
+    try {
+      const d = await adminGraphql(
+        r.shop,
+        `#graphql
+          query LockLookup($id: ID!) {
+            product(id: $id) { variants(first: 1) { nodes { id inventoryItem { id } } } }
+            locations(first: 1) { nodes { id } }
+          }
+        `,
+        { id: r.productId },
+      );
+      const variant = d?.product?.variants?.nodes?.[0];
+      const locationId = d?.locations?.nodes?.[0]?.id;
+      if (!variant?.inventoryItem?.id || !locationId) continue;
+      await adminGraphql(
+        r.shop,
+        `#graphql
+          mutation LockStock($input: InventorySetQuantitiesInput!, $idempotencyKey: String!) {
+            inventorySetQuantities(input: $input) @idempotent(key: $idempotencyKey) {
+              userErrors { message }
+            }
+          }
+        `,
+        {
+          input: {
+            name: "available",
+            reason: "correction",
+            quantities: [{ inventoryItemId: variant.inventoryItem.id, locationId, quantity: 0, changeFromQuantity: null }],
+          },
+          idempotencyKey: hfUuid(),
+        },
+      );
+      await adminGraphql(
+        r.shop,
+        `#graphql
+          mutation LockPolicy($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkUpdate(productId: $productId, variants: $variants) { userErrors { message } }
+          }
+        `,
+        { productId: r.productId, variants: [{ id: variant.id, inventoryPolicy: "DENY" }] },
+      );
+      console.log("[hellfire-auctions] auction item locked at 0 stock", r.productId);
+    } catch (error) {
+      console.error("[hellfire-auctions] stock lock failed:", r.productId, error?.message || error);
+    }
+  }
+}
+
 async function tick() {
+  await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await repairZeroPriceDrafts().catch((error) => console.error("[hellfire-auctions] draft repair error:", error?.message || error));
   try {
     const recentWins = await prisma.auction.findMany({

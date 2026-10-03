@@ -1,6 +1,7 @@
 import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
+import { shopCurrency } from "../currency.server";
 
 // Read-only data for the product-card badges: one request per page returns every
 // auction the storefront might show, keyed by product handle (themes link cards by handle).
@@ -113,7 +114,7 @@ export const loader = async ({ request }) => {
     }));
 
   return Response.json(
-    { now: now.toISOString(), branding: plan.branding, auctions: payload },
+    { now: now.toISOString(), currency: await shopCurrency(shop), branding: plan.branding, auctions: payload },
     { headers: { "Cache-Control": "no-store" } },
   );
 };

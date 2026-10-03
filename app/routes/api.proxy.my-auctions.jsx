@@ -1,5 +1,6 @@
 import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
+import { shopCurrency, formatMoney } from "../currency.server";
 import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
 
 // Customer-facing "My Auctions" page at /apps/hellfire-auctions/my-auctions.
@@ -54,6 +55,8 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.public.appProxy(request);
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop");
+  const currency = await shopCurrency(shop);
+  const money = (v) => formatMoney(v, currency);
   const customerId = url.searchParams.get("logged_in_customer_id");
 
   const header = `<div data-hellfire-no-badges style="max-width:1100px;margin:0 auto;padding:32px 20px 60px">

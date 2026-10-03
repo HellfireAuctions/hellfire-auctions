@@ -13,8 +13,16 @@ export function notificationsEnabled() {
   return Boolean(process.env.RESEND_API_KEY && process.env.NOTIFY_FROM);
 }
 
+let emailCurrency = "USD";
+function useCurrency(data) {
+  emailCurrency = data?.shop?.currencyCode || "USD";
+}
 function money(value) {
-  return `$${Number(value || 0).toFixed(2)}`;
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: emailCurrency }).format(Number(value || 0));
+  } catch {
+    return `${Number(value || 0).toFixed(2)}`;
+  }
 }
 
 function friendlyTime(date, timeZone) {
@@ -47,7 +55,7 @@ async function lookup(shop, customerId, productId) {
       query NotifyLookup($customer: ID!, $product: ID!) {
         customer(id: $customer) { email }
         product(id: $product) { title handle onlineStoreUrl }
-        shop { name contactEmail ianaTimezone primaryDomain { url } }
+        shop { name contactEmail ianaTimezone currencyCode primaryDomain { url } }
       }
     `,
     {
@@ -129,6 +137,7 @@ export async function notifyOutbid({ shop, auction, outbidCustomerId, currentBid
     if (!fresh) return;
 
     const data = await lookup(shop, outbidCustomerId, auction.productId);
+    useCurrency(data);
     const email = data?.customer?.email;
     if (!email) return;
 
@@ -174,6 +183,7 @@ export async function sendEndingSoonReminders() {
         if (!fresh) continue;
 
         const data = await lookup(auction.shop, bid.bidderId, auction.productId);
+    useCurrency(data);
         const email = data?.customer?.email;
         if (!email) continue;
 
@@ -225,7 +235,7 @@ export async function notifyMerchantEnded({ auction, winnerId, reserveMet }) {
     const response = await admin.graphql(
       `#graphql
         query EndedLookup($product: ID!, $customer: ID!, $hasWinner: Boolean!) {
-          shop { name email contactEmail ianaTimezone }
+          shop { name email contactEmail ianaTimezone currencyCode }
           product(id: $product) { title }
           customer(id: $customer) @include(if: $hasWinner) { email }
         }`,
@@ -238,6 +248,7 @@ export async function notifyMerchantEnded({ auction, winnerId, reserveMet }) {
       },
     );
     const data = (await response.json())?.data || {};
+    useCurrency(data);
     const to = data?.shop?.email || data?.shop?.contactEmail;
     if (!to) return;
     const title = data?.product?.title || auction.title;
@@ -299,6 +310,7 @@ export async function notifyReserveNotMet({ auction, customerId }) {
     if (!fresh) return;
     try {
       const data = await lookup(auction.shop, customerId, auction.productId);
+    useCurrency(data);
       const email = data?.customer?.email;
       if (!email) return;
       const title = data?.product?.title || auction.title;
@@ -332,6 +344,7 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
   if (!notificationsEnabled() || !checkoutUrl) return false;
   try {
     const data = await lookup(auction.shop, customerId, auction.productId);
+    useCurrency(data);
     const email = data?.customer?.email;
     if (!email) return false;
     const title = data?.product?.title || auction.title;

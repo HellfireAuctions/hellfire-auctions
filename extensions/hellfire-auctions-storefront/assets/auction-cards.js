@@ -21,12 +21,13 @@
   const badges = new Map(); // badge element -> handle
   let clockOffset = 0;
   let showBranding = false;
+  let currencyOverride = "";
 
   function money(value) {
     try {
       return new Intl.NumberFormat(config.locale || undefined, {
         style: "currency",
-        currency: config.currency || "USD",
+        currency: currencyOverride || config.currency || "USD",
       }).format(Number(value));
     } catch (_) {
       return "$" + Number(value).toFixed(2);
@@ -213,6 +214,7 @@
       if (!response.ok) return;
       const data = await response.json();
       if (data.now) clockOffset = Date.parse(data.now) - Date.now();
+      if (data.currency) currencyOverride = data.currency;
       showBranding = Boolean(data.branding);
       auctions.clear();
       for (const auction of data.auctions || []) {

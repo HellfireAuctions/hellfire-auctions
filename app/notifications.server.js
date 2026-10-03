@@ -216,6 +216,7 @@ if (!globalThis.__HELLFIRE_NOTIFY_STATUS__) {
 // Tells the store owner the result of an auction (sold, unsold or reserve not met). Sent once.
 export async function notifyMerchantEnded({ auction, winnerId, reserveMet }) {
   if (!notificationsEnabled()) return;
+  if (!(await getShopPlan(auction.shop)).emails) return;
   try {
     const fresh = await claimNotice({ auctionId: auction.id, customerId: "merchant", type: "MERCHANT_ENDED", key: "1" });
     if (!fresh) return;

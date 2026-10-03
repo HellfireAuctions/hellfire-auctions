@@ -72,7 +72,7 @@ const TIERS = [
       "Everything in Spark",
       "\u201CYou've been outbid\u201D emails bring bidders straight back",
       "\u201C1 hour left\u201D reminder emails to every bidder",
-      "Your brand only \u2014 no \u201CPowered by\u201D line",
+      "\u201CSold\u201D and \u201Cauction ended\u201D summary emails to you",
       `${TRIAL_DAYS}-day free trial`,
     ],
   },

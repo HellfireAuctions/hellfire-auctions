@@ -117,7 +117,7 @@
     }
     badge.dataset.hot = auction.hot && state === "LIVE" ? "true" : "false";
     setText(badge.querySelector(".hellfire-card-badge__hot"), auction.hot && state === "LIVE" ? "\u{1F525} HOT" : "");
-    setText(badge.querySelector(".hellfire-card-badge__brand"), showBranding ? "Powered by Hellfire Auctions" : "");
+    setText(badge.querySelector(".hellfire-card-badge__brand"), "");
     setText(badge.querySelector(".hellfire-card-badge__state"), label);
     setText(badge.querySelector(".hellfire-card-badge__amount-label"), amountLabel);
     setText(badge.querySelector(".hellfire-card-badge__amount"), money(auction.amount));

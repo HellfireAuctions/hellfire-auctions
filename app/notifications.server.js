@@ -165,6 +165,7 @@ export async function sendEndingSoonReminders() {
   });
 
   for (const auction of auctions) {
+    if (auction.endsAt.getTime() - auction.startsAt.getTime() <= ENDING_SOON_MS) continue; // short/test auctions: no reminder
     if (!(await getShopPlan(auction.shop)).emails) continue;
     const leaderId = auction.bids[0]?.bidderId;
     for (const bid of auction.bids) {
@@ -286,5 +287,72 @@ export async function alertOwner(kind, subject, lines) {
     console.log("[alert] sent:", kind);
   } catch (error) {
     console.error("[alert] could not send:", error?.message || error);
+  }
+}
+
+// Tells the high bidder the auction ended below the reserve: no sale, no charge. Sent once.
+export async function notifyReserveNotMet({ auction, customerId }) {
+  if (!notificationsEnabled()) return;
+  try {
+    if (!(await getShopPlan(auction.shop)).emails) return;
+    const fresh = await claimNotice({ auctionId: auction.id, customerId, type: "RESERVE_NOT_MET", key: "1" });
+    if (!fresh) return;
+    try {
+      const data = await lookup(auction.shop, customerId, auction.productId);
+      const email = data?.customer?.email;
+      if (!email) return;
+      const title = data?.product?.title || auction.title;
+      await sendEmail({
+        to: email,
+        subject: `Auction ended: reserve not met \u2014 ${title}`,
+        heading: "The reserve wasn't met",
+        lines: [
+          "Hey there,",
+          `The auction for "${title}" has ended. You were the highest bidder at ${money(auction.currentBid)}, but the seller's reserve price wasn't met, so there's no sale and you won't be charged.`,
+          "Keep an eye on the store in case the seller relists it.",
+        ],
+        buttonLabel: "Visit the store",
+        buttonUrl: auctionLink(data),
+        shopName: data?.shop?.name || "the store",
+        replyTo: data?.shop?.contactEmail,
+      });
+      console.log("[notify] reserve-not-met email sent", JSON.stringify({ auctionId: auction.id, customerId }));
+    } catch (error) {
+      await releaseNotice({ auctionId: auction.id, customerId, type: "RESERVE_NOT_MET", key: "1" });
+      throw error;
+    }
+  } catch (error) {
+    console.error("[notify] reserve-not-met email failed:", error?.message || error);
+  }
+}
+
+// Backup for the winner's invoice: if Shopify can't email it (e.g. the store's sender
+// email isn't verified), send the same secure Shopify checkout link from our address.
+export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutUrl }) {
+  if (!notificationsEnabled() || !checkoutUrl) return false;
+  try {
+    const data = await lookup(auction.shop, customerId, auction.productId);
+    const email = data?.customer?.email;
+    if (!email) return false;
+    const title = data?.product?.title || auction.title;
+    await sendEmail({
+      to: email,
+      subject: `You won: ${title}`,
+      heading: "You won the auction!",
+      lines: [
+        "Hey there,",
+        `Congratulations! You won "${title}" with a winning bid of ${money(auction.currentBid)}.`,
+        "Use the secure Shopify checkout link below to complete your purchase.",
+      ],
+      buttonLabel: "Complete your purchase",
+      buttonUrl: checkoutUrl,
+      shopName: data?.shop?.name || "the store",
+      replyTo: data?.shop?.contactEmail,
+    });
+    console.log("[notify] winner checkout link sent by email", JSON.stringify({ auctionId: auction.id, customerId }));
+    return true;
+  } catch (error) {
+    console.error("[notify] winner checkout email failed:", error?.message || error);
+    return false;
   }
 }

@@ -1,6 +1,6 @@
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, alertOwner } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -120,9 +120,21 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
       { id: draftOrderId },
     );
 
-    throwUserErrors(invoiceData?.draftOrderInvoiceSend?.userErrors);
-    checkoutUrl =
-      invoiceData?.draftOrderInvoiceSend?.draftOrder?.invoiceUrl || checkoutUrl;
+    const invoiceErrors = invoiceData?.draftOrderInvoiceSend?.userErrors || [];
+    if (invoiceErrors.length) {
+      // Shopify couldn't email the invoice (often an unverified store sender email).
+      // Send the same secure checkout link ourselves so the winner can still pay.
+      const sent = await sendWinnerInvoiceFallback({ auction, customerId: winnerId, checkoutUrl });
+      if (!sent) throwUserErrors(invoiceErrors);
+      alertOwner("invoice-sender-" + auction.shop, "Shopify couldn't send a winner invoice", [
+        `Store: ${auction.shop}. Shopify said: ${invoiceErrors.map((e) => e.message).join(", ")}`,
+        "The app emailed the winner their secure checkout link instead, so the sale can still go through.",
+        "To fix it for next time: Shopify admin > Settings > Notifications > Sender email, and verify that address.",
+      ]);
+    } else {
+      checkoutUrl =
+        invoiceData?.draftOrderInvoiceSend?.draftOrder?.invoiceUrl || checkoutUrl;
+    }
 
     await prisma.auction.update({
       where: { id: auction.id },
@@ -223,6 +235,13 @@ async function settleAuction(auction) {
   if (settled) {
     const reserveMet = settled.reservePrice == null || Number(settled.currentBid) >= Number(settled.reservePrice);
     notifyMerchantEnded({ auction: settled, winnerId: settled.winnerId, reserveMet });
+    if (!settled.winnerId && !reserveMet) {
+      const top = await prisma.bid.findFirst({
+        where: { auctionId: settled.id },
+        orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
+      });
+      if (top) notifyReserveNotMet({ auction: settled, customerId: top.bidderId });
+    }
   }
 }
 

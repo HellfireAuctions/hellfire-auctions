@@ -47,8 +47,17 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
         query AuctionVariant($productId: ID!) {
           shop { currencyCode }
           product(id: $productId) {
+            title
             variants(first: 1) {
-              nodes { id }
+              nodes {
+                id
+                sku
+                taxable
+                inventoryItem {
+                  requiresShipping
+                  measurement { weight { value unit } }
+                }
+              }
             }
           }
         }
@@ -56,8 +65,8 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
       { productId: auction.productId },
     );
 
-    const variantId = productData?.product?.variants?.nodes?.[0]?.id;
-    if (!variantId) throw new Error("Auction product variant could not be found.");
+    const variant = productData?.product?.variants?.nodes?.[0];
+    if (!variant?.id) throw new Error("Auction product variant could not be found.");
 
     const draftData = await adminGraphql(
       auction.shop,
@@ -74,16 +83,7 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
           purchasingEntity: { customerId: customerGid },
           note: `Hellfire Auctions winner: ${auction.title}`,
           tags: ["Hellfire Auction"],
-          lineItems: [
-            {
-              variantId,
-              quantity: 1,
-              priceOverride: {
-                amount: Number(auction.currentBid).toFixed(2),
-                currencyCode: productData?.shop?.currencyCode || "USD",
-              },
-            },
-          ],
+          lineItems: [buildWinnerLine(auction, variant, productData?.shop?.currencyCode)],
           customAttributes: [
             { key: "Auction ID", value: auction.id },
             { key: "Winning bid", value: Number(auction.currentBid).toFixed(2) },
@@ -249,9 +249,6 @@ async function settleAuction(auction) {
   if (settled) {
     const reserveMet = settled.reservePrice == null || Number(settled.currentBid) >= Number(settled.reservePrice);
     notifyMerchantEnded({ auction: settled, winnerId: settled.winnerId, reserveMet });
-    if (settled.winnerId && settled.winnerCheckoutUrl) {
-      notifyWinner({ auction: settled, customerId: settled.winnerId, checkoutUrl: settled.winnerCheckoutUrl });
-    }
     if (!settled.winnerId && !reserveMet) {
       const top = await prisma.bid.findFirst({
         where: { auctionId: settled.id },
@@ -330,7 +327,7 @@ let inventoryLocked = false;
 async function lockExistingAuctionInventory() {
   if (inventoryLocked) return;
   inventoryLocked = true;
-  const rows = await prisma.auction.findMany({ select: { shop: true, productId: true }, distinct: ["shop", "productId"] });
+  const rows = await prisma.auction.findMany({ where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }, select: { shop: true, productId: true }, distinct: ["shop", "productId"] });
   for (const r of rows) {
     try {
       const d = await adminGraphql(
@@ -380,26 +377,81 @@ async function lockExistingAuctionInventory() {
   }
 }
 
+// The winner's order line is a CUSTOM item at the winning bid (title, shipping, tax, weight copied
+// from the product). Custom lines never check stock, so checkout works while the product stays
+// held at 0 stock to block outside purchases.
+function buildWinnerLine(auction, variant, currencyCode) {
+  const weight = variant?.inventoryItem?.measurement?.weight;
+  const line = {
+    title: auction.title,
+    quantity: 1,
+    originalUnitPriceWithCurrency: {
+      amount: Number(auction.currentBid).toFixed(2),
+      currencyCode: currencyCode || "USD",
+    },
+    requiresShipping: variant?.inventoryItem?.requiresShipping !== false,
+    taxable: variant?.taxable !== false,
+  };
+  if (variant?.sku) line.sku = variant.sku;
+  if (weight && Number(weight.value) > 0 && weight.unit) {
+    line.weight = { value: Number(weight.value), unit: weight.unit };
+  }
+  return line;
+}
+
+let draftsConverted = false;
+async function convertVariantDraftsToCustom() {
+  if (draftsConverted) return;
+  draftsConverted = true;
+  const rows = await prisma.auction.findMany({
+    where: { winnerDraftOrderId: { not: null }, endsAt: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } },
+    take: 100,
+  });
+  for (const a of rows) {
+    try {
+      const d = await adminGraphql(
+        a.shop,
+        `#graphql
+          query DraftKind($id: ID!, $productId: ID!) {
+            shop { currencyCode }
+            draftOrder(id: $id) { status lineItems(first: 5) { nodes { custom } } }
+            product(id: $productId) {
+              variants(first: 1) {
+                nodes { id sku taxable inventoryItem { requiresShipping measurement { weight { value unit } } } }
+              }
+            }
+          }
+        `,
+        { id: a.winnerDraftOrderId, productId: a.productId },
+      );
+      const draft = d?.draftOrder;
+      if (!draft || !["OPEN", "INVOICE_SENT"].includes(draft.status)) continue;
+      const first = draft.lineItems?.nodes?.[0];
+      if (!first || first.custom) continue; // already a custom line
+      const variant = d?.product?.variants?.nodes?.[0];
+      const u = await adminGraphql(
+        a.shop,
+        `#graphql
+          mutation ConvertDraftLine($id: ID!, $input: DraftOrderInput!) {
+            draftOrderUpdate(id: $id, input: $input) {
+              draftOrder { id totalPriceSet { shopMoney { amount } } }
+              userErrors { field message }
+            }
+          }
+        `,
+        { id: a.winnerDraftOrderId, input: { lineItems: [buildWinnerLine(a, variant, d?.shop?.currencyCode)] } },
+      );
+      throwUserErrors(u?.draftOrderUpdate?.userErrors);
+      console.log("[hellfire-auctions] winner order converted to custom line", JSON.stringify({ auctionId: a.id, total: u?.draftOrderUpdate?.draftOrder?.totalPriceSet?.shopMoney?.amount }));
+    } catch (error) {
+      console.error("[hellfire-auctions] draft convert failed:", a.id, error?.message || error);
+    }
+  }
+}
+
 async function tick() {
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
-  await repairZeroPriceDrafts().catch((error) => console.error("[hellfire-auctions] draft repair error:", error?.message || error));
-  try {
-    const recentWins = await prisma.auction.findMany({
-      where: {
-        status: "ENDED",
-        winnerId: { not: null },
-        winnerCheckoutUrl: { not: null },
-        endsAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
-      },
-      take: 25,
-    });
-    for (const won of recentWins) {
-      await notifyWinner({ auction: won, customerId: won.winnerId, checkoutUrl: won.winnerCheckoutUrl });
-    }
-  } catch (error) {
-    console.error("[hellfire-auctions] winner email catch-up failed:", error?.message || error);
-  }
-
+  await convertVariantDraftsToCustom().catch((error) => console.error("[hellfire-auctions] draft convert error:", error?.message || error));
   const now = new Date();
 
   // Keep DRAFT/UPCOMING/LIVE labels in step with the clock (never touches ended ones).

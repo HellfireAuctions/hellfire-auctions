@@ -26,3 +26,14 @@
     box.querySelector(".hellfire-auction-confirm-no").addEventListener("click",function(){box.remove();input.focus()});
   },true);
 })();
+;(function(){
+  var RX=/^(sold out|out of stock|unavailable)$/i;
+  setInterval(function(){
+    var r=document.getElementById("hellfire-auction-root");if(!r)return;
+    var s=r.closest("section");if(!s)return;
+    s.querySelectorAll("span, div, p, strong, small").forEach(function(el){
+      if(el.children.length||r.contains(el))return;
+      if(RX.test((el.textContent||"").trim()))el.style.setProperty("display","none","important");
+    });
+  },1500);
+})();

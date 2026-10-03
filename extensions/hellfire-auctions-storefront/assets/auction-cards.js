@@ -175,6 +175,16 @@
     }
   }
 
+  const SOLD_OUT_TEXT = /^(sold out|out of stock|unavailable)$/i;
+  // Auction items are held at 0 stock on purpose; never show the theme's "Sold out" label on them.
+  function hideSoldOut(root) {
+    if (!root) return;
+    for (const el of root.querySelectorAll("span, div, p, strong, small")) {
+      if (el.children.length || el.closest(`[${BADGE_ATTR}]`)) continue;
+      if (SOLD_OUT_TEXT.test((el.textContent || "").trim())) el.setAttribute("data-hellfire-price-hidden", "");
+    }
+  }
+
   function scan() {
     if (!auctions.size) return;
     for (const link of document.querySelectorAll(`a[href*="/products/"]:not([${BADGE_ATTR}])`)) {
@@ -187,6 +197,8 @@
         const badge = createBadge(handle, link.href);
         placeBadge(root, badge);
         hideThemePrices(root);
+        badge.__hfRoot = root;
+        hideSoldOut(root);
         render(badge, auctions.get(handle));
       } catch (_) {
         // One odd card must never stop the others.
@@ -200,6 +212,7 @@
         badges.delete(badge);
         continue;
       }
+      hideSoldOut(badge.__hfRoot);
       const auction = auctions.get(handle);
       if (auction) render(badge, auction);
     }

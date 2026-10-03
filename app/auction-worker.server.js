@@ -79,8 +79,8 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
             },
           ],
           customAttributes: [
-            { key: "Hellfire Auction", value: auction.id },
-            { key: "Winning Bid", value: Number(auction.currentBid).toFixed(2) },
+            { key: "Auction ID", value: auction.id },
+            { key: "Winning bid", value: Number(auction.currentBid).toFixed(2) },
           ],
         },
       },
@@ -101,23 +101,31 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
   }
 
   if (!auction.winnerNotifiedAt) {
+    // Customer-facing invoice email carries the store's own name (no app branding).
+    const shopInfo = await adminGraphql(
+      auction.shop,
+      `#graphql
+        query InvoiceShopName { shop { name } }
+      `,
+    );
+    const shopName = shopInfo?.shop?.name || "our store";
     const invoiceData = await adminGraphql(
       auction.shop,
       `#graphql
-        mutation SendAuctionInvoice($id: ID!) {
-          draftOrderInvoiceSend(
-            id: $id
-            email: {
-              subject: "You won the Hellfire Auction"
-              customMessage: "Congratulations! You won the auction. Use the secure checkout link to complete your purchase."
-            }
-          ) {
+        mutation SendAuctionInvoice($id: ID!, $email: EmailInput) {
+          draftOrderInvoiceSend(id: $id, email: $email) {
             draftOrder { id invoiceUrl }
             userErrors { field message }
           }
         }
       `,
-      { id: draftOrderId },
+      {
+        id: draftOrderId,
+        email: {
+          subject: `You won the auction at ${shopName}!`,
+          customMessage: `Congratulations! You won "${auction.title}" with a winning bid of $${Number(auction.currentBid).toFixed(2)}. Use the secure checkout link below to complete your purchase.`,
+        },
+      },
     );
 
     const invoiceErrors = invoiceData?.draftOrderInvoiceSend?.userErrors || [];

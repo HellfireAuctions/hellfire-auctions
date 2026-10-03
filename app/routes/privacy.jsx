@@ -18,7 +18,7 @@ export default function Privacy() {
 
       <p>
         Hellfire Auctions (&ldquo;the App&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Shopify app that lets merchants run timed,
-        eBay-style auctions in their Shopify stores. This policy explains what information the App collects, why, how it is used,
+        timed auctions in their Shopify stores. This policy explains what information the App collects, why, how it is used,
         who it is shared with, and how it is deleted.
       </p>
 
@@ -69,6 +69,7 @@ export default function Privacy() {
         <li>When Shopify sends the store data-erasure request (about 48 hours after uninstall), we delete that store&rsquo;s auctions, bids, notice records and plan record.</li>
         <li>When Shopify sends a customer data-erasure request, we delete that customer&rsquo;s bids and notice records and remove them as a recorded winner.</li>
         <li>Auction records, including bids and notice records, are also deleted automatically 24 months after the auction ends.</li>
+        <li>Encrypted weekly backups are kept for up to 30 days, so a record erased on request can remain in a backup for that long.</li>
         <li>We respond to customer data requests that Shopify forwards to us.</li>
       </ul>
 

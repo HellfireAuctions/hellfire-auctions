@@ -1693,7 +1693,7 @@ function AuctionForm({
               <div style={{ whiteSpace: "pre-wrap", fontSize: 14, color: "#303030" }}>{auction.description}</div>
             )}
             <s-banner tone="info">
-              This auction has started, so the title is locked. Like eBay, you can add to the description (it's added below the original, with the date) and add photos.
+              This auction has started, so the title is locked. As on other auction sites, you can add to the description (it's added below the original, with the date) and add photos.
             </s-banner>
             <s-text-area
               label="Add to description"

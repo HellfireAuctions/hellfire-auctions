@@ -103,7 +103,7 @@ export default function Pricing() {
       <div style={S.hero}>
         <div style={{ fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: "#ffd60a", fontWeight: 700 }}>Hellfire Auctions</div>
         <h1 style={{ margin: "6px 0 6px", fontSize: 34 }}>Pricing and plans</h1>
-        <div>Run eBay-style auctions in your Shopify store. Start free, upgrade when you need more.</div>
+        <div>Run live timed auctions in your Shopify store. Start free, upgrade when you need more.</div>
       </div>
 
       <div style={S.grid}>

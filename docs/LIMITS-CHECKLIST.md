@@ -32,3 +32,6 @@ Worth revisiting once there are paying stores.
 - Always-on Render server (about $7/month) before relying on real merchants; until then keep UptimeRobot pinging /healthz.
 - After App Store approval: recurring auctions and templates, CSV import.
 - Final end-to-end test of a full auction, and a last review of the listing text against what the app does.
+
+## Weekly backup emails
+The privacy policy says encrypted backups are kept for up to 30 days. Delete weekly backup emails older than about 4 weeks (keep the latest 4).

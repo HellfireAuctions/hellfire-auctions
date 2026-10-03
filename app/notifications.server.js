@@ -712,3 +712,24 @@ export async function notifyMerchantProductGone({ auction }) {
     shopName: data?.shop?.name || "your store",
   });
 }
+
+// Shopify "customer data request": send the merchant what the app holds about that customer (no other bidders' data).
+export async function emailDataRequest({ shop, customerId, report }) {
+  if (!notificationsEnabled()) return;
+  const data = await lookup(shop, customerId || "0", "gid://shopify/Product/0");
+  const to = data?.shop?.email || data?.shop?.contactEmail;
+  if (!to) return;
+  const rows = (report.events || []).slice(0, 25).map((e) => `${e.title}: ${Number(e.amount).toFixed(2)} on ${new Date(e.at).toISOString().slice(0, 10)}`);
+  await sendEmail({
+    to,
+    subject: `Customer data request: records held by Hellfire Auctions`,
+    heading: "Customer data request",
+    lines: [
+      `Shopify sent a data request for customer ${customerId}${data?.customer?.email ? ` (${data.customer.email})` : ""}.`,
+      `Records held: ${report.bids} bid(s) on ${report.auctions} auction(s), ${report.watches} watch(es), ${report.notices} email notice record(s). Blocked by you: ${report.blocked ? "yes" : "no"}.`,
+      rows.length ? `Visible bid amounts: ${rows.join("; ")}` : "No bid amounts are held.",
+      "The app stores no name, address or payment details. Please share this with the customer if they asked for it.",
+    ],
+    shopName: data?.shop?.name || "your store",
+  });
+}

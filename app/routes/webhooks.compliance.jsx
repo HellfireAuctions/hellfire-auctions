@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { emailDataRequest } from "../notifications.server";
 
 // Shopify's three mandatory privacy webhooks (required for App Store apps):
 // customers/data_request, customers/redact, shop/redact.
@@ -11,11 +12,24 @@ export const action = async ({ request }) => {
   switch (normalized) {
     case "CUSTOMERS_DATA_REQUEST": {
       const customerId = String(payload?.customer?.id ?? "");
-      const bidCount = customerId
-        ? await db.bid.count({ where: { bidderId: customerId, auction: { shop } } })
-        : 0;
-      // We only store the customer's numeric ID, their bid amounts and timestamps.
-      console.log(`[compliance] data request for ${shop}: ${bidCount} bid record(s)`);
+      if (customerId) {
+        const events = await db.bidEvent.findMany({
+          where: { bidderId: customerId, auction: { shop } },
+          orderBy: { createdAt: "asc" },
+          take: 200,
+          select: { amount: true, createdAt: true, auction: { select: { title: true } } },
+        });
+        const report = {
+          bids: await db.bid.count({ where: { bidderId: customerId, auction: { shop } } }),
+          auctions: new Set(events.map((e) => e.auction?.title)).size,
+          watches: await db.watch.count({ where: { customerId, shop } }),
+          notices: await db.auctionNotification.count({ where: { customerId } }),
+          blocked: Boolean(await db.blockedBidder.findUnique({ where: { shop_customerId: { shop, customerId } } })),
+          events: events.map((e) => ({ title: e.auction?.title || "Auction", amount: e.amount, at: e.createdAt })),
+        };
+        await emailDataRequest({ shop, customerId, report }).catch((error) => console.error("[compliance] data request email failed:", error?.message || error));
+      }
+      console.log(`[compliance] data request handled for ${shop}`);
       break;
     }
 
@@ -25,6 +39,7 @@ export const action = async ({ request }) => {
         await db.bid.deleteMany({ where: { bidderId: customerId, auction: { shop } } });
       await db.bidEvent.deleteMany({ where: { bidderId: customerId, auction: { shop } } });
       await db.watch.deleteMany({ where: { customerId, shop } });
+        await db.blockedBidder.deleteMany({ where: { customerId, shop } });
         await db.auctionNotification.deleteMany({ where: { customerId } });
         await db.auction.updateMany({
           where: { shop, winnerId: { in: [customerId, `gid://shopify/Customer/${customerId}`] } },
@@ -41,6 +56,8 @@ export const action = async ({ request }) => {
       await db.auction.deleteMany({ where: { shop } }); // bids cascade
       await db.session.deleteMany({ where: { shop } });
       await db.shopPlan.deleteMany({ where: { shop } });
+      await db.blockedBidder.deleteMany({ where: { shop } });
+      await db.watch.deleteMany({ where: { shop } });
       console.log(`[compliance] shop data erased for ${shop}`);
       break;
     }

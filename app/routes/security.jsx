@@ -24,7 +24,7 @@ export default function Security() {
         <li><strong>Access control:</strong> only the app owner can access production systems. Accounts use strong unique passwords and two-step verification. The database blocks outside connections.</li>
         <li><strong>Logging:</strong> the server logs bids and data requests with timestamps and customer IDs (no email addresses or payment data).</li>
         <li><strong>Test vs production:</strong> development and testing use development stores and a separate test database branch; production merchant data is never copied into testing.</li>
-        <li><strong>Data loss prevention:</strong> the database keeps a point-in-time restore history, merchants can download a full backup from the App at any time, and failures that affect auctions trigger automatic alerts to the owner.</li>
+        <li><strong>Data loss prevention:</strong> the database keeps a point-in-time restore history, merchants can download a full backup from the App at any time, and failures that affect auctions trigger automatic alerts to the owner, and an encrypted backup is emailed to the owner each week.</li>
       </ul>
 
       <h2 style={S.h2}>2. Incident response</h2>

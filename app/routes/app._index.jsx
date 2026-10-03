@@ -1,6 +1,6 @@
 ﻿import crypto from "node:crypto";
-import { useActionData, useLoaderData, Form } from "react-router";
-import { useState } from "react";
+import { useActionData, useLoaderData, useRevalidator, Form } from "react-router";
+import { useEffect, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { canCreateAuction } from "../plans.server";
@@ -1744,6 +1744,15 @@ function AuctionForm({
 
 export default function AuctionsPage() {
   const { auctions, storefrontActivationUrl, timezone, showMenuBanner } = useLoaderData();
+
+  // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
+  const revalidator = useRevalidator();
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible" && revalidator.state === "idle") revalidator.revalidate();
+    }, 10000);
+    return () => clearInterval(id);
+  }, [revalidator]);
   const [backupBusy, setBackupBusy] = useState(false);
   const downloadBackup = async () => {
     setBackupBusy(true);

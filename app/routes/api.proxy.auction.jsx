@@ -16,7 +16,22 @@ async function getAuctionCached(shop, productId) {
   const key = shop + "|" + productId;
   const hit = auctionCache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.auction;
-  const auction = await getAuctionCached(shop, productId);
+  const auction = await prisma.auction.findFirst({
+    where: { shop, productId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      bids: {
+        orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
+        take: 10,
+        select: { amount: true, maxBid: true, bidderId: true, createdAt: true },
+      },
+      events: {
+        orderBy: { createdAt: "desc" },
+        take: 25,
+        select: { bidderId: true, amount: true, createdAt: true },
+      },
+    },
+  });
   if (auctionCache.size > 2000) auctionCache.clear();
   auctionCache.set(key, { at: Date.now(), auction });
   return auction;
@@ -58,17 +73,7 @@ export const loader = async ({ request }) => {
     return Response.json({ error: "Missing shop or product." }, { status: 400 });
   }
 
-  const auction = await prisma.auction.findFirst({
-    where: { shop, productId },
-    orderBy: { createdAt: "desc" },
-    include: {
-      bids: {
-        orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
-        take: 10,
-        select: { amount: true, maxBid: true, bidderId: true, createdAt: true },
-      },
-    },
-  });
+  const auction = await getAuctionCached(shop, productId);
 
   const publicBids = auction?.bids || [];
   const loggedInCustomerId = url.searchParams.get("logged_in_customer_id") || null;
@@ -117,6 +122,12 @@ export const loader = async ({ request }) => {
           startsAt: auction.startsAt,
           endsAt: auction.endsAt,
           status: auctionState(auction),
+          history: (auction.events || []).map((e) => ({
+            bidder: maskedBidder(e.bidderId),
+            mine: Boolean(loggedInCustomerId) && e.bidderId === loggedInCustomerId,
+            amount: e.amount,
+            at: e.createdAt,
+          })),
           bids: publicBids.map(({ amount, createdAt }) => ({ amount, createdAt })),
         }
       : null,
@@ -229,6 +240,11 @@ export const action = async ({ request }) => {
           await tx.bid.update({ where: { id: bid.id }, data: { amount: newAmount } });
         }
       }
+
+      const mineNow = bids.find((b) => b.bidderId === customerId);
+      await tx.bidEvent.create({
+        data: { auctionId: current.id, bidderId: customerId, amount: mineNow ? outcome.amounts[mineNow.id] : outcome.price },
+      });
 
       const updated = await tx.auction.update({
         where: { id: current.id },

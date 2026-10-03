@@ -91,3 +91,15 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
 .hellfire-auction-confirm-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .hellfire-auction-confirm-actions button { flex: 1 1 140px; min-height: 46px; padding: 10px 14px; border-radius: 8px; border: 2px solid #fff; font-weight: 800; cursor: pointer; background: transparent; color: #fff; }
 .hellfire-auction-confirm-actions .hellfire-auction-confirm-yes { background: #ffff00; border-color: #ffff00; color: #000; }
+
+/* Bid history */
+.hellfire-auction-history { margin-top: 14px; border-top: 1px solid rgba(255,255,255,.18); padding-top: 10px; }
+.hellfire-auction-history summary { cursor: pointer; font-weight: 800; }
+.hellfire-auction-history-list { margin-top: 8px; max-height: 320px; overflow-y: auto; }
+.hellfire-auction-history-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.1); font-size: 14px; }
+.hellfire-auction-history-row span:last-child { grid-column: 1 / -1; opacity: .7; font-size: 12px; }
+/* Sticky bid bar (phones) */
+.hellfire-sticky-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 99999; display: none; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); background: #000; color: #fff; border-top: 2px solid #ffff00; }
+.hellfire-sticky-info { display: flex; flex-direction: column; font-size: 13px; min-width: 0; }
+.hellfire-sticky-bid { font-size: 18px; color: #ffff00; }
+.hellfire-sticky-btn { flex: 0 0 auto; min-height: 44px; padding: 0 22px; border: 0; border-radius: 8px; background: #ffff00; color: #000; font-weight: 800; font-size: 16px; cursor: pointer; }

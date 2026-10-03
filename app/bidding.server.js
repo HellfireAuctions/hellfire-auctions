@@ -7,11 +7,19 @@ export const MAX_ALLOWED_BID = 1_000_000;
 
 const toCents = (value) => Math.round(Number(value) * 100) / 100;
 
+// eBay's increment table.
 export function bidIncrement(currentBid) {
   const bid = Number(currentBid || 0);
-  if (bid < 25) return 1;
-  if (bid < 100) return 2;
-  return 5;
+  if (bid < 1) return 0.05;
+  if (bid < 5) return 0.25;
+  if (bid < 25) return 0.5;
+  if (bid < 100) return 1;
+  if (bid < 250) return 2.5;
+  if (bid < 500) return 5;
+  if (bid < 1000) return 10;
+  if (bid < 2500) return 25;
+  if (bid < 5000) return 50;
+  return 100;
 }
 
 export function nextMinimumBid({ startingBid, currentBid, hasBids }) {

@@ -23,6 +23,7 @@ export const action = async ({ request }) => {
       const customerId = String(payload?.customer?.id ?? "");
       if (customerId) {
         await db.bid.deleteMany({ where: { bidderId: customerId, auction: { shop } } });
+      await db.bidEvent.deleteMany({ where: { bidderId: customerId, auction: { shop } } });
         await db.auctionNotification.deleteMany({ where: { customerId } });
         await db.auction.updateMany({
           where: { shop, winnerId: { in: [customerId, `gid://shopify/Customer/${customerId}`] } },

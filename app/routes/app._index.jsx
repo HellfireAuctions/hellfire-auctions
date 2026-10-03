@@ -905,6 +905,8 @@ const actionImpl = async ({ request }) => {
       if (!mine) continue;
       await prisma.$transaction(async (tx) => {
         await tx.bid.delete({ where: { id: mine.id } });
+        await tx.bidEvent.deleteMany({ where: { auctionId: a.id, bidderId: targetCustomer } });
+        const evCount = await tx.bidEvent.count({ where: { auctionId: a.id } });
         const rest = await tx.bid.findMany({
           where: { auctionId: a.id },
           select: { id: true, bidderId: true, maxBid: true, createdAt: true },
@@ -916,7 +918,7 @@ const actionImpl = async ({ request }) => {
           where: { id: a.id },
           data: {
             currentBid: outcome ? outcome.price : a.startingBid,
-            bidCount: rest.length ? Math.max(rest.length, a.bidCount - 1) : 0,
+            bidCount: rest.length ? (evCount > 0 ? evCount : Math.max(rest.length, a.bidCount - 1)) : 0,
           },
         });
       });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { resolveProxyBids, nextMinimumBid } from "../app/bidding.server.js";
+import { resolveProxyBids, nextMinimumBid, bidIncrement } from "../app/bidding.server.js";
 
 const t0 = new Date("2026-10-01T10:00:00Z");
 const at = (m) => new Date(t0.getTime() + m * 60000);
@@ -14,12 +14,12 @@ check("first bid pays the starting bid only", () => {
 
 check("a lower second bid raises the price but the leader stays", () => {
   const r = resolveProxyBids({ startingBid: 10, currentBid: 10, bids: [bid("a", "A", 50, 0), bid("b", "B", 20, 1)] });
-  assert.equal(r.leaderId, "A"); assert.equal(r.price, 21);
+  assert.equal(r.leaderId, "A"); assert.equal(r.price, 20.5);
 });
 
 check("a higher second bid takes the lead at runner-up max plus increment", () => {
   const r = resolveProxyBids({ startingBid: 10, currentBid: 21, bids: [bid("a", "A", 50, 0), bid("b", "B", 60, 2)] });
-  assert.equal(r.leaderId, "B"); assert.equal(r.price, 52);
+  assert.equal(r.leaderId, "B"); assert.equal(r.price, 51);
 });
 
 check("exact tie: earlier bidder wins and pays full max", () => {
@@ -74,10 +74,15 @@ check("removing the leader: the next bidder leads at the starting bid", () => {
   assert.equal(r.price, 1);
 });
 
+check("eBay bid increments by price tier", () => {
+  const want = [[0.5, 0.05], [3, 0.25], [10, 0.5], [50, 1], [150, 2.5], [300, 5], [750, 10], [1500, 25], [3000, 50], [6000, 100]];
+  for (const [price, inc] of want) assert.equal(bidIncrement(price), inc);
+});
+
 check("minimum next bid", () => {
   assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 0, hasBids: false }), 10);
-  assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 21, hasBids: true }), 22);
-  assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 100, hasBids: true }), 105);
+  assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 21, hasBids: true }), 21.5);
+  assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 100, hasBids: true }), 102.5);
 });
 
 console.log(`\n${passed} checks passed`);

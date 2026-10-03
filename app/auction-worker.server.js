@@ -2,7 +2,7 @@ import { randomUUID as hfUuid } from "node:crypto";
 import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -268,6 +268,7 @@ async function settleAuction(auction) {
   if (settled) {
     const reserveMet = settled.reservePrice == null || Number(settled.currentBid) >= Number(settled.reservePrice);
     notifyMerchantEnded({ auction: settled, winnerId: settled.winnerId, reserveMet });
+    if (settled.winnerId) notifyLosers({ auction: settled });
     if (!settled.winnerId && !reserveMet) {
       const top = await prisma.bid.findFirst({
         where: { auctionId: settled.id },

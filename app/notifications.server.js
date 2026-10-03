@@ -469,3 +469,48 @@ export async function notifyMerchantUnpaid({ auction }) {
     console.error("[notify] unpaid-winner alert failed:", error?.message || error);
   }
 }
+
+// After an auction sells, tell the other bidders it ended (once each; plan-gated like other bidder emails).
+export async function notifyLosers({ auction }) {
+  if (!notificationsEnabled() || !auction.winnerId) return;
+  if (!(await getShopPlan(auction.shop)).emails) return;
+  const others = await prisma.bid.findMany({
+    where: { auctionId: auction.id, NOT: { bidderId: String(auction.winnerId) } },
+    select: { bidderId: true },
+    take: 50,
+  });
+  for (const b of others) {
+    const notice = { auctionId: auction.id, customerId: String(b.bidderId), type: "LOST", key: "1" };
+    try {
+      if (!(await claimNotice(notice))) continue;
+      const data = await lookup(auction.shop, b.bidderId, auction.productId);
+      useCurrency(data);
+      const email = data?.customer?.email;
+      if (!email) {
+        await releaseNotice(notice);
+        continue;
+      }
+      const title = data?.product?.title || auction.title;
+      const base = data?.shop?.primaryDomain?.url;
+      await sendEmail({
+        to: email,
+        subject: `Auction ended: ${title}`,
+        heading: "This auction has ended",
+        lines: [
+          "Hey there,",
+          `"${title}" sold for ${money(auction.currentBid)}, so your bid didn't win this time.`,
+          "Thanks for bidding. There may be more auctions running right now.",
+        ],
+        buttonLabel: "See live auctions",
+        buttonUrl: base ? `${base.replace(/\/$/, "")}/collections/live-auctions` : undefined,
+        imageUrl: auction.imageUrl,
+        shopName: data?.shop?.name || "the store",
+        replyTo: data?.shop?.contactEmail,
+      });
+      console.log("[notify] did-not-win email sent", JSON.stringify({ auctionId: auction.id, customerId: b.bidderId }));
+    } catch (error) {
+      await releaseNotice(notice);
+      console.error("[notify] did-not-win email failed:", error?.message || error);
+    }
+  }
+}

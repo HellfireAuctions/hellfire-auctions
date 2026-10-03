@@ -310,7 +310,7 @@ async function ensureAuctionVariantAvailable(admin, productId) {
           }
         }
       `,
-      { variables: { productId, variants: [{ id: variant.id, inventoryPolicy: "DENY" }] } },
+      { variables: { productId, variants: [{ id: variant.id, inventoryPolicy: "DENY", price: "99999.00" }] } },
     );
   } catch (error) {
     console.error("[admin] could not set stock policy:", error?.message || error);
@@ -364,7 +364,7 @@ async function ensureAuctionVariantAvailable(admin, productId) {
           quantities: [{
             inventoryItemId: variant.inventoryItem.id,
             locationId,
-            quantity: 0,
+            quantity: 1,
             changeFromQuantity: null,
           }],
         },
@@ -1858,6 +1858,9 @@ export default function AuctionsPage() {
           </li>
           <li>
             <strong>Test it.</strong> Open the auction on your storefront, sign in as a customer and place a bid. Bidding requires a customer account. Optional: upgrade on <em>Plans &amp; upgrades</em> for outbid and &ldquo;1 hour left&rdquo; emails.
+          </li>
+          <li>
+            <strong>About the $99,999 price in your Shopify product list.</strong> Auction items are saved with a placeholder price so nobody can buy them outside the auction. It is never shown to shoppers on auction pages, and the winner always pays exactly their winning bid.
           </li>
         </ol>
       </details>

@@ -83,7 +83,16 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
           purchasingEntity: { customerId: customerGid },
           note: `Hellfire Auctions winner: ${auction.title}`,
           tags: ["Hellfire Auction"],
-          lineItems: [buildWinnerLine(auction, variant, productData?.shop?.currencyCode)],
+          lineItems: [
+            {
+              variantId: variant.id,
+              quantity: 1,
+              priceOverride: {
+                amount: Number(auction.currentBid).toFixed(2),
+                currencyCode: productData?.shop?.currencyCode || "USD",
+              },
+            },
+          ],
           customAttributes: [
             { key: "Auction ID", value: auction.id },
             { key: "Winning bid", value: Number(auction.currentBid).toFixed(2) },
@@ -327,9 +336,15 @@ let inventoryLocked = false;
 async function lockExistingAuctionInventory() {
   if (inventoryLocked) return;
   inventoryLocked = true;
-  const rows = await prisma.auction.findMany({ where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }, select: { shop: true, productId: true }, distinct: ["shop", "productId"] });
+  if (await repairDone("STOCK_REPAIR_V2")) return;
+  const rows = await prisma.auction.findMany({ where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } }, orderBy: { createdAt: "desc" }, select: { shop: true, productId: true, winnerDraftOrderId: true }, distinct: ["shop", "productId"] });
   for (const r of rows) {
     try {
+      if (r.winnerDraftOrderId) {
+        const st = await adminGraphql(r.shop, `#graphql
+          query PaidCheck($id: ID!) { draftOrder(id: $id) { status } }`, { id: r.winnerDraftOrderId });
+        if (st?.draftOrder?.status === "COMPLETED") continue; // paid and shipped: leave at 0
+      }
       const d = await adminGraphql(
         r.shop,
         `#graphql
@@ -356,7 +371,7 @@ async function lockExistingAuctionInventory() {
           input: {
             name: "available",
             reason: "correction",
-            quantities: [{ inventoryItemId: variant.inventoryItem.id, locationId, quantity: 0, changeFromQuantity: null }],
+            quantities: [{ inventoryItemId: variant.inventoryItem.id, locationId, quantity: 1, changeFromQuantity: null }],
           },
           idempotencyKey: hfUuid(),
         },
@@ -368,41 +383,30 @@ async function lockExistingAuctionInventory() {
             productVariantsBulkUpdate(productId: $productId, variants: $variants) { userErrors { message } }
           }
         `,
-        { productId: r.productId, variants: [{ id: variant.id, inventoryPolicy: "DENY" }] },
+        { productId: r.productId, variants: [{ id: variant.id, inventoryPolicy: "DENY", price: "99999.00" }] },
       );
-      console.log("[hellfire-auctions] auction item locked at 0 stock", r.productId);
+      console.log("[hellfire-auctions] auction item set to in-stock with placeholder price", r.productId);
     } catch (error) {
       console.error("[hellfire-auctions] stock lock failed:", r.productId, error?.message || error);
     }
   }
+  await markRepairDone("STOCK_REPAIR_V2");
 }
 
-// The winner's order line is a CUSTOM item at the winning bid (title, shipping, tax, weight copied
-// from the product). Custom lines never check stock, so checkout works while the product stays
-// held at 0 stock to block outside purchases.
-function buildWinnerLine(auction, variant, currencyCode) {
-  const weight = variant?.inventoryItem?.measurement?.weight;
-  const line = {
-    title: auction.title,
-    quantity: 1,
-    originalUnitPriceWithCurrency: {
-      amount: Number(auction.currentBid).toFixed(2),
-      currencyCode: currencyCode || "USD",
-    },
-    requiresShipping: variant?.inventoryItem?.requiresShipping !== false,
-    taxable: variant?.taxable !== false,
-  };
-  if (variant?.sku) line.sku = variant.sku;
-  if (weight && Number(weight.value) > 0 && weight.unit) {
-    line.weight = { value: Number(weight.value), unit: weight.unit };
-  }
-  return line;
+const SYS = { auctionId: "__system__", customerId: "__system__", key: "1" };
+async function repairDone(type) {
+  return Boolean(await prisma.auctionNotification.findFirst({ where: { ...SYS, type } }));
+}
+async function markRepairDone(type) {
+  await prisma.auctionNotification.create({ data: { ...SYS, type } }).catch(() => {});
 }
 
-let draftsConverted = false;
-async function convertVariantDraftsToCustom() {
-  if (draftsConverted) return;
-  draftsConverted = true;
+// One-time: put winner orders that were switched to custom lines back onto the product (with its photo).
+let draftsRestored = false;
+async function restoreVariantDrafts() {
+  if (draftsRestored) return;
+  draftsRestored = true;
+  if (await repairDone("DRAFT_RESTORE_V2")) return;
   const rows = await prisma.auction.findMany({
     where: { winnerDraftOrderId: { not: null }, endsAt: { gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) } },
     take: 100,
@@ -415,11 +419,7 @@ async function convertVariantDraftsToCustom() {
           query DraftKind($id: ID!, $productId: ID!) {
             shop { currencyCode }
             draftOrder(id: $id) { status lineItems(first: 5) { nodes { custom } } }
-            product(id: $productId) {
-              variants(first: 1) {
-                nodes { id sku taxable inventoryItem { requiresShipping measurement { weight { value unit } } } }
-              }
-            }
+            product(id: $productId) { variants(first: 1) { nodes { id } } }
           }
         `,
         { id: a.winnerDraftOrderId, productId: a.productId },
@@ -427,31 +427,44 @@ async function convertVariantDraftsToCustom() {
       const draft = d?.draftOrder;
       if (!draft || !["OPEN", "INVOICE_SENT"].includes(draft.status)) continue;
       const first = draft.lineItems?.nodes?.[0];
-      if (!first || first.custom) continue; // already a custom line
-      const variant = d?.product?.variants?.nodes?.[0];
+      if (!first || !first.custom) continue;
+      const variantId = d?.product?.variants?.nodes?.[0]?.id;
+      if (!variantId) continue;
       const u = await adminGraphql(
         a.shop,
         `#graphql
-          mutation ConvertDraftLine($id: ID!, $input: DraftOrderInput!) {
+          mutation RestoreDraftLine($id: ID!, $input: DraftOrderInput!) {
             draftOrderUpdate(id: $id, input: $input) {
               draftOrder { id totalPriceSet { shopMoney { amount } } }
               userErrors { field message }
             }
           }
         `,
-        { id: a.winnerDraftOrderId, input: { lineItems: [buildWinnerLine(a, variant, d?.shop?.currencyCode)] } },
+        {
+          id: a.winnerDraftOrderId,
+          input: {
+            lineItems: [
+              {
+                variantId,
+                quantity: 1,
+                priceOverride: { amount: Number(a.currentBid).toFixed(2), currencyCode: d?.shop?.currencyCode || "USD" },
+              },
+            ],
+          },
+        },
       );
       throwUserErrors(u?.draftOrderUpdate?.userErrors);
-      console.log("[hellfire-auctions] winner order converted to custom line", JSON.stringify({ auctionId: a.id, total: u?.draftOrderUpdate?.draftOrder?.totalPriceSet?.shopMoney?.amount }));
+      console.log("[hellfire-auctions] winner order restored to product line", JSON.stringify({ auctionId: a.id, total: u?.draftOrderUpdate?.draftOrder?.totalPriceSet?.shopMoney?.amount }));
     } catch (error) {
-      console.error("[hellfire-auctions] draft convert failed:", a.id, error?.message || error);
+      console.error("[hellfire-auctions] draft restore failed:", a.id, error?.message || error);
     }
   }
+  await markRepairDone("DRAFT_RESTORE_V2");
 }
 
 async function tick() {
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
-  await convertVariantDraftsToCustom().catch((error) => console.error("[hellfire-auctions] draft convert error:", error?.message || error));
+  await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   const now = new Date();
 
   // Keep DRAFT/UPCOMING/LIVE labels in step with the clock (never touches ended ones).

@@ -271,6 +271,24 @@ async function getProductImage(admin, productId) {
 }
 
 
+// Optional shipping weight, so the store's weight-based or carrier-calculated rates can price the winner's shipping.
+async function setAuctionWeight(admin, productId, value, unit) {
+  const r = await admin.graphql(
+    `#graphql
+      query WeightVariant($id: ID!) { product(id: $id) { variants(first: 1) { nodes { inventoryItem { id } } } } }`,
+    { variables: { id: productId } },
+  );
+  const itemId = (await r.json())?.data?.product?.variants?.nodes?.[0]?.inventoryItem?.id;
+  if (!itemId) return;
+  await admin.graphql(
+    `#graphql
+      mutation SetWeight($id: ID!, $input: InventoryItemInput!) {
+        inventoryItemUpdate(id: $id, input: $input) { inventoryItem { id } userErrors { message } }
+      }`,
+    { variables: { id: itemId, input: { measurement: { weight: { value, unit } } } } },
+  );
+}
+
 async function ensureAuctionVariantAvailable(admin, productId) {
   const productResponse = await admin.graphql(
     `#graphql
@@ -1546,6 +1564,16 @@ const actionImpl = async ({ request }) => {
 
   try {
     await ensureAuctionVariantAvailable(admin, productId);
+    const weightValue = Number(formData.get("weightValue"));
+    const weightUnitRaw = String(formData.get("weightUnit") || "");
+    const weightUnit = ["OUNCES", "POUNDS", "GRAMS", "KILOGRAMS"].includes(weightUnitRaw) ? weightUnitRaw : "OUNCES";
+    if (Number.isFinite(weightValue) && weightValue > 0) {
+      try {
+        await setAuctionWeight(admin, productId, weightValue, weightUnit);
+      } catch (error) {
+        console.error("[admin] could not set the shipping weight:", error?.message || error);
+      }
+    }
     await ensureAuctionStorefront(admin, productId);
   } catch (error) {
     return { error: error.message };
@@ -1886,6 +1914,22 @@ function AuctionForm({
             {!allowAutoExtend && " (Inferno plan)"}
           </span>
         </label>
+
+        <div>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Shipping weight (optional)</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input name="weightValue" type="number" min="0" step="0.01" placeholder="e.g. 8" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, width: 120 }} />
+            <select name="weightUnit" defaultValue="OUNCES" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8 }}>
+              <option value="OUNCES">oz</option>
+              <option value="POUNDS">lb</option>
+              <option value="GRAMS">g</option>
+              <option value="KILOGRAMS">kg</option>
+            </select>
+          </div>
+          <div style={{ fontSize: 13, color: "#616161", marginTop: 6 }}>
+            Your store's shipping rates use this to price shipping on the winner's invoice. Leave it empty if you set weights in Shopify.
+          </div>
+        </div>
 
         <s-section heading="Auction Schedule">
           <s-stack gap="base">

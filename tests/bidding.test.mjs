@@ -1,3 +1,4 @@
+import { buyNowAvailable } from "../app/bidding.server.js";
 import assert from "node:assert/strict";
 import { resolveProxyBids, nextMinimumBid } from "../app/bidding.server.js";
 
@@ -72,6 +73,17 @@ check("removing the leader: the next bidder leads at the starting bid", () => {
   const r = resolveProxyBids({ startingBid: 1, currentBid: 0, bids: [bid("b", "B", 10, 1)] });
   assert.equal(r.leaderId, "B");
   assert.equal(r.price, 1);
+});
+
+check("buy it now: available until the first bid (no reserve)", () => {
+  assert.equal(buyNowAvailable({ buyNowPrice: 50, reservePrice: null, currentBid: 1, bidCount: 0 }), true);
+  assert.equal(buyNowAvailable({ buyNowPrice: 50, reservePrice: null, currentBid: 2, bidCount: 1 }), false);
+});
+
+check("buy it now: with a reserve it stays until the reserve is met; never without a price", () => {
+  assert.equal(buyNowAvailable({ buyNowPrice: 50, reservePrice: 20, currentBid: 5, bidCount: 3 }), true);
+  assert.equal(buyNowAvailable({ buyNowPrice: 50, reservePrice: 20, currentBid: 20, bidCount: 4 }), false);
+  assert.equal(buyNowAvailable({ buyNowPrice: null, reservePrice: null, currentBid: 1, bidCount: 0 }), false);
 });
 
 check("minimum next bid", () => {

@@ -91,3 +91,7 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
 .hellfire-auction-confirm-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .hellfire-auction-confirm-actions button { flex: 1 1 140px; min-height: 46px; padding: 10px 14px; border-radius: 8px; border: 2px solid #fff; font-weight: 800; cursor: pointer; background: transparent; color: #fff; }
 .hellfire-auction-confirm-actions .hellfire-auction-confirm-yes { background: #ffff00; border-color: #ffff00; color: #000; }
+
+/* Buy It Now */
+.hellfire-auction-buynow:empty { display: none; }
+.hellfire-auction-buynow-btn { width: 100%; min-height: 50px; margin-top: 10px; border: 0; border-radius: 8px; font-weight: 800; font-size: 16px; cursor: pointer; background: linear-gradient(90deg, #ff7a18, #ffd60a); color: #1a0000; text-transform: uppercase; letter-spacing: 0.02em; }

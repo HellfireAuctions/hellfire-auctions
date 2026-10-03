@@ -88,3 +88,10 @@ export function resolveProxyBids({
     amounts,
   };
 }
+
+// Buy It Now is offered until the first bid; with a reserve, until the reserve is met (like eBay).
+export function buyNowAvailable({ buyNowPrice, reservePrice, currentBid, bidCount }) {
+  if (buyNowPrice == null) return false;
+  if (reservePrice != null) return Number(currentBid || 0) < Number(reservePrice);
+  return Number(bidCount || 0) === 0;
+}

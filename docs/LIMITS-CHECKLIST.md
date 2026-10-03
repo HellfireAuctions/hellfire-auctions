@@ -26,3 +26,9 @@ Amazon SES gives the same "send from your own domain" result for about $0.10 per
 ## Self-hosting the app and database
 Possible on one small server (about $6-12/month), but then backups, security updates and uptime are our job.
 Worth revisiting once there are paying stores.
+
+## Backlog (not started on purpose)
+- Amazon SES email switch: back-burnered by the owner. Do it closer to launch, or when email volume nears the Resend limit. Goal: moving to SES should be a settings change.
+- Always-on Render server (about $7/month) before relying on real merchants; until then keep UptimeRobot pinging /healthz.
+- After App Store approval: recurring auctions and templates, CSV import.
+- Final end-to-end test of a full auction, and a last review of the listing text against what the app does.

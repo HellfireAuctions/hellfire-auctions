@@ -84,7 +84,7 @@ export const loader = async ({ request }) => {
     const iLead = highestBid?.bidderId === loggedInCustomerId;
     const ended = new Date() >= auction.endsAt;
     const reserveOk = auction.reservePrice == null || Number(auction.currentBid) >= Number(auction.reservePrice);
-    myStatus = ended ? (iLead && reserveOk ? "WON" : "LOST") : iLead ? "WINNING" : "OUTBID";
+    myStatus = ended ? (iLead ? (reserveOk ? "WON" : "RESERVE_NOT_MET") : "LOST") : iLead ? "WINNING" : "OUTBID";
   }
   const hasReserve = auction?.reservePrice != null;
 

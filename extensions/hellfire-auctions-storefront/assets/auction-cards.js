@@ -111,9 +111,16 @@
     const mineEl = badge.querySelector(".hellfire-card-badge__mine");
     if (mineEl) {
       let mine = auction.myStatus || "";
-      if (mine && state === "ENDED") mine = mine === "WINNING" ? "WON" : "";
+      if (mine && state === "ENDED") mine = mine === "WINNING" && auction.reserveMet !== false ? "WON" : "";
+      if (mine === "WINNING" && auction.reserveMet === false) mine = "RESERVE";
       mineEl.dataset.mine = mine.toLowerCase();
-      setText(mineEl, mine === "WINNING" ? "\u2714 WINNING" : mine === "OUTBID" ? "\u2716 OUTBID" : mine === "WON" ? "\u{1F3C6} WON" : "");
+      setText(mineEl, mine === "WINNING" ? "\u2714 WINNING" : mine === "OUTBID" ? "\u2716 OUTBID" : mine === "WON" ? "\u{1F3C6} WON" : mine === "RESERVE" ? "\u2714 HIGH BIDDER" : "");
+    }
+    const reserveEl = badge.querySelector(".hellfire-card-badge__reserve");
+    if (reserveEl) {
+      const r = auction.hasReserve ? (auction.reserveMet ? "yes" : "no") : "";
+      reserveEl.dataset.reserve = r;
+      setText(reserveEl, r === "yes" ? "\u2714 Reserve met" : r === "no" ? "Reserve not met" : "");
     }
     badge.dataset.hot = auction.hot && state === "LIVE" ? "true" : "false";
     setText(badge.querySelector(".hellfire-card-badge__hot"), auction.hot && state === "LIVE" ? "\u{1F525} HOT" : "");
@@ -134,6 +141,7 @@
       '<span class="hellfire-card-badge__mine"></span>' +
       '<span class="hellfire-card-badge__line"><span class="hellfire-card-badge__amount-label"></span> ' +
       '<strong class="hellfire-card-badge__amount"></strong></span>' +
+      '<span class="hellfire-card-badge__reserve"></span>' +
       '<span class="hellfire-card-badge__meta"></span>' +
       '<span class="hellfire-card-badge__brand"></span>';
     badges.set(badge, handle);

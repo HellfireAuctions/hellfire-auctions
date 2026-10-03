@@ -111,8 +111,9 @@ export const loader = async ({ request }) => {
       const stateText = upcoming ? "Upcoming auction" : ended ? "Auction ended" : "Live auction";
       const stateKey = upcoming ? "upcoming" : ended ? "ended" : "live";
       const hot = !ended && !upcoming && plan.hotBadge && a.bidCount >= HOT_BID_THRESHOLD;
-      const mine = key === "WINNING" ? "winning" : key === "OUTBID" ? "outbid" : key === "WON" ? "won" : "";
-      const mineText = { winning: "\u2714 WINNING", outbid: "\u2716 OUTBID", won: "\u{1F3C6} WON" }[mine] || "";
+      const reserveOk = a.reservePrice == null || Number(a.currentBid) >= Number(a.reservePrice);
+      const mine = key === "WINNING" ? (reserveOk ? "winning" : "reserve") : key === "OUTBID" ? "outbid" : key === "WON" ? "won" : "";
+      const mineText = { winning: "\u2714 WINNING", outbid: "\u2716 OUTBID", won: "\u{1F3C6} WON", reserve: "\u2714 HIGH BIDDER" }[mine] || "";
       const amountLabel = a.bidCount > 0 ? (ended ? "Winning Bid" : "Current Bid") : "Starting Bid";
       const amount = a.bidCount > 0 ? a.currentBid : a.startingBid;
       const bids = `${a.bidCount} bid${a.bidCount === 1 ? "" : "s"}`;
@@ -134,6 +135,7 @@ export const loader = async ({ request }) => {
           <span class="hellfire-card-badge__top"><span class="hellfire-card-badge__state">${stateText}</span><span class="hellfire-card-badge__hot">${hot ? "\u{1F525} HOT" : ""}</span></span>
           <span class="hellfire-card-badge__mine" data-mine="${mine}">${mineText}</span>
           <span class="hellfire-card-badge__line"><span class="hellfire-card-badge__amount-label">${amountLabel}</span> <strong class="hellfire-card-badge__amount">${money(amount)}</strong></span>
+          ${a.reservePrice != null ? `<span class="hellfire-card-badge__reserve" data-reserve="${reserveOk ? "yes" : "no"}">${reserveOk ? "\u2714 Reserve met" : "Reserve not met"}</span>` : ""}
           <span class="hellfire-card-badge__meta">${bids}${timing}</span>
         </div>
         ${bidAgain}

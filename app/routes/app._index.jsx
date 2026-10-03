@@ -971,6 +971,10 @@ const actionImpl = async ({ request }) => {
       ? Number(reservePriceValue)
       : null;
 
+  if (intent === "create" && reservePrice !== null && !(Number.isFinite(reservePrice) && reservePrice > startingBid)) {
+    return { error: "The reserve price must be higher than the starting bid. Leave it empty if you don't want a reserve." };
+  }
+
   const cleanDescription = description
     ? `<p>${description
         .replaceAll("&", "&amp;")

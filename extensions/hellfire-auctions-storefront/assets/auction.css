@@ -75,3 +75,10 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
 .hellfire-auction-skeleton .hf-sk-input { min-height: 50px; border-radius: 8px; }
 @keyframes hf-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .hellfire-auction-skeleton .hf-sk { animation: none; } }
+
+/* Reserve status */
+.hellfire-auction-reserve:empty { display: none; }
+.hellfire-auction-reserve { margin: -6px 0 12px; font-weight: 800; font-size: 1rem; }
+.hellfire-auction-reserve.is-not-met { color: #ffb347; }
+.hellfire-auction-reserve.is-met { color: #4ade80; }
+.hellfire-auction-my-status.is-reserve { background: linear-gradient(90deg, #b45309, #f59e0b); box-shadow: 0 0 14px rgba(245, 158, 11, 0.5); }

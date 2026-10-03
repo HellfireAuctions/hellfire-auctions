@@ -61,6 +61,7 @@ export const loader = async ({ request }) => {
       productId: true,
       startingBid: true,
       currentBid: true,
+      reservePrice: true,
       bidCount: true,
       startsAt: true,
       endsAt: true,
@@ -107,6 +108,8 @@ export const loader = async ({ request }) => {
       status: auctionState(a, now),
       hot: plan.hotBadge && a.bidCount >= HOT_BID_THRESHOLD,
       myStatus: myStatus.get(a.id) || null,
+      hasReserve: a.reservePrice != null,
+      reserveMet: a.reservePrice == null ? null : Number(a.currentBid) >= Number(a.reservePrice),
     }));
 
   return Response.json(

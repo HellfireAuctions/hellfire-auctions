@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { resolveProxyBids } from "../bidding.server";
-import { canCreateAuction } from "../plans.server";
+import { canCreateAuction, getShopPlan } from "../plans.server";
 import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale } from "../auction-worker.server";
 
 const DURATION_OPTIONS = [
@@ -715,6 +715,7 @@ export const loader = async ({ request }) => {
       winnerId: true,
       winnerDraftOrderId: true,
       winnerNotifiedAt: true,
+      autoExtend: true,
     },
   });
 
@@ -737,6 +738,7 @@ export const loader = async ({ request }) => {
   }
   const blockedRows = await prisma.blockedBidder.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" }, take: 100 });
 
+  const planNow = await getShopPlan(session.shop);
   const sinceInsights = new Date(Date.now() - 30 * 24 * 3600_000);
   const endedRecent = await prisma.auction.findMany({
     where: { shop: session.shop, endsAt: { gte: sinceInsights, lte: new Date() }, status: { not: "CANCELLED" } },
@@ -876,7 +878,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -1050,6 +1052,7 @@ const actionImpl = async ({ request }) => {
           startingBid: target.startingBid,
           currentBid: target.startingBid,
           reservePrice: target.reservePrice,
+          autoExtend: target.autoExtend,
           startsAt: now,
           endsAt: new Date(now.getTime() + durationMs(durationValue)),
           status: "LIVE",
@@ -1502,6 +1505,7 @@ const actionImpl = async ({ request }) => {
           Number.isFinite(reservePrice)
             ? reservePrice
             : null,
+        autoExtend: formData.get("autoExtend") === "1" && Boolean((await getShopPlan(session.shop)).autoExtend),
         startsAt,
         endsAt,
         status: startsAt > new Date() ? "UPCOMING" : (new Date() < endsAt ? "LIVE" : "ENDED"),
@@ -1522,6 +1526,7 @@ function AuctionForm({
   prefill,
   onCancel,
   timezone,
+  allowAutoExtend,
 }) {
   const isEdit = Boolean(auction);
   const source = auction || prefill || null;
@@ -1802,6 +1807,21 @@ function AuctionForm({
           }
         />
 
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 14, opacity: allowAutoExtend ? 1 : 0.6 }}>
+          <input
+            type="checkbox"
+            name="autoExtend"
+            value="1"
+            defaultChecked={Boolean(source?.autoExtend) && Boolean(allowAutoExtend)}
+            disabled={!allowAutoExtend}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <strong>Anti-sniping:</strong> add 2 minutes if a bid arrives in the last 2 minutes.
+            {!allowAutoExtend && " (Inferno plan)"}
+          </span>
+        </label>
+
         <s-section heading="Auction Schedule">
           <s-stack gap="base">
 
@@ -1995,7 +2015,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags } = useLoaderData();
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
   const revalidator = useRevalidator();
@@ -2121,7 +2141,7 @@ export default function AuctionsPage() {
                 <s-button type="button" variant="tertiary" onClick={() => setCloneFrom(null)}>Clear</s-button>
               </div>
             )}
-            <AuctionForm key={cloneFrom?.id || "new"} timezone={timezone} prefill={cloneFrom} />
+            <AuctionForm key={cloneFrom?.id || "new"} timezone={timezone} prefill={cloneFrom} allowAutoExtend={Boolean(planFlags?.autoExtend)} />
           </>
         )}
       </s-section>
@@ -2225,6 +2245,9 @@ export default function AuctionsPage() {
                         )}
                       </div>
                     )}
+                    {auction.autoExtend && (
+                      <div style={{ fontSize: 12, color: "#616161" }}>Anti-sniping on</div>
+                    )}
                     {auction.bidders?.length > 0 && (
                       <details style={{ fontSize: 13 }}>
                         <summary style={{ cursor: "pointer", fontWeight: 600 }}>Bidders ({auction.bidders.length})</summary>
@@ -2308,7 +2331,12 @@ export default function AuctionsPage() {
       </s-section>
 
       <s-section heading="Insights (last 30 days)">
-        {!insights || insights.endedCount === 0 ? (
+        {!planFlags?.insights ? (
+          <s-text>
+            Sales insights (sell-through, average price, most active bidders) are part of the Inferno plan.{" "}
+            <s-link href="/app/plans">See plans</s-link>
+          </s-text>
+        ) : !insights || insights.endedCount === 0 ? (
           <s-text>Your numbers appear here after your first auction ends.</s-text>
         ) : (
           <s-stack gap="base">

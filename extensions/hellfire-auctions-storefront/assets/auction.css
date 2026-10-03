@@ -108,3 +108,5 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
 .hellfire-auction-watch { margin-top: 12px; }
 .hellfire-auction-watch-btn { width: 100%; min-height: 46px; border: 2px solid #fff; border-radius: 8px; background: transparent; color: #fff; font-weight: 800; font-size: 15px; cursor: pointer; }
 .hellfire-auction-watch-btn[aria-pressed="true"] { border-color: #19b453; color: #4ade80; }
+
+.hellfire-auction-extend-note { font-size: 13px; opacity: 0.8; margin: -4px 0 10px; }

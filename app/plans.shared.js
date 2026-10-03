@@ -13,6 +13,8 @@ export const PLANS = {
     emails: false,
     branding: true,
     hotBadge: false,
+    insights: false,
+    autoExtend: false,
   },
   BLAZE: {
     key: "BLAZE",
@@ -22,6 +24,8 @@ export const PLANS = {
     emails: true,
     branding: false,
     hotBadge: false,
+    insights: false,
+    autoExtend: false,
   },
   INFERNO: {
     key: "INFERNO",
@@ -31,6 +35,8 @@ export const PLANS = {
     emails: true,
     branding: false,
     hotBadge: true,
+    insights: true,
+    autoExtend: true,
   },
 };
 

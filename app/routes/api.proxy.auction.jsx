@@ -129,6 +129,7 @@ export const loader = async ({ request }) => {
           startsAt: auction.startsAt,
           endsAt: auction.endsAt,
           status: auctionState(auction),
+          autoExtend: Boolean(auction.autoExtend),
           canWatch: Boolean(watchPlan?.emails),
           watching,
           history: (auction.events || []).map((e) => ({
@@ -255,9 +256,15 @@ export const action = async ({ request }) => {
         data: { auctionId: current.id, bidderId: customerId, amount: mineNow ? outcome.amounts[mineNow.id] : outcome.price },
       });
 
+      // Anti-sniping (optional per auction): a bid in the last 2 minutes pushes the end out to 2 minutes from now.
+      const extendNow = Boolean(current.autoExtend) && current.endsAt.getTime() - Date.now() <= 2 * 60_000;
       const updated = await tx.auction.update({
         where: { id: current.id },
-        data: { currentBid: outcome.price, bidCount: { increment: 1 } },
+        data: {
+          currentBid: outcome.price,
+          bidCount: { increment: 1 },
+          ...(extendNow ? { endsAt: new Date(Date.now() + 2 * 60_000) } : {}),
+        },
       });
 
       return {

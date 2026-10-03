@@ -54,7 +54,8 @@ const TIERS = [
     perks: [
       "10 auctions every month",
       "Live bidding with automatic proxy bids",
-      "Live countdown on every product card",
+      "Reserve prices, scheduling and test auctions",
+      "Bid history, bidder blocking and a My Auctions page",
       "Winner invoiced automatically",
       "Works with any Shopify theme",
     ],
@@ -70,8 +71,9 @@ const TIERS = [
     perks: [
       "90 auctions every month",
       "Everything in Spark",
-      "\u201CYou've been outbid\u201D emails bring bidders straight back",
-      "\u201C1 hour left\u201D reminder emails to every bidder",
+      "Outbid and \u201C1 hour left\u201D emails to bidders",
+      "Watch lists and \u201Cremind me\u201D emails for shoppers",
+      "Unpaid-winner reminders and \u201Cyou didn't win\u201D emails",
       "\u201CSold\u201D and \u201Cauction ended\u201D summary emails to you",
       `${TRIAL_DAYS}-day free trial`,
     ],
@@ -87,6 +89,8 @@ const TIERS = [
     perks: [
       "Unlimited auctions",
       "Everything in Blaze",
+      "Insights: sales, sell-through and top bidders",
+      "Anti-sniping: auto-extend on late bids",
       `\u{1F525} HOT flame badge on auctions with ${HOT_BID_THRESHOLD}+ bids`,
       "Priority support",
       `${TRIAL_DAYS}-day free trial`,

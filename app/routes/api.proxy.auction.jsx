@@ -133,6 +133,13 @@ export const action = async ({ request }) => {
     return Response.json({ error: "Please sign in to place a bid." }, { status: 401 });
   }
 
+  const blockedBidder = shop
+    ? await prisma.blockedBidder.findUnique({ where: { shop_customerId: { shop, customerId } } })
+    : null;
+  if (blockedBidder) {
+    return Response.json({ error: "You can't place bids on this store's auctions." }, { status: 403 });
+  }
+
   const lastAt = lastBidAt.get(customerId) || 0;
   if (Date.now() - lastAt < BID_COOLDOWN_MS) {
     return Response.json({ error: "You're bidding too fast. Please wait a second and try again." }, { status: 429 });

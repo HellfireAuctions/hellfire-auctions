@@ -86,3 +86,12 @@ model ShopPlan {
   subscriptionId String?
   updatedAt      DateTime @updatedAt
 }
+
+model BlockedBidder {
+  id         String   @id @default(cuid())
+  shop       String
+  customerId String
+  createdAt  DateTime @default(now())
+
+  @@unique([shop, customerId])
+}

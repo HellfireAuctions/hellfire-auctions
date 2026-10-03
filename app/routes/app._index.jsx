@@ -3,6 +3,7 @@ import { useActionData, useLoaderData, useRevalidator, Form } from "react-router
 import { useEffect, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction } from "../plans.server";
 import { wakeWorker } from "../auction-worker.server";
 
@@ -721,13 +722,20 @@ export const loader = async ({ request }) => {
     ? await prisma.bid.findMany({
         where: { auctionId: { in: ids } },
         orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
-        select: { auctionId: true, bidderId: true },
+        select: { id: true, auctionId: true, bidderId: true, maxBid: true, createdAt: true },
       })
     : [];
   const leaders = new Map();
   for (const bid of bids) if (!leaders.has(bid.auctionId)) leaders.set(bid.auctionId, bid);
 
-  const customerIds = [...new Set([...leaders.values()].map((b) => String(b.bidderId)))];
+  const bidsByAuction = new Map();
+  for (const b of bids) {
+    if (!bidsByAuction.has(b.auctionId)) bidsByAuction.set(b.auctionId, []);
+    bidsByAuction.get(b.auctionId).push(b);
+  }
+  const blockedRows = await prisma.blockedBidder.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" }, take: 100 });
+
+  const customerIds = [...new Set([...bids.map((b) => String(b.bidderId)), ...blockedRows.map((r) => String(r.customerId))])].slice(0, 240);
   const customers = new Map();
   if (customerIds.length) {
     const gids = customerIds.map((id) => `gid://shopify/Customer/${id}`);
@@ -754,8 +762,26 @@ export const loader = async ({ request }) => {
   const auctionsWithLeaders = auctions.map((auction) => {
     const lead = leaders.get(auction.id);
     const customer = lead ? customers.get(String(lead.bidderId)) : null;
+    const list = bidsByAuction.get(auction.id) || [];
+    const outcome = list.length
+      ? resolveProxyBids({ startingBid: auction.startingBid, currentBid: 0, reservePrice: auction.reservePrice, bids: list })
+      : null;
+    const bidders = list
+      .map((b) => {
+        const c = customers.get(String(b.bidderId));
+        return {
+          customerId: String(b.bidderId),
+          name: c?.displayName || c?.email || `Customer ${b.bidderId}`,
+          email: c?.email || null,
+          amount: outcome ? Number(outcome.amounts[b.id] ?? 0) : 0,
+          isLeader: outcome ? outcome.leaderId === b.bidderId : false,
+        };
+      })
+      .sort((x, y) => y.amount - x.amount)
+      .slice(0, 25);
     return {
       ...auction,
+      bidders,
       highBidder: lead
         ? {
             customerId: String(lead.bidderId),
@@ -763,6 +789,15 @@ export const loader = async ({ request }) => {
             email: customer?.email || null,
           }
         : null,
+    };
+  });
+
+  const blocked = blockedRows.map((r) => {
+    const c = customers.get(String(r.customerId));
+    return {
+      customerId: String(r.customerId),
+      name: c?.displayName || c?.email || `Customer ${r.customerId}`,
+      email: c?.email || null,
     };
   });
 
@@ -776,7 +811,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked };
 };
 
 const actionImpl = async ({ request }) => {
@@ -793,6 +828,68 @@ const actionImpl = async ({ request }) => {
     } catch (error) {
       return { error: "Couldn't update your menu. Please open the app again and approve the new permission, then retry." };
     }
+  }
+
+  if (["remove-bid", "block-bidder", "unblock-bidder"].includes(intent)) {
+    const targetCustomer = formData.get("customerId")?.toString() || "";
+    if (!targetCustomer) return { error: "Bidder could not be found." };
+
+    if (intent === "unblock-bidder") {
+      await prisma.blockedBidder.deleteMany({ where: { shop: session.shop, customerId: targetCustomer } });
+      return { success: "Bidder unblocked. They can bid again." };
+    }
+
+    // remove-bid: this auction only. block-bidder: every live auction in the store.
+    let targets;
+    if (intent === "block-bidder") {
+      await prisma.blockedBidder.upsert({
+        where: { shop_customerId: { shop: session.shop, customerId: targetCustomer } },
+        create: { shop: session.shop, customerId: targetCustomer },
+        update: {},
+      });
+      targets = await prisma.auction.findMany({
+        where: { shop: session.shop, endsAt: { gt: new Date() }, bids: { some: { bidderId: targetCustomer } } },
+      });
+    } else {
+      const one = await prisma.auction.findFirst({ where: { id: formData.get("auctionId")?.toString() || "", shop: session.shop } });
+      if (!one) return { error: "Auction could not be found." };
+      if (new Date() >= one.endsAt) {
+        return { error: "This auction has already ended, so bids can't be removed. If there's a problem with the item, use End now with no sale." };
+      }
+      targets = [one];
+    }
+
+    let removed = 0;
+    for (const a of targets) {
+      const mine = await prisma.bid.findFirst({ where: { auctionId: a.id, bidderId: targetCustomer } });
+      if (!mine) continue;
+      await prisma.$transaction(async (tx) => {
+        await tx.bid.delete({ where: { id: mine.id } });
+        const rest = await tx.bid.findMany({
+          where: { auctionId: a.id },
+          select: { id: true, bidderId: true, maxBid: true, createdAt: true },
+        });
+        const outcome = rest.length
+          ? resolveProxyBids({ startingBid: a.startingBid, currentBid: 0, reservePrice: a.reservePrice, bids: rest })
+          : null;
+        await tx.auction.update({
+          where: { id: a.id },
+          data: {
+            currentBid: outcome ? outcome.price : a.startingBid,
+            bidCount: rest.length ? Math.max(rest.length, a.bidCount - 1) : 0,
+          },
+        });
+      });
+      removed += 1;
+    }
+    return {
+      success:
+        intent === "block-bidder"
+          ? `Bidder blocked. ${removed} live bid${removed === 1 ? "" : "s"} removed and prices recalculated.`
+          : removed
+            ? "Bid removed. The price and leader have been recalculated."
+            : "That bidder has no bid on this auction.",
+    };
   }
 
   if (["cancel", "end", "relist", "delete"].includes(intent)) {
@@ -1768,7 +1865,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [] } = useLoaderData();
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
   const revalidator = useRevalidator();
@@ -1952,6 +2049,38 @@ export default function AuctionsPage() {
                       {state === "UPCOMING" ? "Starts " : state === "LIVE" ? "Ends " : "Ended "}
                       {formatEastern(new Date(state === "UPCOMING" ? auction.startsAt : auction.endsAt), timezone)}
                     </div>
+                    {auction.bidders?.length > 0 && (
+                      <details style={{ fontSize: 13 }}>
+                        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Bidders ({auction.bidders.length})</summary>
+                        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                          {auction.bidders.map((b) => (
+                            <div key={b.customerId} style={{ borderTop: "1px solid #eee", paddingTop: 6 }}>
+                              <div>
+                                <a href={`shopify://admin/customers/${b.customerId}`} target="_top" style={{ color: "#005bd3" }}>{b.name}</a>
+                                {b.isLeader && <strong style={{ color: "#008060" }}> {"\u00B7"} leading</strong>}
+                              </div>
+                              {b.email && <div style={{ color: "#616161", wordBreak: "break-all" }}>{b.email}</div>}
+                              <div style={{ color: "#616161" }}>Bid: ${b.amount.toFixed(2)}</div>
+                              {state !== "ENDED" && (
+                                <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                                  <Form method="post" onSubmit={(e) => { if (!window.confirm("Remove this bidder's bid from this auction? The price and leader will recalculate.")) e.preventDefault(); }}>
+                                    <input type="hidden" name="intent" value="remove-bid" />
+                                    <input type="hidden" name="auctionId" value={auction.id} />
+                                    <input type="hidden" name="customerId" value={b.customerId} />
+                                    <s-button type="submit" tone="critical" variant="tertiary">Remove bid</s-button>
+                                  </Form>
+                                  <Form method="post" onSubmit={(e) => { if (!window.confirm("Block this bidder? Their live bids in all your auctions are removed and they can't bid again until you unblock them.")) e.preventDefault(); }}>
+                                    <input type="hidden" name="intent" value="block-bidder" />
+                                    <input type="hidden" name="customerId" value={b.customerId} />
+                                    <s-button type="submit" tone="critical" variant="tertiary">Block bidder</s-button>
+                                  </Form>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                     <div style={{ marginTop: "auto", paddingTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <s-button type="button" onClick={() => setEditingId(auction.id)}>
                         Edit
@@ -1991,6 +2120,26 @@ export default function AuctionsPage() {
         )}
 
       </s-section>
+
+      {blocked.length > 0 && (
+        <s-section heading="Blocked bidders">
+          <s-stack gap="small">
+            {blocked.map((b) => (
+              <div key={b.customerId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div>
+                  <a href={`shopify://admin/customers/${b.customerId}`} target="_top" style={{ color: "#005bd3" }}>{b.name}</a>
+                  {b.email && <span style={{ color: "#616161" }}> {"\u00B7"} {b.email}</span>}
+                </div>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="unblock-bidder" />
+                  <input type="hidden" name="customerId" value={b.customerId} />
+                  <s-button type="submit" variant="tertiary">Unblock</s-button>
+                </Form>
+              </div>
+            ))}
+          </s-stack>
+        </s-section>
+      )}
 
       <s-section heading="Backup">
         <s-stack gap="small">

@@ -68,6 +68,12 @@ check("tie after a raise: the bidder who reached the amount FIRST keeps the lead
   assert.equal(r.price, 10);
 });
 
+check("removing the leader: the next bidder leads at the starting bid", () => {
+  const r = resolveProxyBids({ startingBid: 1, currentBid: 0, bids: [bid("b", "B", 10, 1)] });
+  assert.equal(r.leaderId, "B");
+  assert.equal(r.price, 1);
+});
+
 check("minimum next bid", () => {
   assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 0, hasBids: false }), 10);
   assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 21, hasBids: true }), 22);

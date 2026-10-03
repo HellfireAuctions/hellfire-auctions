@@ -939,7 +939,7 @@ const actionImpl = async ({ request }) => {
     try {
       if (intent === "remind-winner") return await remindWinnerNow(session.shop, id);
       if (intent === "offer-next") return await offerToNextBidder(session.shop, id);
-      return await cancelUnpaidSale(session.shop, id, formData.get("blockBidder") === "1");
+      return await cancelUnpaidSale(session.shop, id);
     } catch (error) {
       console.error("[admin] unpaid-winner action failed:", intent, error?.message || error);
       return { error: "That didn't work: " + (error?.message || "unknown error") };
@@ -1113,7 +1113,20 @@ const actionImpl = async ({ request }) => {
           paid = (await res.json())?.data?.draftOrder?.status === "COMPLETED";
         } catch {}
         if (!paid) {
-          return { error: "The winner hasn't paid their invoice yet. Deleting now would break their checkout link, so wait until it's paid." };
+          if (formData.get("force") !== "1") {
+            return { error: "The winner hasn't paid their invoice yet. Use Cancel sale first, or confirm the deletion prompt to cancel their invoice and delete the auction." };
+          }
+          try {
+            await admin.graphql(
+              `#graphql
+                mutation DropWinnerDraft($input: DraftOrderDeleteInput!) {
+                  draftOrderDelete(input: $input) { deletedId userErrors { message } }
+                }`,
+              { variables: { input: { id: target.winnerDraftOrderId } } },
+            );
+          } catch {
+            // the invoice may already be gone; continue with the deletion
+          }
         }
       }
       const others = await prisma.auction.count({ where: { productId: target.productId, id: { not: target.id } } });
@@ -2100,6 +2113,7 @@ export default function AuctionsPage() {
 
   const [formNonce, setFormNonce] = useState(0);
   useEffect(() => {
+    if (actionData && (actionData.error || actionData.success)) window.scrollTo({ top: 0, behavior: "smooth" });
     if (actionData?.success) setCloneFrom(null);
     // A successful create (not an edit, and not a message-style result) clears the form for the next listing.
     if (actionData?.success && typeof actionData.success !== "string" && actionData?.mode !== "update") {
@@ -2287,9 +2301,8 @@ export default function AuctionsPage() {
                                   <s-button type="submit" variant="tertiary">Offer to next bidder</s-button>
                                 </Form>
                               )}
-                              <Form method="post" onSubmit={(e) => { if (!window.confirm("Cancel this sale? The winner's invoice is cancelled and you can relist the item.")) { e.preventDefault(); return; } e.currentTarget.elements.blockBidder.value = window.confirm("Also block this bidder from your future auctions?") ? "1" : ""; }}>
+                              <Form method="post" onSubmit={(e) => { if (!window.confirm("Cancel this sale? The winner's invoice is cancelled and you can relist the item. The bidder is NOT blocked.")) e.preventDefault(); }}>
                                 <input type="hidden" name="intent" value="cancel-sale" />
-                                <input type="hidden" name="blockBidder" value="" />
                                 <input type="hidden" name="auctionId" value={auction.id} />
                                 <s-button type="submit" tone="critical" variant="tertiary">Cancel sale</s-button>
                               </Form>
@@ -2319,21 +2332,21 @@ export default function AuctionsPage() {
                               </div>
                               {b.email && <div style={{ color: "#616161", wordBreak: "break-all" }}>{b.email}</div>}
                               <div style={{ color: "#616161" }}>Bid: ${b.amount.toFixed(2)}</div>
-                              {state !== "ENDED" && (
-                                <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                              <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                                  {state !== "ENDED" && (
                                   <Form method="post" onSubmit={(e) => { if (!window.confirm("Remove this bidder's bid from this auction? The price and leader will recalculate.")) e.preventDefault(); }}>
                                     <input type="hidden" name="intent" value="remove-bid" />
                                     <input type="hidden" name="auctionId" value={auction.id} />
                                     <input type="hidden" name="customerId" value={b.customerId} />
                                     <s-button type="submit" tone="critical" variant="tertiary">Remove bid</s-button>
                                   </Form>
-                                  <Form method="post" onSubmit={(e) => { if (!window.confirm("Block this bidder? Their live bids in all your auctions are removed and they can't bid again until you unblock them.")) e.preventDefault(); }}>
+                                  )}
+                                  <Form method="post" onSubmit={(e) => { if (!window.confirm("Block " + b.name + "?\n\nThey won't be able to bid on any of your auctions, and any live bids from them are removed.\n\nYou can undo this any time from the Blocked bidders list at the bottom of this page.")) e.preventDefault(); }}>
                                     <input type="hidden" name="intent" value="block-bidder" />
                                     <input type="hidden" name="customerId" value={b.customerId} />
                                     <s-button type="submit" tone="critical" variant="tertiary">Block bidder</s-button>
                                   </Form>
                                 </div>
-                              )}
                             </div>
                           ))}
                         </div>
@@ -2373,7 +2386,8 @@ export default function AuctionsPage() {
                         </Form>
                       )}
                       {(state === "ENDED" || auction.status === "CANCELLED") && (
-                        <Form method="post" onSubmit={(e) => { if (!window.confirm("Delete this auction permanently? Its product will also be deleted from your store (unless a relisted auction still uses it). This can't be undone.")) e.preventDefault(); }}>
+                        <Form method="post" onSubmit={(e) => { const unpaid = ["OPEN", "INVOICE_SENT"].includes(auction.paymentStatus); const msg = unpaid ? "This auction's winner hasn't paid yet. Deleting cancels their invoice and removes the item from your store. Delete anyway? This can't be undone." : "Delete this auction permanently? Its product will also be deleted from your store (unless a relisted auction still uses it). This can't be undone."; if (!window.confirm(msg)) { e.preventDefault(); return; } e.currentTarget.elements.force.value = unpaid ? "1" : ""; }}>
+                                    <input type="hidden" name="force" value="" />
                           <input type="hidden" name="intent" value="delete" />
                           <input type="hidden" name="auctionId" value={auction.id} />
                           <s-button type="submit" tone="critical" variant="tertiary">Delete</s-button>

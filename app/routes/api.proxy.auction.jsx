@@ -130,6 +130,7 @@ export const loader = async ({ request }) => {
           endsAt: auction.endsAt,
           status: auctionState(auction),
           autoExtend: Boolean(auction.autoExtend) && Boolean(watchPlan?.autoExtend),
+          isTest: Boolean(auction.isTest),
           canWatch: Boolean(watchPlan?.emails),
           watching,
           history: (auction.events || []).map((e) => ({

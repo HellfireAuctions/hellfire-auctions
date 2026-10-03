@@ -77,7 +77,7 @@ const FAQ = [
   ],
   [
     "What counts toward my monthly auction limit?",
-    "Each auction you create counts toward the month it was created in, including a relisted auction. Test auctions shorter than one hour don't count. Limits reset on the 1st of each month.",
+    "Each auction you create counts toward the month it was created in, including a relisted auction. The 5 and 10-minute test auctions don't count, and on a live store they never create a winner or an invoice. Limits reset on the 1st of each month.",
   ],
   [
     "What happens if I reach my limit?",

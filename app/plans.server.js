@@ -75,7 +75,7 @@ export async function auctionsCreatedThisMonth(shop) {
     SELECT COUNT(*)::int AS n FROM "Auction"
     WHERE "shop" = ${shop}
       AND "createdAt" >= ${monthStart()}
-      AND ("endsAt" - "startsAt") >= interval '1 hour'`;
+      AND "isTest" = false`;
   return Number(rows?.[0]?.n || 0);
 }
 

@@ -600,3 +600,37 @@ export async function sendWatcherReminders() {
     }
   }
 }
+
+// A test auction on a live store ended: tell the merchant who would have won, and that nothing was created.
+export async function notifyMerchantTestEnded({ auction, topBidderId }) {
+  if (!notificationsEnabled()) return;
+  const notice = { auctionId: auction.id, customerId: "merchant", type: "MERCHANT_TEST_ENDED", key: "1" };
+  try {
+    if (!(await claimNotice(notice))) return;
+    const data = await lookup(auction.shop, topBidderId || "0", auction.productId);
+    useCurrency(data);
+    const to = data?.shop?.email || data?.shop?.contactEmail;
+    if (!to) {
+      await releaseNotice(notice);
+      return;
+    }
+    const title = data?.product?.title || auction.title;
+    await sendEmail({
+      to,
+      subject: `Test auction finished: ${title}`,
+      heading: "Your test auction finished",
+      lines: [
+        topBidderId && data?.customer?.email
+          ? `The top bidder was ${data.customer.email} at ${money(auction.currentBid)}.`
+          : "There was no qualifying top bid.",
+        "Because this was a test auction, no winner, order or invoice was created, and nobody can pay for it.",
+        "For a real sale, create the auction with a length of 24 hours or longer.",
+      ],
+      shopName: data?.shop?.name || "your store",
+    });
+    console.log("[notify] test-auction summary sent", JSON.stringify({ auctionId: auction.id }));
+  } catch (error) {
+    await releaseNotice(notice);
+    console.error("[notify] test-auction summary failed:", error?.message || error);
+  }
+}

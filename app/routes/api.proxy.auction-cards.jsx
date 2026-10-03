@@ -63,6 +63,7 @@ export const loader = async ({ request }) => {
       startingBid: true,
       currentBid: true,
       reservePrice: true,
+      isTest: true,
       bidCount: true,
       startsAt: true,
       endsAt: true,
@@ -110,6 +111,7 @@ export const loader = async ({ request }) => {
       hot: plan.hotBadge && a.bidCount >= HOT_BID_THRESHOLD,
       myStatus: myStatus.get(a.id) || null,
       hasReserve: a.reservePrice != null,
+      isTest: Boolean(a.isTest),
       reserveMet: a.reservePrice == null ? null : Number(a.currentBid) >= Number(a.reservePrice),
     }));
 

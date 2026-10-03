@@ -14,8 +14,8 @@ const DURATION_OPTIONS = [
   { value: "7", label: "7 Days" },
   { value: "14", label: "14 Days" },
   { value: "30", label: "30 Days" },
-  { value: "m10", label: "Test \u2014 10 minutes" },
-  { value: "m5", label: "Test \u2014 5 minutes" },
+  { value: "m10", label: "Test \u2014 10 minutes (no sale)" },
+  { value: "m5", label: "Test \u2014 5 minutes (no sale)" },
 ];
 
 // "7" = 7 days, "m5" = 5 minutes (test auctions).
@@ -716,6 +716,7 @@ export const loader = async ({ request }) => {
       winnerDraftOrderId: true,
       winnerNotifiedAt: true,
       autoExtend: true,
+      isTest: true,
     },
   });
 
@@ -1053,6 +1054,7 @@ const actionImpl = async ({ request }) => {
           currentBid: target.startingBid,
           reservePrice: target.reservePrice,
           autoExtend: target.autoExtend,
+          isTest: durationValue.startsWith("m"),
           startsAt: now,
           endsAt: new Date(now.getTime() + durationMs(durationValue)),
           status: "LIVE",
@@ -1506,6 +1508,7 @@ const actionImpl = async ({ request }) => {
             ? reservePrice
             : null,
         autoExtend: formData.get("autoExtend") === "1" && Boolean((await getShopPlan(session.shop)).autoExtend),
+        isTest: durationValue.startsWith("m"),
         startsAt,
         endsAt,
         status: startsAt > new Date() ? "UPCOMING" : (new Date() < endsAt ? "LIVE" : "ENDED"),
@@ -1963,6 +1966,12 @@ function AuctionForm({
               )}
             </s-select>
 
+            {String(duration).startsWith("m") && (
+              <s-banner tone="warning">
+                Test auctions are for trying the app. On a live store they never create a winner, an order or an invoice, and nobody can pay for them. For a real sale, choose 24 hours or longer.
+              </s-banner>
+            )}
+
             <s-card>
               <s-stack gap="small">
                 <s-text>
@@ -2248,6 +2257,11 @@ export default function AuctionsPage() {
                             </div>
                           </>
                         )}
+                      </div>
+                    )}
+                    {auction.isTest && (
+                      <div style={{ fontSize: 12, color: "#b98900", fontWeight: 600 }}>
+                        Test auction: no order or invoice is created on live stores
                       </div>
                     )}
                     {auction.autoExtend && (

@@ -2,7 +2,8 @@ import { randomUUID as hfUuid } from "node:crypto";
 import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders } from "./notifications.server.js";
+import { isDevelopmentStore } from "./plans.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -214,6 +215,21 @@ async function removeFromLiveAuctions(auction) {
   }
 }
 
+// Development stores can't take real payments, so tests there run the whole flow (reviewers need that).
+const devStoreCache = new Map();
+async function isDevStore(shop) {
+  if (devStoreCache.has(shop)) return devStoreCache.get(shop);
+  let dev = false;
+  try {
+    const { admin } = await unauthenticated.admin(shop);
+    dev = await isDevelopmentStore(admin);
+  } catch {
+    dev = false;
+  }
+  devStoreCache.set(shop, dev);
+  return dev;
+}
+
 async function settleAuction(auction) {
   // Claim the auction so two workers/instances can never settle it twice.
   const claimed = await prisma.auction.updateMany({
@@ -221,6 +237,9 @@ async function settleAuction(auction) {
     data: { status: "SETTLING" },
   });
   if (claimed.count !== 1) return;
+
+  let testOnLiveStore = false;
+  let testTopBidder = null;
 
   try {
     const topBid = await prisma.bid.findFirst({
@@ -232,7 +251,10 @@ async function settleAuction(auction) {
       auction.reservePrice == null ||
       Number(auction.currentBid) >= Number(auction.reservePrice);
 
-    const winnerId = topBid && reserveMet ? topBid.bidderId : null;
+    // A test auction on a live store can never produce a winner, an order or an invoice.
+    testOnLiveStore = Boolean(auction.isTest) && !(await isDevStore(auction.shop));
+    testTopBidder = topBid && reserveMet ? topBid.bidderId : null;
+    const winnerId = topBid && reserveMet && !testOnLiveStore ? topBid.bidderId : null;
 
     let checkoutUrl = auction.winnerCheckoutUrl || null;
     let draftOrderId = auction.winnerDraftOrderId || null;
@@ -265,6 +287,10 @@ async function settleAuction(auction) {
   await removeFromLiveAuctions(auction);
 
   const settled = await prisma.auction.findUnique({ where: { id: auction.id } });
+  if (settled && testOnLiveStore) {
+    notifyMerchantTestEnded({ auction: settled, topBidderId: testTopBidder }).catch(() => {});
+    return;
+  }
   if (settled) {
     const reserveMet = settled.reservePrice == null || Number(settled.currentBid) >= Number(settled.reservePrice);
     notifyMerchantEnded({ auction: settled, winnerId: settled.winnerId, reserveMet });

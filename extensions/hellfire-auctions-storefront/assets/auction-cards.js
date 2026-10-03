@@ -100,8 +100,9 @@
   function render(badge, auction) {
     const now = Date.now() + clockOffset;
     const state = stateOf(auction, now);
-    const label =
-      state === "LIVE" ? "Live auction" : state === "UPCOMING" ? "Upcoming auction" : "Auction ended";
+    const label = auction.isTest
+      ? state === "ENDED" ? "Test auction ended" : "Test auction"
+      : state === "LIVE" ? "Live auction" : state === "UPCOMING" ? "Upcoming auction" : "Auction ended";
     const amountLabel = auction.hasBids ? (state === "ENDED" ? "Winning Bid" : "Current Bid") : "Starting Bid";
     let timing = "";
     if (state === "LIVE") timing = `${formatRemaining(Date.parse(auction.endsAt) - now)} left`;

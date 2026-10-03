@@ -39,6 +39,7 @@ model Auction {
   bidCount      Int      @default(0)
   reservePrice  Float?
   autoExtend    Boolean  @default(false)
+  isTest        Boolean  @default(false)
   startsAt      DateTime
   endsAt        DateTime
   status        String   @default("DRAFT")

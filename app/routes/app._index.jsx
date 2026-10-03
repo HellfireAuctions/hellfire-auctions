@@ -1313,17 +1313,17 @@ const actionImpl = async ({ request }) => {
   /*
    * CREATE NEW AUCTION
    */
-  if (
-    !imageFile ||
-    typeof imageFile !== "object" ||
-    imageFile.size === 0
-  ) {
+  const cloneImageUrl = formData.get("cloneImageUrl")?.toString() || "";
+  const hasUpload = Boolean(imageFile && typeof imageFile === "object" && imageFile.size > 0);
+  const useCopiedPhoto = !hasUpload && /^https:\/\/cdn\.shopify\.com\//.test(cloneImageUrl);
+
+  if (!hasUpload && !useCopiedPhoto) {
     return {
       error: "Please upload an auction image.",
     };
   }
 
-  if (!imageFile.type?.startsWith("image/")) {
+  if (hasUpload && !imageFile.type?.startsWith("image/")) {
     return {
       error: "Please upload an image file.",
     };
@@ -1341,8 +1341,9 @@ const actionImpl = async ({ request }) => {
     return { error: error.message };
   }
 
-  const stagedResource =
-    await uploadImage(admin, imageFile);
+  const stagedResource = hasUpload
+    ? await uploadImage(admin, imageFile)
+    : cloneImageUrl;
 
   const productResponse =
     await admin.graphql(
@@ -1458,14 +1459,18 @@ const actionImpl = async ({ request }) => {
 /* eslint-disable react/prop-types */
 function AuctionForm({
   auction,
+  prefill,
   onCancel,
   timezone,
 }) {
   const isEdit = Boolean(auction);
+  const source = auction || prefill || null;
 
   const initialParts = auction
     ? getEasternParts(auction.startsAt, timezone)
-    : null;
+    : prefill
+      ? getEasternParts(new Date(), timezone)
+      : null;
 
   const [startDate, setStartDate] =
     useState(
@@ -1474,7 +1479,7 @@ function AuctionForm({
 
   const [startHour, setStartHour] =
     useState(
-      initialParts?.hour || "7",
+      initialParts?.hour ? String(Number(initialParts.hour)) : "7",
     );
 
   const [startMinute, setStartMinute] =
@@ -1489,11 +1494,11 @@ function AuctionForm({
 
   const [duration, setDuration] =
     useState(() => {
-      if (!auction) return "7";
+      if (!source) return "7";
 
       const length =
-        new Date(auction.endsAt).getTime() -
-        new Date(auction.startsAt).getTime();
+        new Date(source.endsAt).getTime() -
+        new Date(source.startsAt).getTime();
       const match = DURATION_OPTIONS.find(
         (option) => Math.abs(durationMs(option.value) - length) < 60 * 1000,
       );
@@ -1502,7 +1507,7 @@ function AuctionForm({
 
   const [imagePreview, setImagePreview] =
     useState(
-      auction?.imageUrl || null,
+      source?.imageUrl || null,
     );
 
   const calculateEndPreview = () => {
@@ -1534,7 +1539,7 @@ function AuctionForm({
 
     if (!file.type.startsWith("image/")) {
       setImagePreview(
-        auction?.imageUrl || null,
+        source?.imageUrl || null,
       );
       return;
     }
@@ -1569,7 +1574,7 @@ function AuctionForm({
           label="Auction Title"
           name="title"
           placeholder="Example: One-of-a-kind collectible"
-          value={auction?.title || undefined}
+          value={source?.title || undefined}
           required
         />
 
@@ -1577,7 +1582,7 @@ function AuctionForm({
           label="Description"
           name="description"
           placeholder="Describe the item being auctioned..."
-          value={auction?.description || undefined}
+          value={source?.description || undefined}
         />
 
         <s-section
@@ -1594,13 +1599,17 @@ function AuctionForm({
               label={
                 isEdit
                   ? "Choose a new image (optional)"
-                  : "Upload auction image"
+                  : prefill
+                    ? "Keep this photo or choose a new one"
+                    : "Upload auction image"
               }
               accessibilityLabel="Auction image"
               accept="image/*"
-              required={!isEdit}
+              required={!isEdit && !prefill}
               onChange={handleImageChange}
             />
+
+            {prefill?.imageUrl && <input type="hidden" name="cloneImageUrl" value={prefill.imageUrl} />}
 
             {imagePreview && (
               <img
@@ -1652,8 +1661,8 @@ function AuctionForm({
           step="0.01"
           placeholder="25.00"
           value={
-            auction
-              ? String(auction.startingBid)
+            source
+              ? String(source.startingBid)
               : undefined
           }
           required
@@ -1666,8 +1675,8 @@ function AuctionForm({
           step="0.01"
           placeholder="Optional"
           value={
-            auction?.reservePrice != null
-              ? String(auction.reservePrice)
+            source?.reservePrice != null
+              ? String(source.reservePrice)
               : undefined
           }
         />
@@ -1897,8 +1906,13 @@ export default function AuctionsPage() {
   };
   const actionData = useActionData();
 
+  const [cloneFrom, setCloneFrom] = useState(null);
   const [editingId, setEditingId] =
     useState(null);
+
+  useEffect(() => {
+    if (actionData?.success) setCloneFrom(null);
+  }, [actionData]);
 
   const editingAuction =
     auctions.find(
@@ -1979,7 +1993,15 @@ export default function AuctionsPage() {
             }
           />
         ) : (
-          <AuctionForm timezone={timezone} />
+          <>
+            {cloneFrom && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", background: "#f1f8f5", border: "1px solid #b7dfc9", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+                <span>Selling similar to <strong>{cloneFrom.title}</strong>. Details are filled in; change anything you like.</span>
+                <s-button type="button" variant="tertiary" onClick={() => setCloneFrom(null)}>Clear</s-button>
+              </div>
+            )}
+            <AuctionForm key={cloneFrom?.id || "new"} timezone={timezone} prefill={cloneFrom} />
+          </>
         )}
       </s-section>
 
@@ -2084,6 +2106,16 @@ export default function AuctionsPage() {
                     <div style={{ marginTop: "auto", paddingTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <s-button type="button" onClick={() => setEditingId(auction.id)}>
                         Edit
+                      </s-button>
+                      <s-button
+                        type="button"
+                        onClick={() => {
+                          setCloneFrom(auction);
+                          setEditingId(null);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                      >
+                        Sell similar
                       </s-button>
                       {state !== "ENDED" && auction.status !== "CANCELLED" && (
                         <Form method="post" onSubmit={(e) => { if (!window.confirm("End this auction now WITHOUT a sale? Nobody will be invoiced and the product will be hidden. Use this if there's a problem with the item.")) e.preventDefault(); }}>

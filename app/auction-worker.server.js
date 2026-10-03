@@ -116,6 +116,15 @@ async function createAndSendWinnerInvoice(auction, winnerId, opts = {}) {
   }
 
   if (!auction.winnerNotifiedAt) {
+    // Primary: our own email (photo, price, deadline, secure checkout link). Shopify's invoice email
+    // is only the backup, so the winner gets exactly one email.
+    const emailed = await notifyWinner({ auction, customerId: winnerId, checkoutUrl, secondChance: Boolean(opts.secondChance) });
+    if (emailed) {
+      await prisma.auction.update({
+        where: { id: auction.id },
+        data: { winnerCheckoutUrl: checkoutUrl, winnerNotifiedAt: new Date() },
+      });
+    } else {
     // Customer-facing invoice email carries the store's own name (no app branding).
     const shopInfo = await adminGraphql(
       auction.shop,
@@ -163,6 +172,7 @@ async function createAndSendWinnerInvoice(auction, winnerId, opts = {}) {
       where: { id: auction.id },
       data: { winnerCheckoutUrl: checkoutUrl, winnerNotifiedAt: new Date() },
     });
+    }
   }
 
   return { draftOrderId, checkoutUrl };
@@ -565,7 +575,28 @@ async function shopCurrencyCode(shop) {
   }
 }
 
+let winnerCatchUpDone = false;
+async function winnerCatchUpOnce() {
+  if (winnerCatchUpDone) return;
+  winnerCatchUpDone = true;
+  if (await repairDone("WINNER_CATCHUP_V3")) return;
+  const rows = await prisma.auction.findMany({
+    where: {
+      status: "ENDED",
+      winnerId: { not: null },
+      winnerCheckoutUrl: { not: null },
+      endsAt: { gte: new Date(Date.now() - 3 * 3600_000) },
+    },
+    take: 25,
+  });
+  for (const a of rows) {
+    await notifyWinner({ auction: a, customerId: a.winnerId, checkoutUrl: a.winnerCheckoutUrl });
+  }
+  await markRepairDone("WINNER_CATCHUP_V3");
+}
+
 async function tick() {
+  await winnerCatchUpOnce().catch((error) => console.error("[hellfire-auctions] winner catch-up error:", error?.message || error));
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));

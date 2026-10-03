@@ -96,13 +96,13 @@ function auctionLink(data) {
   return base && data?.product?.handle ? `${base.replace(/\/$/, "")}/products/${data.product.handle}` : null;
 }
 
-async function sendEmail({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo }) {
+async function sendEmail({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo, imageUrl }) {
   const htmlLines = lines.map((line) => `<p style="margin:0 0 12px">${escapeHtml(line)}</p>`).join("");
   const button = buttonUrl
     ? `<p style="margin:20px 0"><a href="${escapeHtml(buttonUrl)}" style="background:#ff3b30;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">${escapeHtml(buttonLabel)}</a></p>`
     : "";
   const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;color:#151515">
-    <h2 style="margin:0 0 16px">${escapeHtml(heading)}</h2>${htmlLines}${button}
+    ${imageUrl && /^https:\/\//.test(imageUrl) ? `<p style="margin:0 0 16px"><img src="${escapeHtml(imageUrl)}" alt="" style="max-width:100%;max-height:320px;border-radius:10px;display:block"></p>` : ""}<h2 style="margin:0 0 16px">${escapeHtml(heading)}</h2>${htmlLines}${button}
     <p style="margin:24px 0 0;font-size:12px;color:#777">Sent by ${escapeHtml(shopName)} via Hellfire Auctions because you bid on this auction.</p>
   </div>`;
   const text = [heading, "", ...lines, buttonUrl ? `\n${buttonLabel}: ${buttonUrl}` : ""].join("\n");
@@ -340,7 +340,7 @@ export async function notifyReserveNotMet({ auction, customerId }) {
 
 // Backup for the winner's invoice: if Shopify can't email it (e.g. the store's sender
 // email isn't verified), send the same secure Shopify checkout link from our address.
-export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutUrl }) {
+export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutUrl, secondChance = false }) {
   if (!notificationsEnabled() || !checkoutUrl) return false;
   try {
     const data = await lookup(auction.shop, customerId, auction.productId);
@@ -350,15 +350,22 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
     const title = data?.product?.title || auction.title;
     await sendEmail({
       to: email,
-      subject: `You won the auction at ${data?.shop?.name || "our store"}!`,
-      heading: "You won the auction!",
-      lines: [
-        "Hey there,",
-        `Congratulations! You won "${title}" with a winning bid of ${money(auction.currentBid)}.`,
-        "Use the secure Shopify checkout link below to complete your purchase.",
-      ],
+      subject: secondChance ? `A second chance to buy "${title}" at ${data?.shop?.name || "our store"}` : `You won the auction at ${data?.shop?.name || "our store"}!`,
+      heading: secondChance ? "A second chance to buy" : "You won the auction!",
+      lines: secondChance
+        ? [
+            "Good news!",
+            `The original winner didn't complete the purchase, so "${title}" is now offered to you at ${money(auction.currentBid)}.`,
+            "Use the secure checkout link below to buy it. Please pay within 4 days.",
+          ]
+        : [
+            "Hey there,",
+            `Congratulations! You won "${title}" with a winning bid of ${money(auction.currentBid)}.`,
+            "Use the secure checkout link below to complete your purchase. Please pay within 4 days.",
+          ],
       buttonLabel: "Complete your purchase",
       buttonUrl: checkoutUrl,
+      imageUrl: auction.imageUrl,
       shopName: data?.shop?.name || "the store",
       replyTo: data?.shop?.contactEmail,
     });
@@ -370,17 +377,19 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
   }
 }
 
-// Always email the winner their checkout link (once), in addition to Shopify's own invoice.
-export async function notifyWinner({ auction, customerId, checkoutUrl }) {
-  if (!notificationsEnabled() || !customerId || !checkoutUrl) return;
-  const notice = { auctionId: auction.id, customerId: String(customerId), type: "WINNER", key: "1" };
+// The winner's email (once per winner). Returns true if they've been emailed.
+export async function notifyWinner({ auction, customerId, checkoutUrl, secondChance = false }) {
+  if (!notificationsEnabled() || !customerId || !checkoutUrl) return false;
+  const notice = { auctionId: auction.id, customerId: String(customerId), type: "WINNER", key: secondChance ? "second-chance" : "1" };
   try {
-    if (!(await claimNotice(notice))) return;
-    const sent = await sendWinnerInvoiceFallback({ auction, customerId, checkoutUrl });
+    if (!(await claimNotice(notice))) return true; // already sent earlier
+    const sent = await sendWinnerInvoiceFallback({ auction, customerId, checkoutUrl, secondChance });
     if (!sent) await releaseNotice(notice);
+    return sent;
   } catch (error) {
     await releaseNotice(notice);
     console.error("[notify] winner email failed:", error?.message || error);
+    return false;
   }
 }
 

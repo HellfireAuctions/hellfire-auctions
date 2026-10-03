@@ -129,7 +129,7 @@ export const loader = async ({ request }) => {
           startsAt: auction.startsAt,
           endsAt: auction.endsAt,
           status: auctionState(auction),
-          autoExtend: Boolean(auction.autoExtend),
+          autoExtend: Boolean(auction.autoExtend) && Boolean(watchPlan?.autoExtend),
           canWatch: Boolean(watchPlan?.emails),
           watching,
           history: (auction.events || []).map((e) => ({
@@ -160,6 +160,9 @@ export const action = async ({ request }) => {
   if (blockedBidder) {
     return Response.json({ error: "You can't place bids on this store's auctions." }, { status: 403 });
   }
+
+  // Anti-sniping is an Inferno-only option: it only applies while the store is on that plan.
+  const extendAllowed = shop ? Boolean((await getShopPlan(shop)).autoExtend) : false;
 
   const lastAt = lastBidAt.get(customerId) || 0;
   if (Date.now() - lastAt < BID_COOLDOWN_MS) {
@@ -257,7 +260,7 @@ export const action = async ({ request }) => {
       });
 
       // Anti-sniping (optional per auction): a bid in the last 2 minutes pushes the end out to 2 minutes from now.
-      const extendNow = Boolean(current.autoExtend) && current.endsAt.getTime() - Date.now() <= 2 * 60_000;
+      const extendNow = Boolean(current.autoExtend) && extendAllowed && current.endsAt.getTime() - Date.now() <= 2 * 60_000;
       const updated = await tx.auction.update({
         where: { id: current.id },
         data: {

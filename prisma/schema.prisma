@@ -123,3 +123,15 @@ model Watch {
   @@unique([auctionId, customerId])
   @@index([customerId])
 }
+
+model NotificationPref {
+  id         String   @id @default(cuid())
+  shop       String
+  customerId String
+  outbid     Boolean  @default(true)
+  reminders  Boolean  @default(true)
+  results    Boolean  @default(true)
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@unique([shop, customerId])
+}

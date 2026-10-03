@@ -70,6 +70,7 @@ export default function Privacy() {
         <li>When Shopify sends a customer data-erasure request, we delete that customer&rsquo;s bids and notice records and remove them as a recorded winner.</li>
         <li>Auction records, including bids and notice records, are also deleted automatically 24 months after the auction ends.</li>
         <li>Encrypted weekly backups are kept for up to 30 days, so a record erased on request can remain in a backup for that long.</li>
+        <li>Each bidder's choices about optional emails (outbid alerts, reminders, results) are stored so we respect them, and are deleted with the rest of their data.</li>
         <li>We respond to customer data requests that Shopify forwards to us.</li>
       </ul>
 

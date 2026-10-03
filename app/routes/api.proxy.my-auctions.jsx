@@ -1,4 +1,5 @@
 import { authenticate, unauthenticated } from "../shopify.server";
+import { prefsUrl } from "../prefs.server";
 import prisma from "../db.server";
 import { shopCurrency, formatMoney } from "../currency.server";
 import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
@@ -188,7 +189,7 @@ export const loader = async ({ request }) => {
     .join("");
 
   return liquid(`${header}
-    <p style="margin:0 0 22px;color:#616161">Every auction you've bid on or are watching. This page updates itself.</p>
+    <p style="margin:0 0 22px;color:#616161">Every auction you've bid on or are watching. This page updates itself. <a href="${esc(prefsUrl(shop, customerId))}" style="color:#616161;font-size:14px">Manage my email notifications</a></p>
     ${banner}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px">${cards}</div>
   </div>

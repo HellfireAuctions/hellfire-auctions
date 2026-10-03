@@ -5,6 +5,8 @@ import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { getShopPlan } from "./plans.server.js";
 
+import { prefsUrl, prefsAllow } from "./prefs.server.js";
+
 const RESEND_URL = "https://api.resend.com/emails";
 const OUTBID_WINDOW_MS = 10 * 60_000; // at most one outbid email per bidder per auction per 10 minutes
 const ENDING_SOON_MS = 60 * 60_000;
@@ -48,7 +50,7 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-async function lookup(shop, customerId, productId) {
+async function lookupRaw(shop, customerId, productId) {
   const { admin } = await unauthenticated.admin(shop);
   const response = await admin.graphql(
     `#graphql
@@ -72,13 +74,31 @@ async function lookup(shop, customerId, productId) {
 }
 
 // Returns true only the first time this exact notice is recorded.
+async function lookup(shop, customerId, productId) {
+  const data = await lookupRaw(shop, customerId, productId);
+  try {
+    if (data && typeof data === "object" && customerId && String(customerId) !== "0") data.prefsUrl = prefsUrl(shop, customerId);
+  } catch {
+    // no link: the email just won't carry one
+  }
+  return data;
+}
+
 async function releaseNotice({ auctionId, customerId, type, key }) {
   try {
     await prisma.auctionNotification.deleteMany({ where: { auctionId, customerId: String(customerId), type, key } });
   } catch {}
 }
 
+// Optional emails a customer can switch off (everything else, such as winner and payment emails, always sends).
+const OPTIONAL_CATEGORY = { OUTBID: "outbid", ENDING_SOON: "reminders", WATCH_START: "reminders", LOST: "results", RESERVE_NOT_MET: "results" };
+
 async function claimNotice({ auctionId, customerId, type, key }) {
+  const category = OPTIONAL_CATEGORY[type];
+  if (category && auctionId && customerId) {
+    const owner = await prisma.auction.findUnique({ where: { id: auctionId }, select: { shop: true } });
+    if (owner && !(await prefsAllow(owner.shop, customerId, category))) return false; // the customer turned this off
+  }
   try {
     await prisma.auctionNotification.create({
       data: { auctionId, customerId: String(customerId), type, key },
@@ -107,16 +127,16 @@ async function sendEmail(args) {
   }
 }
 
-async function sendEmailRaw({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo, imageUrl }) {
+async function sendEmailRaw({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo, imageUrl, prefsUrl: manageUrl }) {
   const htmlLines = lines.map((line) => `<p style="margin:0 0 12px">${escapeHtml(line)}</p>`).join("");
   const button = buttonUrl
     ? `<p style="margin:20px 0"><a href="${escapeHtml(buttonUrl)}" style="background:#ff3b30;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">${escapeHtml(buttonLabel)}</a></p>`
     : "";
   const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;color:#151515">
     ${imageUrl && /^https:\/\//.test(imageUrl) ? `<p style="margin:0 0 16px"><img src="${escapeHtml(imageUrl)}" alt="" style="max-width:100%;max-height:320px;border-radius:10px;display:block"></p>` : ""}<h2 style="margin:0 0 16px">${escapeHtml(heading)}</h2>${htmlLines}${button}
-    <p style="margin:24px 0 0;font-size:12px;color:#777">Sent by ${escapeHtml(shopName)} via Hellfire Auctions because you bid on this auction.</p>
+    <p style="margin:24px 0 0;font-size:12px;color:#777">Sent by ${escapeHtml(shopName)} via Hellfire Auctions because you bid on this auction.${manageUrl ? ` <a href="${escapeHtml(manageUrl)}" style="color:#777">Manage the emails you get</a>.` : ""}</p>
   </div>`;
-  const text = [heading, "", ...lines, buttonUrl ? `\n${buttonLabel}: ${buttonUrl}` : ""].join("\n");
+  const text = [heading, "", ...lines, buttonUrl ? `\n${buttonLabel}: ${buttonUrl}` : "", manageUrl ? `\nManage the emails you get: ${manageUrl}` : ""].join("\n");
 
   const response = await fetch(RESEND_URL, {
     method: "POST",
@@ -131,6 +151,7 @@ async function sendEmailRaw({ to, subject, heading, lines, buttonLabel, buttonUr
       html,
       text,
       reply_to: replyTo || process.env.NOTIFY_REPLY_TO || undefined,
+      headers: manageUrl ? { "List-Unsubscribe": `<${manageUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } : undefined,
     }),
   });
   if (!response.ok) {
@@ -166,6 +187,7 @@ export async function notifyOutbid({ shop, auction, outbidCustomerId, currentBid
       buttonUrl: auctionLink(data),
       shopName: data?.shop?.name || "the store",
       replyTo: data?.shop?.contactEmail,
+        prefsUrl: data?.prefsUrl,
     });
     console.log("[notify] outbid email sent", JSON.stringify({ auctionId: auction.id, customerId: outbidCustomerId }));
   } catch (error) {
@@ -215,6 +237,7 @@ export async function sendEndingSoonReminders() {
           buttonUrl: auctionLink(data),
           shopName: data?.shop?.name || "the store",
           replyTo: data?.shop?.contactEmail,
+        prefsUrl: data?.prefsUrl,
         });
         console.log("[notify] 1-hour reminder sent", JSON.stringify({ auctionId: auction.id, customerId: bid.bidderId }));
       } catch (error) {
@@ -338,6 +361,7 @@ export async function notifyReserveNotMet({ auction, customerId }) {
         buttonUrl: auctionLink(data),
         shopName: data?.shop?.name || "the store",
         replyTo: data?.shop?.contactEmail,
+        prefsUrl: data?.prefsUrl,
       });
       console.log("[notify] reserve-not-met email sent", JSON.stringify({ auctionId: auction.id, customerId }));
     } catch (error) {
@@ -535,6 +559,7 @@ export async function notifyLosers({ auction }) {
         imageUrl: auction.imageUrl,
         shopName: data?.shop?.name || "the store",
         replyTo: data?.shop?.contactEmail,
+        prefsUrl: data?.prefsUrl,
       });
       console.log("[notify] did-not-win email sent", JSON.stringify({ auctionId: auction.id, customerId: b.bidderId }));
     } catch (error) {
@@ -574,6 +599,7 @@ export async function notifyWatchersStarted({ auction }) {
         imageUrl: auction.imageUrl,
         shopName: data?.shop?.name || "the store",
         replyTo: data?.shop?.contactEmail,
+        prefsUrl: data?.prefsUrl,
       });
       console.log("[notify] watcher start email sent", JSON.stringify({ auctionId: auction.id, customerId: w.customerId }));
     } catch (error) {
@@ -620,6 +646,7 @@ export async function sendWatcherReminders() {
           imageUrl: auction.imageUrl,
           shopName: data?.shop?.name || "the store",
           replyTo: data?.shop?.contactEmail,
+        prefsUrl: data?.prefsUrl,
         });
         console.log("[notify] watcher reminder sent", JSON.stringify({ auctionId: auction.id, customerId: w.customerId }));
       } catch (error) {

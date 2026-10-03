@@ -40,6 +40,7 @@ export const action = async ({ request }) => {
       await db.bidEvent.deleteMany({ where: { bidderId: customerId, auction: { shop } } });
       await db.watch.deleteMany({ where: { customerId, shop } });
         await db.blockedBidder.deleteMany({ where: { customerId, shop } });
+        await db.notificationPref.deleteMany({ where: { customerId, shop } });
         await db.auctionNotification.deleteMany({ where: { customerId } });
         await db.auction.updateMany({
           where: { shop, winnerId: { in: [customerId, `gid://shopify/Customer/${customerId}`] } },
@@ -58,6 +59,7 @@ export const action = async ({ request }) => {
       await db.shopPlan.deleteMany({ where: { shop } });
       await db.blockedBidder.deleteMany({ where: { shop } });
       await db.watch.deleteMany({ where: { shop } });
+      await db.notificationPref.deleteMany({ where: { shop } });
       console.log(`[compliance] shop data erased for ${shop}`);
       break;
     }

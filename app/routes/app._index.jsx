@@ -768,57 +768,132 @@ const actionImpl = async ({ request }) => {
     }
   }
 
-  if (intent === "cancel" || intent === "relist") {
+  if (["cancel", "end", "relist", "delete"].includes(intent)) {
     const target = await prisma.auction.findFirst({
       where: { id: formData.get("auctionId")?.toString() || "", shop: session.shop },
     });
     if (!target) return { error: "Auction could not be found." };
     const now = new Date();
+    const ended = now >= target.endsAt || target.status === "CANCELLED";
 
-    if (intent === "cancel") {
-      // eBay rule: a listing can only be ended early while nobody has bid.
-      if (target.bidCount > 0) {
-        return { error: "This auction already has bids, so it can't be cancelled. Every bidder is treated fairly." };
-      }
-      if (now >= target.endsAt) return { error: "This auction has already ended." };
-      await prisma.auction.update({ where: { id: target.id }, data: { endsAt: now } });
-      return { success: "Auction cancelled. It will be removed from Live Auctions within a few seconds." };
-    }
-
-    // Relist: only ended auctions that didn't sell.
-    if (now < target.endsAt) return { error: "Only ended auctions can be relisted." };
-    if (target.winnerId) return { error: "This auction sold, so it can't be relisted." };
-    const quota = await canCreateAuction(session.shop);
-    if (!quota.allowed) {
-      return { error: `You've used all ${quota.limit} auctions on the ${quota.plan.name} plan this month. Upgrade on the "Plans & upgrades" page for more.` };
-    }
-    const lengthMs = new Date(target.endsAt).getTime() - new Date(target.startsAt).getTime();
-    const collection = await ensureLiveAuctionsCollection(admin);
-    if (collection?.id) {
-      await admin.graphql(
+    const setProductStatus = async (status) => {
+      const res = await admin.graphql(
         `#graphql
-          mutation RelistJoin($id: ID!, $productIds: [ID!]!) {
-            collectionAddProducts(id: $id, productIds: $productIds) { userErrors { message } }
+          mutation SetAuctionProductStatus($product: ProductUpdateInput!) {
+            productUpdate(product: $product) { userErrors { message } }
           }`,
+        { variables: { product: { id: target.productId, status } } },
+      );
+      const json = await res.json();
+      const errors = json?.data?.productUpdate?.userErrors || [];
+      if (errors.length) throw new Error(errors.map((x) => x.message).join(", "));
+    };
+    const liveCollection = async (add) => {
+      const collection = await ensureLiveAuctionsCollection(admin);
+      if (!collection?.id) return;
+      await admin.graphql(
+        add
+          ? `#graphql
+              mutation JoinLive($id: ID!, $productIds: [ID!]!) {
+                collectionAddProducts(id: $id, productIds: $productIds) { userErrors { message } }
+              }`
+          : `#graphql
+              mutation LeaveLive($id: ID!, $productIds: [ID!]!) {
+                collectionRemoveProducts(id: $id, productIds: $productIds) { userErrors { message } }
+              }`,
         { variables: { id: collection.id, productIds: [target.productId] } },
       );
+    };
+
+    // Admin authority: end now WITHOUT a sale (e.g. a problem with the item). Nobody is invoiced.
+    if (intent === "cancel" || intent === "end") {
+      if (ended) return { error: "This auction has already ended." };
+      await prisma.auction.update({
+        where: { id: target.id },
+        data: { endsAt: now, status: "CANCELLED", winnerId: null },
+      });
+      try {
+        await setProductStatus("DRAFT");
+        await liveCollection(false);
+      } catch (error) {
+        console.error("[admin] hide ended product failed:", error?.message || error);
+      }
+      return { success: "Auction ended early with no sale. Nobody will be invoiced, and the product is hidden from your store." };
     }
-    await prisma.auction.create({
-      data: {
-        shop: target.shop,
-        productId: target.productId,
-        title: target.title,
-        description: target.description,
-        imageUrl: target.imageUrl,
-        startingBid: target.startingBid,
-        currentBid: target.startingBid,
-        reservePrice: target.reservePrice,
-        startsAt: now,
-        endsAt: new Date(now.getTime() + lengthMs),
-        status: "LIVE",
-      },
-    });
-    return { success: "Relisted! The auction is live again with the same price and length." };
+
+    // Relist an unsold auction with a length the merchant chooses.
+    if (intent === "relist") {
+      if (!ended) return { error: "Only ended auctions can be relisted." };
+      if (target.winnerId) return { error: "This auction sold, so it can't be relisted." };
+      const days = Number(formData.get("durationDays"));
+      if (!DURATION_OPTIONS.some((o) => Number(o.value) === days)) return { error: "Choose how long the relisted auction should run." };
+      const quota = await canCreateAuction(session.shop);
+      if (!quota.allowed) {
+        return { error: `You've used all ${quota.limit} auctions on the ${quota.plan.name} plan this month. Upgrade on the "Plans & upgrades" page for more.` };
+      }
+      try {
+        await setProductStatus("ACTIVE");
+        await liveCollection(true);
+      } catch (error) {
+        return { error: "Couldn't put the product back on sale in Shopify: " + (error?.message || error) };
+      }
+      await prisma.auction.create({
+        data: {
+          shop: target.shop,
+          productId: target.productId,
+          title: target.title,
+          description: target.description,
+          imageUrl: target.imageUrl,
+          startingBid: target.startingBid,
+          currentBid: target.startingBid,
+          reservePrice: target.reservePrice,
+          startsAt: now,
+          endsAt: new Date(now.getTime() + days * 24 * 60 * 60 * 1000),
+          status: "LIVE",
+        },
+      });
+      return { success: `Relisted! The auction is live again for ${DURATION_OPTIONS.find((o) => Number(o.value) === days).label.toLowerCase()}.` };
+    }
+
+    // Delete an ended auction (and its product, unless another auction still uses it).
+    if (intent === "delete") {
+      if (!ended) return { error: "Only ended auctions can be deleted. End it first if there's a problem." };
+      if (target.winnerId && target.winnerDraftOrderId) {
+        let paid = false;
+        try {
+          const res = await admin.graphql(
+            `#graphql
+              query WinnerInvoice($id: ID!) { draftOrder(id: $id) { status } }`,
+            { variables: { id: target.winnerDraftOrderId } },
+          );
+          paid = (await res.json())?.data?.draftOrder?.status === "COMPLETED";
+        } catch {}
+        if (!paid) {
+          return { error: "The winner hasn't paid their invoice yet. Deleting now would break their checkout link, so wait until it's paid." };
+        }
+      }
+      const others = await prisma.auction.count({ where: { productId: target.productId, id: { not: target.id } } });
+      if (!others) {
+        try {
+          const res = await admin.graphql(
+            `#graphql
+              mutation DeleteAuctionProduct($input: ProductDeleteInput!) {
+                productDelete(input: $input) { deletedProductId userErrors { message } }
+              }`,
+            { variables: { input: { id: target.productId } } },
+          );
+          const errors = (await res.json())?.data?.productDelete?.userErrors || [];
+          if (errors.length && !/not\s*(be\s*)?found|does not exist/i.test(errors.map((x) => x.message).join(" "))) {
+            return { error: "Shopify wouldn't delete the product: " + errors.map((x) => x.message).join(", ") };
+          }
+        } catch (error) {
+          return { error: "Couldn't delete the product from Shopify: " + (error?.message || error) };
+        }
+      }
+      await prisma.auctionNotification.deleteMany({ where: { auctionId: target.id } });
+      await prisma.auction.delete({ where: { id: target.id } }); // bids are removed with it
+      return { success: others ? "Auction deleted. The product was kept because a relisted auction still uses it." : "Auction and its product deleted." };
+    }
   }
 
   if (intent === "create") {
@@ -1162,7 +1237,7 @@ const actionImpl = async ({ request }) => {
           product: {
             title,
             descriptionHtml: cleanDescription,
-            status: "ACTIVE",
+            status: startsAt > new Date() ? "DRAFT" : "ACTIVE",
             productType: "Hellfire Auction",
             vendor: await shopDisplayName(admin),
             tags: [
@@ -1805,7 +1880,7 @@ export default function AuctionsPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                       <strong style={{ fontSize: 15, lineHeight: 1.3 }}>{auction.title}</strong>
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: stateColor, borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
-                        {state}
+                        {auction.status === "CANCELLED" ? "ENDED EARLY" : state === "UPCOMING" ? "SCHEDULED" : state}
                       </span>
                     </div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: "#d72c0d" }}>
@@ -1842,18 +1917,30 @@ export default function AuctionsPage() {
                       <s-button type="button" onClick={() => setEditingId(auction.id)}>
                         Edit
                       </s-button>
-                      {state !== "ENDED" && auction.bidCount === 0 && (
-                        <Form method="post" onSubmit={(e) => { if (!window.confirm("Cancel this auction? It has no bids, so it will simply end now.")) e.preventDefault(); }}>
-                          <input type="hidden" name="intent" value="cancel" />
+                      {state !== "ENDED" && auction.status !== "CANCELLED" && (
+                        <Form method="post" onSubmit={(e) => { if (!window.confirm("End this auction now WITHOUT a sale? Nobody will be invoiced and the product will be hidden. Use this if there's a problem with the item.")) e.preventDefault(); }}>
+                          <input type="hidden" name="intent" value="end" />
                           <input type="hidden" name="auctionId" value={auction.id} />
-                          <s-button type="submit" tone="critical">Cancel</s-button>
+                          <s-button type="submit" tone="critical">End now</s-button>
                         </Form>
                       )}
-                      {state === "ENDED" && !auction.winnerId && (
-                        <Form method="post">
+                      {(state === "ENDED" || auction.status === "CANCELLED") && !auction.winnerId && (
+                        <Form method="post" style={{ display: "flex", gap: 6, alignItems: "center" }}>
                           <input type="hidden" name="intent" value="relist" />
                           <input type="hidden" name="auctionId" value={auction.id} />
+                          <select name="durationDays" defaultValue="7" aria-label="Relist length" style={{ padding: "5px 6px", borderRadius: 8, border: "1px solid #c9c9c9" }}>
+                            {DURATION_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
                           <s-button type="submit" variant="primary">Relist</s-button>
+                        </Form>
+                      )}
+                      {(state === "ENDED" || auction.status === "CANCELLED") && (
+                        <Form method="post" onSubmit={(e) => { if (!window.confirm("Delete this auction permanently? Its product will also be deleted from your store (unless a relisted auction still uses it). This can't be undone.")) e.preventDefault(); }}>
+                          <input type="hidden" name="intent" value="delete" />
+                          <input type="hidden" name="auctionId" value={auction.id} />
+                          <s-button type="submit" tone="critical" variant="tertiary">Delete</s-button>
                         </Form>
                       )}
                     </div>

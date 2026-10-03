@@ -8,7 +8,7 @@ const STALE_SETTLING_MS = 10 * 60_000; // recover a settlement that crashed mid-
 const GIVE_UP_AFTER_MS = 24 * 60 * 60_000; // stop retrying a day after the auction ended
 
 // Statuses used while settling: SETTLING, SETTLEMENT_RETRY, SETTLEMENT_FAILED, ENDED.
-const NOT_DUE = ["ENDED", "SETTLEMENT_FAILED", "SETTLING", "SETTLEMENT_RETRY"];
+const NOT_DUE = ["ENDED", "SETTLEMENT_FAILED", "SETTLING", "SETTLEMENT_RETRY", "CANCELLED"];
 
 // Uses the app library so expiring offline access tokens are refreshed automatically.
 async function adminGraphql(shop, query, variables = {}) {
@@ -230,14 +230,32 @@ async function tick() {
   const now = new Date();
 
   // Keep DRAFT/UPCOMING/LIVE labels in step with the clock (never touches ended ones).
-  await prisma.auction.updateMany({
-    where: {
-      startsAt: { lte: now },
-      endsAt: { gt: now },
-      status: { in: ["DRAFT", "UPCOMING"] },
-    },
-    data: { status: "LIVE" },
+  // Scheduled auctions: publish the hidden product at the start time, then mark LIVE.
+  const starting = await prisma.auction.findMany({
+    where: { startsAt: { lte: now }, endsAt: { gt: now }, status: { in: ["DRAFT", "UPCOMING"] } },
+    take: 25,
   });
+  for (const auction of starting) {
+    try {
+      const result = await adminGraphql(
+        auction.shop,
+        `#graphql
+          mutation PublishAuctionProduct($product: ProductUpdateInput!) {
+            productUpdate(product: $product) { userErrors { message } }
+          }`,
+        { product: { id: auction.productId, status: "ACTIVE" } },
+      );
+      throwUserErrors(result?.productUpdate?.userErrors);
+      await prisma.auction.update({ where: { id: auction.id }, data: { status: "LIVE" } });
+      console.log("[hellfire-auctions] auction started, product published:", auction.id);
+    } catch (error) {
+      console.error(`[hellfire-auctions] could not publish ${auction.id}:`, error?.message || error);
+      alertOwner("publish-" + auction.id, "A scheduled auction could not go live", [
+        `Auction "${auction.title}" in ${auction.shop} reached its start time but its product could not be published.`,
+        String(error?.message || error).slice(0, 300),
+      ]);
+    }
+  }
   await prisma.auction.updateMany({
     where: { startsAt: { gt: now }, status: { in: ["DRAFT", "LIVE"] } },
     data: { status: "UPCOMING" },

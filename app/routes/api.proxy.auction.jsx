@@ -192,7 +192,7 @@ export const action = async ({ request }) => {
       }
 
       if (existing) {
-        await tx.bid.update({ where: { id: existing.id }, data: { maxBid: amount } });
+        await tx.bid.update({ where: { id: existing.id }, data: { maxBid: amount, createdAt: new Date() } });
       } else {
         await tx.bid.create({
           data: {

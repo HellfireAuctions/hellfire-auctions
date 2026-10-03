@@ -60,6 +60,14 @@ check("your restored real auction stays at $325 with the same leader", () => {
   assert.equal(r.leaderId, "31238385893487"); assert.equal(r.price, 325);
 });
 
+check("tie after a raise: the bidder who reached the amount FIRST keeps the lead", () => {
+  // A bid first (minute 0) with max 5; B bid at minute 1 with max 10 and leads.
+  // A later RAISES to exactly 10 at minute 2 -> A's bid time becomes minute 2.
+  const r = resolveProxyBids({ startingBid: 1, currentBid: 6, bids: [bid("a", "A", 10, 2), bid("b", "B", 10, 1)] });
+  assert.equal(r.leaderId, "B");
+  assert.equal(r.price, 10);
+});
+
 check("minimum next bid", () => {
   assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 0, hasBids: false }), 10);
   assert.equal(nextMinimumBid({ startingBid: 10, currentBid: 21, hasBids: true }), 22);

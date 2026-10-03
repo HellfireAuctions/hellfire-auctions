@@ -38,7 +38,6 @@ model Auction {
   currentBid    Float    @default(0)
   bidCount      Int      @default(0)
   reservePrice  Float?
-  buyNowPrice   Float?
   startsAt      DateTime
   endsAt        DateTime
   status        String   @default("DRAFT")

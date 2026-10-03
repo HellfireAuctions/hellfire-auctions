@@ -1,7 +1,6 @@
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { shopCurrency } from "../currency.server";
-import { buyNowAvailable } from "../bidding.server";
 import { notifyOutbid } from "../notifications.server";
 import {
   MAX_ALLOWED_BID,
@@ -118,15 +117,6 @@ export const loader = async ({ request }) => {
           startsAt: auction.startsAt,
           endsAt: auction.endsAt,
           status: auctionState(auction),
-          buyNowPrice: auction.buyNowPrice ?? null,
-          buyNowAvailable:
-            auctionState(auction) === "LIVE" &&
-            buyNowAvailable({
-              buyNowPrice: auction.buyNowPrice,
-              reservePrice: auction.reservePrice,
-              currentBid: auction.currentBid,
-              bidCount: auction.bidCount,
-            }),
           bids: publicBids.map(({ amount, createdAt }) => ({ amount, createdAt })),
         }
       : null,

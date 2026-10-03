@@ -2,7 +2,6 @@ import { authenticate, unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
 import { shopCurrency } from "../currency.server";
-import { buyNowAvailable } from "../bidding.server";
 
 // Read-only data for the product-card badges: one request per page returns every
 // auction the storefront might show, keyed by product handle (themes link cards by handle).
@@ -64,7 +63,6 @@ export const loader = async ({ request }) => {
       startingBid: true,
       currentBid: true,
       reservePrice: true,
-      buyNowPrice: true,
       bidCount: true,
       startsAt: true,
       endsAt: true,
@@ -112,10 +110,6 @@ export const loader = async ({ request }) => {
       hot: plan.hotBadge && a.bidCount >= HOT_BID_THRESHOLD,
       myStatus: myStatus.get(a.id) || null,
       hasReserve: a.reservePrice != null,
-      buyNowPrice: a.buyNowPrice ?? null,
-      buyNow:
-        auctionState(a, now) === "LIVE" &&
-        buyNowAvailable({ buyNowPrice: a.buyNowPrice, reservePrice: a.reservePrice, currentBid: a.currentBid, bidCount: a.bidCount }),
       reserveMet: a.reservePrice == null ? null : Number(a.currentBid) >= Number(a.reservePrice),
     }));
 

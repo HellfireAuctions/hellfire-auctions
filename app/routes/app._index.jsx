@@ -715,7 +715,6 @@ export const loader = async ({ request }) => {
       winnerId: true,
       winnerDraftOrderId: true,
       winnerNotifiedAt: true,
-      buyNowPrice: true,
     },
   });
 
@@ -1012,7 +1011,6 @@ const actionImpl = async ({ request }) => {
           startingBid: target.startingBid,
           currentBid: target.startingBid,
           reservePrice: target.reservePrice,
-          buyNowPrice: target.buyNowPrice,
           startsAt: now,
           endsAt: new Date(now.getTime() + durationMs(durationValue)),
           status: "LIVE",
@@ -1144,19 +1142,6 @@ const actionImpl = async ({ request }) => {
 
   if (intent === "create" && reservePrice !== null && !(Number.isFinite(reservePrice) && reservePrice > startingBid)) {
     return { error: "The reserve price must be higher than the starting bid. Leave it empty if you don't want a reserve." };
-  }
-
-  const buyNowValue = formData.get("buyNowPrice");
-  const buyNowPrice =
-    buyNowValue !== null && buyNowValue !== ""
-      ? Math.round(Number(buyNowValue) * 100) / 100
-      : null;
-  if (
-    intent === "create" &&
-    buyNowPrice !== null &&
-    !(Number.isFinite(buyNowPrice) && buyNowPrice > startingBid && (reservePrice === null || buyNowPrice >= reservePrice))
-  ) {
-    return { error: "The Buy It Now price must be higher than the starting bid (and at least the reserve, if you set one). Leave it empty if you don't want Buy It Now." };
   }
 
   const cleanDescription = description
@@ -1478,7 +1463,6 @@ const actionImpl = async ({ request }) => {
           Number.isFinite(reservePrice)
             ? reservePrice
             : null,
-        buyNowPrice,
         startsAt,
         endsAt,
         status: startsAt > new Date() ? "UPCOMING" : (new Date() < endsAt ? "LIVE" : "ENDED"),
@@ -1775,20 +1759,6 @@ function AuctionForm({
           value={
             source?.reservePrice != null
               ? String(source.reservePrice)
-              : undefined
-          }
-        />
-
-        <s-number-field
-          label="Buy It Now Price"
-          name="buyNowPrice"
-          min="0"
-          step="0.01"
-          placeholder="Optional"
-          details="Lets a shopper skip the bidding. It stays available until the first bid (or until the reserve is met)."
-          value={
-            source?.buyNowPrice != null
-              ? String(source.buyNowPrice)
               : undefined
           }
         />
@@ -2215,9 +2185,6 @@ export default function AuctionsPage() {
                           </>
                         )}
                       </div>
-                    )}
-                    {auction.buyNowPrice != null && (
-                      <div style={{ fontSize: 12, color: "#616161" }}>Buy It Now ${Number(auction.buyNowPrice).toFixed(2)}</div>
                     )}
                     {auction.bidders?.length > 0 && (
                       <details style={{ fontSize: 13 }}>

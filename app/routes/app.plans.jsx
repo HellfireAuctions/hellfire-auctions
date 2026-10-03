@@ -1,4 +1,5 @@
-import { Form, useLoaderData, useNavigation } from "react-router";
+import { useEffect } from "react";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { BILLING_NAMES, PLANS, TRIAL_DAYS, HOT_BID_THRESHOLD } from "../plans.shared";
 import { auctionsCreatedThisMonth, setShopPlan, syncShopPlan } from "../plans.server";
@@ -35,12 +36,44 @@ export const action = async ({ request }) => {
   }
 
   const storeHandle = session.shop.replace(".myshopify.com", "");
-  // Sends the merchant to Shopify's approval screen; Shopify brings them back here afterwards.
-  return billing.request({
-    plan: BILLING_NAMES[target],
-    isTest,
-    returnUrl: `https://admin.shopify.com/store/${storeHandle}/apps/${process.env.SHOPIFY_API_KEY}/app/plans`,
-  });
+  // Ask Shopify for the approval link and return it as data. The page then opens it (and shows a
+  // button as a fallback), so the upgrade never depends on a redirect that some browsers block.
+  const returnUrl = `https://admin.shopify.com/store/${storeHandle}/apps/${process.env.SHOPIFY_API_KEY}/app/plans`;
+  try {
+    const response = await admin.graphql(
+      `#graphql
+        mutation StartPlan($name: String!, $returnUrl: URL!, $trialDays: Int!, $test: Boolean!, $price: Decimal!) {
+          appSubscriptionCreate(
+            name: $name
+            returnUrl: $returnUrl
+            trialDays: $trialDays
+            test: $test
+            lineItems: [{ plan: { appRecurringPricingDetails: { price: { amount: $price, currencyCode: USD }, interval: EVERY_30_DAYS } } }]
+          ) {
+            confirmationUrl
+            userErrors { field message }
+          }
+        }`,
+      {
+        variables: {
+          name: BILLING_NAMES[target],
+          returnUrl,
+          trialDays: TRIAL_DAYS,
+          test: Boolean(isTest),
+          price: String(PLANS[target].price),
+        },
+      },
+    );
+    const json = await response.json();
+    const result = json?.data?.appSubscriptionCreate;
+    if (result?.confirmationUrl) return { confirmationUrl: result.confirmationUrl, plan: target };
+    const reason = (result?.userErrors || []).map((e) => e.message).join(", ") || (json?.errors || []).map((e) => e.message).join(", ");
+    console.error("[plans] could not start the subscription:", reason);
+    return { error: "Shopify couldn't start the upgrade" + (reason ? `: ${reason}` : ".") + " Please try again, or contact support@hellfireauctions.com." };
+  } catch (error) {
+    console.error("[plans] subscription request failed:", error?.message || error);
+    return { error: "Shopify couldn't start the upgrade. Please try again, or contact support@hellfireauctions.com." };
+  }
 };
 
 const TIERS = [
@@ -101,6 +134,16 @@ const TIERS = [
 export default function Plans() {
   const { current, used, limit, isTest, complimentary } = useLoaderData();
   const navigation = useNavigation();
+  const actionData = useActionData();
+  useEffect(() => {
+    if (actionData?.confirmationUrl) {
+      try {
+        window.open(actionData.confirmationUrl, "_top");
+      } catch {
+        // the button below still works
+      }
+    }
+  }, [actionData]);
   const busy = navigation.state !== "idle";
   const currentPlan = PLANS[current] || PLANS.SPARK;
   const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 100;
@@ -108,6 +151,26 @@ export default function Plans() {
   return (
     <s-page heading="Hellfire Auctions plans">
       <div style={{ display: "grid", gap: 20 }}>
+        {actionData?.confirmationUrl && (
+          <div style={{ background: "#fff8e1", border: "2px solid #ffd60a", borderRadius: 12, padding: "14px 16px" }}>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>One more step: approve your plan on Shopify</div>
+            <div style={{ marginBottom: 10 }}>Shopify's approval page should open by itself. If it doesn't, click the button below.</div>
+            <a
+              href={actionData.confirmationUrl}
+              target="_top"
+              rel="noopener"
+              style={{ display: "inline-block", background: "#ff3b30", color: "#fff", fontWeight: 800, padding: "10px 18px", borderRadius: 8, textDecoration: "none" }}
+            >
+              Continue to Shopify
+            </a>
+          </div>
+        )}
+        {actionData?.error && (
+          <div style={{ background: "#fdecea", border: "1px solid #f5c2c0", borderRadius: 12, padding: "12px 16px", color: "#8a1c13" }}>{actionData.error}</div>
+        )}
+        {actionData?.message && !actionData?.confirmationUrl && (
+          <div style={{ background: "#e8f5e9", border: "1px solid #b7dfc9", borderRadius: 12, padding: "12px 16px", color: "#1b5e20" }}>{actionData.message}</div>
+        )}
         <div style={{ background: "linear-gradient(90deg,#1a0000,#7a0000,#ff3b30)", color: "#fff", borderRadius: 16, padding: "22px 24px" }}>
           <div style={{ fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: "#ffd60a", fontWeight: 700 }}>
             Your plan

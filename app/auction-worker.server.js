@@ -286,7 +286,11 @@ async function repairZeroPriceDrafts() {
         { id: a.winnerDraftOrderId },
       );
       const draft = d?.draftOrder;
-      if (!draft || draft.status !== "OPEN" || Number(draft.totalPriceSet?.shopMoney?.amount) > 0) continue;
+      // Unpaid drafts are OPEN or INVOICE_SENT; never touch COMPLETED (paid) ones.
+      if (!draft || !["OPEN", "INVOICE_SENT"].includes(draft.status) || Number(draft.totalPriceSet?.shopMoney?.amount) > 0) {
+        console.log("[hellfire-auctions] draft check", JSON.stringify({ auctionId: a.id, status: draft?.status || null, total: draft?.totalPriceSet?.shopMoney?.amount ?? null }));
+        continue;
+      }
       const variantId = draft.lineItems?.nodes?.[0]?.variant?.id;
       if (!variantId) continue;
       const u = await adminGraphql(

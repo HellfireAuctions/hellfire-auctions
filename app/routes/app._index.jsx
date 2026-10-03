@@ -1140,6 +1140,23 @@ const actionImpl = async ({ request }) => {
     }
 
     // Price and schedule are locked once listed: they are never changed below.
+    // eBay rules: once the auction has started the title is locked, the description can only be
+    // ADDED to (dated note), and photos can only be added.
+    const started = new Date() >= existingAuction.startsAt;
+    const addText = (formData.get("addDescription")?.toString() || "").trim();
+    let finalTitle = title;
+    let finalPlain = description || "";
+    if (started) {
+      finalTitle = existingAuction.title;
+      finalPlain = existingAuction.description || "";
+      if (addText) {
+        finalPlain = (finalPlain ? finalPlain + "\n\n" : "") + `Added ${formatEastern(new Date(), timezone)}: ${addText}`;
+      }
+    }
+    const finalHtml = finalPlain
+      ? `<p>${finalPlain.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", "<br>")}</p>`
+      : "";
+    const skipProductUpdate = started && !addText;
 
     /*
      * Update the existing Shopify product.
@@ -1163,11 +1180,9 @@ const actionImpl = async ({ request }) => {
         `,
         {
           variables: {
-            product: {
-              id: existingAuction.productId,
-              title,
-              descriptionHtml: cleanDescription,
-            },
+            product: skipProductUpdate
+              ? { id: existingAuction.productId }
+              : { id: existingAuction.productId, title: finalTitle, descriptionHtml: finalHtml },
           },
         },
       );
@@ -1188,80 +1203,40 @@ const actionImpl = async ({ request }) => {
 
     let imageUrl = existingAuction.imageUrl;
 
-    const hasNewImage =
-      imageFile &&
-      typeof imageFile === "object" &&
-      imageFile.size > 0;
-
-    if (hasNewImage) {
-      if (!imageFile.type?.startsWith("image/")) {
-        return {
-          error: "The replacement file must be an image.",
-        };
-      }
-
-      const stagedResource =
-        await uploadImage(admin, imageFile);
-
-      /*
-       * Add the replacement image to the EXISTING
-       * Shopify product.
-       */
+    const newFiles = formData
+      .getAll("image")
+      .filter((f) => f && typeof f === "object" && f.size > 0)
+      .slice(0, 10);
+    if (newFiles.some((f) => !f.type?.startsWith("image/"))) {
+      return { error: "Photos must be image files." };
+    }
+    if (newFiles.length) {
+      const sources = [];
+      for (const f of newFiles) sources.push(await uploadImage(admin, f));
       const mediaResponse = await admin.graphql(
         `#graphql
-          mutation AddAuctionMedia(
-            $productId: ID!
-            $media: [CreateMediaInput!]!
-          ) {
-            productCreateMedia(
-              productId: $productId
-              media: $media
-            ) {
-              media {
-                id
-              }
-              mediaUserErrors {
-                message
-              }
+          mutation AddAuctionMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+            productCreateMedia(productId: $productId, media: $media) {
+              media { id }
+              mediaUserErrors { message }
             }
           }
         `,
         {
           variables: {
             productId: existingAuction.productId,
-            media: [
-              {
-                originalSource: stagedResource,
-                alt: title,
-                mediaContentType: "IMAGE",
-              },
-            ],
+            media: sources.map((src) => ({ originalSource: src, alt: finalTitle, mediaContentType: "IMAGE" })),
           },
         },
       );
-
-      const mediaJson =
-        await mediaResponse.json();
-
-      const mediaErrors =
-        mediaJson?.data?.productCreateMedia?.mediaUserErrors || [];
-
+      const mediaErrors = (await mediaResponse.json())?.data?.productCreateMedia?.mediaUserErrors || [];
       if (mediaErrors.length) {
-        return {
-          error: mediaErrors
-            .map((error) => error.message)
-            .join(", "),
-        };
+        return { error: mediaErrors.map((error) => error.message).join(", ") };
       }
-
-      const productImage =
-        await getProductImage(
-          admin,
-          existingAuction.productId,
-        );
-
-      if (productImage.url) {
-        imageUrl = productImage.url;
+      // The FIRST photo stays the main one (invoices, packing slips); new photos are added after it.
+      if (!imageUrl) {
+        const productImage = await getProductImage(admin, existingAuction.productId);
+        if (productImage.url) imageUrl = productImage.url;
       }
     }
 
@@ -1297,8 +1272,8 @@ const actionImpl = async ({ request }) => {
           id: auctionId,
         },
         data: {
-          title,
-          description: description || null,
+          title: finalTitle,
+          description: finalPlain || null,
           imageUrl,
         },
       });
@@ -1341,9 +1316,19 @@ const actionImpl = async ({ request }) => {
     return { error: error.message };
   }
 
-  const stagedResource = hasUpload
-    ? await uploadImage(admin, imageFile)
-    : cloneImageUrl;
+  const uploadFiles = formData
+    .getAll("image")
+    .filter((f) => f && typeof f === "object" && f.size > 0)
+    .slice(0, 10);
+  if (uploadFiles.some((f) => !f.type?.startsWith("image/"))) {
+    return { error: "Photos must be image files." };
+  }
+  const stagedSources = [];
+  if (uploadFiles.length) {
+    for (const f of uploadFiles) stagedSources.push(await uploadImage(admin, f));
+  } else {
+    stagedSources.push(cloneImageUrl);
+  }
 
   const productResponse =
     await admin.graphql(
@@ -1382,13 +1367,7 @@ const actionImpl = async ({ request }) => {
               liveCollection.id,
             ],
           },
-          media: [
-            {
-              originalSource: stagedResource,
-              alt: title,
-              mediaContentType: "IMAGE",
-            },
-          ],
+          media: stagedSources.map((src) => ({ originalSource: src, alt: title, mediaContentType: "IMAGE" })),
         },
       },
     );
@@ -1465,6 +1444,7 @@ function AuctionForm({
 }) {
   const isEdit = Boolean(auction);
   const source = auction || prefill || null;
+  const locked = Boolean(auction) && new Date(auction.startsAt).getTime() <= Date.now();
 
   const initialParts = auction
     ? getEasternParts(auction.startsAt, timezone)
@@ -1510,6 +1490,8 @@ function AuctionForm({
       source?.imageUrl || null,
     );
 
+  const [photoCount, setPhotoCount] = useState(0);
+
   const calculateEndPreview = () => {
     try {
       const start = easternLocalToUtc(
@@ -1532,6 +1514,7 @@ function AuctionForm({
   };
 
   const handleImageChange = (event) => {
+    setPhotoCount(event.currentTarget.files?.length || 0);
     const file =
       event.currentTarget.files?.[0];
 
@@ -1570,25 +1553,45 @@ function AuctionForm({
 
       <s-stack gap="base">
 
-        <s-text-field
-          label="Auction Title"
-          name="title"
-          placeholder="Example: One-of-a-kind collectible"
-          value={source?.title || undefined}
-          required
-        />
+        {locked ? (
+          <s-stack gap="small">
+            <input type="hidden" name="title" value={auction.title} />
+            <s-text><strong>{auction.title}</strong></s-text>
+            {auction.description && (
+              <div style={{ whiteSpace: "pre-wrap", fontSize: 14, color: "#303030" }}>{auction.description}</div>
+            )}
+            <s-banner tone="info">
+              This auction has started, so the title is locked. Like eBay, you can add to the description (it's added below the original, with the date) and add photos.
+            </s-banner>
+            <s-text-area
+              label="Add to description"
+              name="addDescription"
+              placeholder="New details, such as a measurement or something you noticed..."
+            />
+          </s-stack>
+        ) : (
+          <>
+            <s-text-field
+              label="Auction Title"
+              name="title"
+              placeholder="Example: One-of-a-kind collectible"
+              value={source?.title || undefined}
+              required
+            />
 
-        <s-text-area
-          label="Description"
-          name="description"
-          placeholder="Describe the item being auctioned..."
-          value={source?.description || undefined}
-        />
+            <s-text-area
+              label="Description"
+              name="description"
+              placeholder="Describe the item being auctioned..."
+              value={source?.description || undefined}
+            />
+          </>
+        )}
 
         <s-section
           heading={
             isEdit
-              ? "Replace Auction Image"
+              ? "Add Photos"
               : "Auction Image"
           }
         >
@@ -1598,18 +1601,21 @@ function AuctionForm({
               name="image"
               label={
                 isEdit
-                  ? "Choose a new image (optional)"
+                  ? "Add more photos (optional, up to 10)"
                   : prefill
                     ? "Keep this photo or choose a new one"
-                    : "Upload auction image"
+                    : "Upload auction photos (up to 10, the first is the main photo)"
               }
               accessibilityLabel="Auction image"
               accept="image/*"
+              multiple
               required={!isEdit && !prefill}
               onChange={handleImageChange}
             />
 
             {prefill?.imageUrl && <input type="hidden" name="cloneImageUrl" value={prefill.imageUrl} />}
+
+            {photoCount > 1 && <s-text>{photoCount} photos selected. The first one is the main photo shown on cards, invoices and packing slips.</s-text>}
 
             {imagePreview && (
               <img

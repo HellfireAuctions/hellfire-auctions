@@ -2,7 +2,7 @@ import { randomUUID as hfUuid } from "node:crypto";
 import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -32,7 +32,7 @@ function throwUserErrors(userErrors) {
   }
 }
 
-async function createAndSendWinnerInvoice(auction, winnerId) {
+async function createAndSendWinnerInvoice(auction, winnerId, opts = {}) {
   let draftOrderId = auction.winnerDraftOrderId || null;
   let checkoutUrl = auction.winnerCheckoutUrl || null;
 
@@ -137,8 +137,8 @@ async function createAndSendWinnerInvoice(auction, winnerId) {
       {
         id: draftOrderId,
         email: {
-          subject: `You won the auction at ${shopName}!`,
-          customMessage: `Congratulations! You won "${auction.title}" with a winning bid of ${formatMoney(auction.currentBid, shopInfo?.shop?.currencyCode)}. Use the secure checkout link below to complete your purchase.`,
+          subject: opts.secondChance ? `A second chance to buy "${auction.title}" at ${shopName}` : `You won the auction at ${shopName}!`,
+          customMessage: opts.secondChance ? `Good news! The original winner didn't complete the purchase, so "${auction.title}" is now offered to you at ${formatMoney(auction.currentBid, shopInfo?.shop?.currencyCode)}. Use the secure checkout link below to buy it. Please pay within 4 days.` : `Congratulations! You won "${auction.title}" with a winning bid of ${formatMoney(auction.currentBid, shopInfo?.shop?.currencyCode)}. Use the secure checkout link below to complete your purchase. Please pay within 4 days.`,
         },
       },
     );
@@ -462,9 +462,113 @@ async function restoreVariantDrafts() {
   await markRepairDone("DRAFT_RESTORE_V2");
 }
 
+async function draftStatus(shop, draftId) {
+  if (!draftId) return null;
+  try {
+    const d = await adminGraphql(shop, `#graphql
+      query DraftStatus($id: ID!) { draftOrder(id: $id) { status } }`, { id: draftId });
+    return d?.draftOrder?.status || null;
+  } catch {
+    return null;
+  }
+}
+
+async function deleteDraft(shop, draftId) {
+  if (!draftId) return;
+  try {
+    await adminGraphql(shop, `#graphql
+      mutation DropDraft($input: DraftOrderDeleteInput!) {
+        draftOrderDelete(input: $input) { deletedId userErrors { message } }
+      }`, { input: { id: draftId } });
+  } catch (error) {
+    console.error("[hellfire-auctions] could not delete draft:", draftId, error?.message || error);
+  }
+}
+
+// Reminders at 24h and 72h after the invoice; alert the store owner at 96h. Paid orders are skipped.
+let lastFollowUp = 0;
+async function paymentFollowUps() {
+  if (Date.now() - lastFollowUp < 25 * 60_000) return;
+  lastFollowUp = Date.now();
+  const rows = await prisma.auction.findMany({
+    where: {
+      status: "ENDED",
+      winnerId: { not: null },
+      winnerDraftOrderId: { not: null },
+      winnerNotifiedAt: { gte: new Date(Date.now() - 7 * 24 * 3600_000) },
+    },
+    take: 50,
+  });
+  for (const a of rows) {
+    try {
+      const st = await draftStatus(a.shop, a.winnerDraftOrderId);
+      if (st !== "OPEN" && st !== "INVOICE_SENT") continue;
+      const hours = (Date.now() - new Date(a.winnerNotifiedAt).getTime()) / 3600_000;
+      if (hours >= 96) await notifyMerchantUnpaid({ auction: a });
+      else if (hours >= 72) await sendPaymentReminder({ auction: a, key: "d3" });
+      else if (hours >= 24) await sendPaymentReminder({ auction: a, key: "d1" });
+    } catch (error) {
+      console.error("[hellfire-auctions] payment follow-up failed:", a.id, error?.message || error);
+    }
+  }
+}
+
+// ----- merchant actions on an unpaid winner -----
+export async function remindWinnerNow(shop, auctionId) {
+  const a = await prisma.auction.findFirst({ where: { id: auctionId, shop } });
+  if (!a?.winnerId) return { error: "This auction has no winner." };
+  if ((await draftStatus(shop, a.winnerDraftOrderId)) === "COMPLETED") return { error: "The winner already paid." };
+  const r = await sendPaymentReminder({ auction: a, key: "manual-" + Date.now() });
+  if (r.sent) return { success: "Reminder sent to the winner." };
+  return { error: r.reason === "plan" ? "Reminder emails are part of the Blaze plan." : "Couldn't send the reminder. Please try again." };
+}
+
+export async function cancelUnpaidSale(shop, auctionId) {
+  const a = await prisma.auction.findFirst({ where: { id: auctionId, shop } });
+  if (!a?.winnerId) return { error: "This auction has no winner." };
+  if ((await draftStatus(shop, a.winnerDraftOrderId)) === "COMPLETED") return { error: "The winner already paid, so the sale can't be cancelled here." };
+  await deleteDraft(shop, a.winnerDraftOrderId);
+  await prisma.auction.update({
+    where: { id: a.id },
+    data: { winnerId: null, winnerCheckoutUrl: null, winnerDraftOrderId: null, winnerNotifiedAt: null },
+  });
+  return { success: "Sale cancelled. You can now relist this item or sell it again." };
+}
+
+export async function offerToNextBidder(shop, auctionId) {
+  const a = await prisma.auction.findFirst({ where: { id: auctionId, shop } });
+  if (!a?.winnerId) return { error: "This auction has no winner to replace." };
+  if (new Date() < a.endsAt) return { error: "The auction hasn't ended yet." };
+  if ((await draftStatus(shop, a.winnerDraftOrderId)) === "COMPLETED") return { error: "The winner already paid." };
+  const bids = await prisma.bid.findMany({ where: { auctionId: a.id }, orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }] });
+  const blocked = new Set((await prisma.blockedBidder.findMany({ where: { shop }, select: { customerId: true } })).map((b) => b.customerId));
+  const next = bids.find((b) => b.bidderId !== a.winnerId && !blocked.has(b.bidderId));
+  if (!next) return { error: "There's no other bidder to offer this item to." };
+  const price = Number(next.maxBid);
+  await deleteDraft(shop, a.winnerDraftOrderId);
+  const updated = await prisma.auction.update({
+    where: { id: a.id },
+    data: { winnerId: next.bidderId, currentBid: price, winnerDraftOrderId: null, winnerCheckoutUrl: null, winnerNotifiedAt: null },
+  });
+  const { draftOrderId, checkoutUrl } = await createAndSendWinnerInvoice(updated, next.bidderId, { secondChance: true });
+  await prisma.auction.update({ where: { id: a.id }, data: { winnerDraftOrderId: draftOrderId, winnerCheckoutUrl: checkoutUrl } });
+  return { success: `Second-chance offer sent to the next bidder at ${formatMoney(price, await shopCurrencyCode(shop))}.` };
+}
+
+async function shopCurrencyCode(shop) {
+  try {
+    const d = await adminGraphql(shop, `#graphql
+      query ShopCur { shop { currencyCode } }`);
+    return d?.shop?.currencyCode || "USD";
+  } catch {
+    return "USD";
+  }
+}
+
 async function tick() {
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
+  await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));
   const now = new Date();
 
   // Keep DRAFT/UPCOMING/LIVE labels in step with the clock (never touches ended ones).
@@ -555,6 +659,10 @@ async function nextDelayMs() {
     prisma.auction.count({ where: { endsAt: { gt: now, lte: hourAhead } } }),
   ]);
   const waits = [MAX_SLEEP_MS];
+  const unpaidWatch = await prisma.auction.count({
+    where: { status: "ENDED", winnerId: { not: null }, winnerNotifiedAt: { gte: new Date(Date.now() - 7 * 24 * 3600_000) } },
+  });
+  if (unpaidWatch) waits.push(30 * 60_000);
   if (nextStart) waits.push(nextStart.startsAt.getTime() - now.getTime() + 1000);
   if (nextEnd) waits.push(nextEnd.endsAt.getTime() - now.getTime() + 1000);
   if (nextReminder) waits.push(nextReminder.endsAt.getTime() - ENDING_SOON_WINDOW_MS - now.getTime() + 1000);

@@ -5,7 +5,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction } from "../plans.server";
-import { wakeWorker } from "../auction-worker.server";
+import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale } from "../auction-worker.server";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -713,6 +713,8 @@ export const loader = async ({ request }) => {
       reservePrice: true,
       productId: true,
       winnerId: true,
+      winnerDraftOrderId: true,
+      winnerNotifiedAt: true,
     },
   });
 
@@ -759,8 +761,29 @@ export const loader = async ({ request }) => {
     }
   }
 
+  const draftIds = auctions.filter((a) => a.winnerId && a.winnerDraftOrderId).map((a) => a.winnerDraftOrderId).slice(0, 50);
+  const draftStatuses = new Map();
+  if (draftIds.length) {
+    try {
+      const response = await admin.graphql(
+        `#graphql
+          query DraftStatuses($ids: [ID!]!) {
+            nodes(ids: $ids) { ... on DraftOrder { id status } }
+          }`,
+        { variables: { ids: draftIds } },
+      );
+      for (const node of (await response.json())?.data?.nodes || []) {
+        if (node?.id) draftStatuses.set(node.id, node.status);
+      }
+    } catch (error) {
+      console.error("[admin] payment status lookup failed:", error?.message || error);
+    }
+  }
+
   const auctionsWithLeaders = auctions.map((auction) => {
-    const lead = leaders.get(auction.id);
+    const lead = auction.winnerId
+      ? (bidsByAuction.get(auction.id) || []).find((b) => b.bidderId === auction.winnerId) || leaders.get(auction.id)
+      : leaders.get(auction.id);
     const customer = lead ? customers.get(String(lead.bidderId)) : null;
     const list = bidsByAuction.get(auction.id) || [];
     const outcome = list.length
@@ -782,6 +805,11 @@ export const loader = async ({ request }) => {
     return {
       ...auction,
       bidders,
+      paymentStatus: auction.winnerDraftOrderId ? draftStatuses.get(auction.winnerDraftOrderId) || null : null,
+      payDeadline: auction.winnerId
+        ? new Date(new Date(auction.winnerNotifiedAt || auction.endsAt).getTime() + 96 * 3600_000).toISOString()
+        : null,
+      hasOtherBidders: list.some((b) => b.bidderId !== auction.winnerId),
       highBidder: lead
         ? {
             customerId: String(lead.bidderId),
@@ -827,6 +855,18 @@ const actionImpl = async ({ request }) => {
       return await addMyAuctionsToMenu(admin);
     } catch (error) {
       return { error: "Couldn't update your menu. Please open the app again and approve the new permission, then retry." };
+    }
+  }
+
+  if (["remind-winner", "offer-next", "cancel-sale"].includes(intent)) {
+    const id = formData.get("auctionId")?.toString() || "";
+    try {
+      if (intent === "remind-winner") return await remindWinnerNow(session.shop, id);
+      if (intent === "offer-next") return await offerToNextBidder(session.shop, id);
+      return await cancelUnpaidSale(session.shop, id);
+    } catch (error) {
+      console.error("[admin] unpaid-winner action failed:", intent, error?.message || error);
+      return { error: "That didn't work: " + (error?.message || "unknown error") };
     }
   }
 
@@ -2113,6 +2153,39 @@ export default function AuctionsPage() {
                       {state === "UPCOMING" ? "Starts " : state === "LIVE" ? "Ends " : "Ended "}
                       {formatEastern(new Date(state === "UPCOMING" ? auction.startsAt : auction.endsAt), timezone)}
                     </div>
+                    {state === "ENDED" && auction.winnerId && ["COMPLETED", "OPEN", "INVOICE_SENT"].includes(auction.paymentStatus) && (
+                      <div style={{ fontSize: 13 }}>
+                        {auction.paymentStatus === "COMPLETED" ? (
+                          <strong style={{ color: "#008060" }}>Paid {"\u2714"}</strong>
+                        ) : (
+                          <>
+                            <strong style={{ color: Date.now() > new Date(auction.payDeadline).getTime() ? "#d72c0d" : "#b98900" }}>
+                              {Date.now() > new Date(auction.payDeadline).getTime() ? "Unpaid \u2014 deadline passed" : "Awaiting payment"}
+                            </strong>
+                            <div style={{ color: "#616161" }}>Due {formatEastern(new Date(auction.payDeadline), timezone)}</div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                              <Form method="post">
+                                <input type="hidden" name="intent" value="remind-winner" />
+                                <input type="hidden" name="auctionId" value={auction.id} />
+                                <s-button type="submit" variant="tertiary">Send reminder</s-button>
+                              </Form>
+                              {auction.hasOtherBidders && (
+                                <Form method="post" onSubmit={(e) => { if (!window.confirm("Offer this item to the next-highest bidder at their bid? The current winner's invoice will be cancelled.")) e.preventDefault(); }}>
+                                  <input type="hidden" name="intent" value="offer-next" />
+                                  <input type="hidden" name="auctionId" value={auction.id} />
+                                  <s-button type="submit" variant="tertiary">Offer to next bidder</s-button>
+                                </Form>
+                              )}
+                              <Form method="post" onSubmit={(e) => { if (!window.confirm("Cancel this sale? The winner's invoice is cancelled and you can relist the item.")) e.preventDefault(); }}>
+                                <input type="hidden" name="intent" value="cancel-sale" />
+                                <input type="hidden" name="auctionId" value={auction.id} />
+                                <s-button type="submit" tone="critical" variant="tertiary">Cancel sale</s-button>
+                              </Form>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                     {auction.bidders?.length > 0 && (
                       <details style={{ fontSize: 13 }}>
                         <summary style={{ cursor: "pointer", fontWeight: 600 }}>Bidders ({auction.bidders.length})</summary>

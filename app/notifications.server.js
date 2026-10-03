@@ -55,7 +55,7 @@ async function lookup(shop, customerId, productId) {
       query NotifyLookup($customer: ID!, $product: ID!) {
         customer(id: $customer) { email }
         product(id: $product) { title handle onlineStoreUrl }
-        shop { name contactEmail ianaTimezone currencyCode primaryDomain { url } }
+        shop { name email contactEmail ianaTimezone currencyCode primaryDomain { url } }
       }
     `,
     {
@@ -381,5 +381,82 @@ export async function notifyWinner({ auction, customerId, checkoutUrl }) {
   } catch (error) {
     await releaseNotice(notice);
     console.error("[notify] winner email failed:", error?.message || error);
+  }
+}
+
+// ---------- unpaid winners ----------
+const PAY_WINDOW_HOURS = 96;
+
+// Reminder to the winner (plan-gated, once per key unless the key is unique).
+export async function sendPaymentReminder({ auction, key }) {
+  if (!notificationsEnabled()) return { sent: false, reason: "off" };
+  if (!(await getShopPlan(auction.shop)).emails) return { sent: false, reason: "plan" };
+  const notice = { auctionId: auction.id, customerId: String(auction.winnerId), type: "PAY_REMINDER", key };
+  if (!(await claimNotice(notice))) return { sent: false, reason: "already" };
+  try {
+    const data = await lookup(auction.shop, auction.winnerId, auction.productId);
+    useCurrency(data);
+    const email = data?.customer?.email;
+    if (!email || !auction.winnerCheckoutUrl) {
+      await releaseNotice(notice);
+      return { sent: false, reason: "missing" };
+    }
+    const title = data?.product?.title || auction.title;
+    const base = auction.winnerNotifiedAt || auction.endsAt;
+    const due = new Date(new Date(base).getTime() + PAY_WINDOW_HOURS * 3600_000);
+    await sendEmail({
+      to: email,
+      subject: `Reminder: complete your purchase of ${title}`,
+      heading: "Your purchase is waiting",
+      lines: [
+        "Hey there,",
+        `You won "${title}" with a winning bid of ${money(auction.currentBid)}, but your purchase isn't complete yet.`,
+        `Please pay by ${friendlyTime(due, data?.shop?.ianaTimezone)} so the seller can ship it to you.`,
+      ],
+      buttonLabel: "Complete your purchase",
+      buttonUrl: auction.winnerCheckoutUrl,
+      shopName: data?.shop?.name || "the store",
+      replyTo: data?.shop?.contactEmail,
+    });
+    console.log("[notify] payment reminder sent", JSON.stringify({ auctionId: auction.id, key }));
+    return { sent: true };
+  } catch (error) {
+    await releaseNotice(notice);
+    console.error("[notify] payment reminder failed:", error?.message || error);
+    return { sent: false, reason: "error" };
+  }
+}
+
+// Tells the store owner the payment deadline passed (once).
+export async function notifyMerchantUnpaid({ auction }) {
+  if (!notificationsEnabled()) return;
+  if (!(await getShopPlan(auction.shop)).emails) return;
+  const notice = { auctionId: auction.id, customerId: "merchant", type: "MERCHANT_UNPAID", key: String(auction.winnerId) };
+  try {
+    if (!(await claimNotice(notice))) return;
+    const data = await lookup(auction.shop, auction.winnerId, auction.productId);
+    useCurrency(data);
+    const to = data?.shop?.email || data?.shop?.contactEmail;
+    if (!to) {
+      await releaseNotice(notice);
+      return;
+    }
+    const title = data?.product?.title || auction.title;
+    await sendEmail({
+      to,
+      subject: `Unpaid winner: ${title}`,
+      heading: "The winner hasn't paid",
+      lines: [
+        `The payment deadline has passed for "${title}" (winning bid ${money(auction.currentBid)}).`,
+        "Open Hellfire Auctions to send another reminder, offer the item to the next bidder, or cancel the sale and relist it.",
+      ],
+      buttonLabel: "Open Hellfire Auctions",
+      buttonUrl: `https://admin.shopify.com/store/${auction.shop.replace(".myshopify.com", "")}/apps/${process.env.SHOPIFY_API_KEY}`,
+      shopName: data?.shop?.name || "your store",
+    });
+    console.log("[notify] unpaid-winner alert sent", JSON.stringify({ auctionId: auction.id }));
+  } catch (error) {
+    await releaseNotice(notice);
+    console.error("[notify] unpaid-winner alert failed:", error?.message || error);
   }
 }

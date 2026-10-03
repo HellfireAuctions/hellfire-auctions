@@ -337,7 +337,7 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
     const title = data?.product?.title || auction.title;
     await sendEmail({
       to: email,
-      subject: `You won: ${title}`,
+      subject: `You won the auction at ${data?.shop?.name || "our store"}!`,
       heading: "You won the auction!",
       lines: [
         "Hey there,",
@@ -354,5 +354,19 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
   } catch (error) {
     console.error("[notify] winner checkout email failed:", error?.message || error);
     return false;
+  }
+}
+
+// Always email the winner their checkout link (once), in addition to Shopify's own invoice.
+export async function notifyWinner({ auction, customerId, checkoutUrl }) {
+  if (!notificationsEnabled() || !customerId || !checkoutUrl) return;
+  const notice = { auctionId: auction.id, customerId: String(customerId), type: "WINNER", key: "1" };
+  try {
+    if (!(await claimNotice(notice))) return;
+    const sent = await sendWinnerInvoiceFallback({ auction, customerId, checkoutUrl });
+    if (!sent) await releaseNotice(notice);
+  } catch (error) {
+    await releaseNotice(notice);
+    console.error("[notify] winner email failed:", error?.message || error);
   }
 }

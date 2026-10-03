@@ -961,13 +961,21 @@ const actionImpl = async ({ request }) => {
     };
   }
 
-  const startsAt = easternLocalToUtc(
+  let startsAt = easternLocalToUtc(
     startsAtDate,
     startsAtHour,
     startsAtMinute,
     startsAtAmPm,
     timezone,
   );
+
+  if (intent === "create") {
+    const nowMs = Date.now();
+    if (startsAt.getTime() < nowMs - 5 * 60 * 1000) {
+      return { error: "That start time has already passed. Pick the current time (or click \u201CStart now\u201D) or a time in the future." };
+    }
+    if (startsAt.getTime() < nowMs) startsAt = new Date(nowMs); // chosen minute just passed: start right now
+  }
 
   const endsAt = new Date(
     startsAt.getTime() +
@@ -1586,6 +1594,21 @@ function AuctionForm({
                 gap="small"
               >
 
+                <div>
+                  <s-button
+                    type="button"
+                    onClick={() => {
+                      const p = getEasternParts(new Date(), timezone);
+                      setStartDate(p.date);
+                      setStartHour(String(Number(p.hour)));
+                      setStartMinute(p.minute);
+                      setStartAmPm(p.ampm);
+                    }}
+                  >
+                    Start now
+                  </s-button>
+                </div>
+
                 <s-select
                   label="Hour"
                   name="startsAtHour"
@@ -1624,20 +1647,7 @@ function AuctionForm({
                     )
                   }
                 >
-                  {[
-                    "00",
-                    "05",
-                    "10",
-                    "15",
-                    "20",
-                    "25",
-                    "30",
-                    "35",
-                    "40",
-                    "45",
-                    "50",
-                    "55",
-                  ].map((minute) => (
+                  {Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0")).map((minute) => (
                     <s-option
                       key={minute}
                       value={minute}

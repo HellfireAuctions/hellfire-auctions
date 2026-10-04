@@ -271,6 +271,8 @@ async function getProductImage(admin, productId) {
 }
 
 
+const WEIGHT_LABELS = { OUNCES: "oz", POUNDS: "lb", GRAMS: "g", KILOGRAMS: "kg" };
+
 // Optional shipping weight, so the store's weight-based or carrier-calculated rates can price the winner's shipping.
 async function setAuctionWeight(admin, productId, value, unit) {
   const r = await admin.graphql(
@@ -280,13 +282,15 @@ async function setAuctionWeight(admin, productId, value, unit) {
   );
   const itemId = (await r.json())?.data?.product?.variants?.nodes?.[0]?.inventoryItem?.id;
   if (!itemId) return;
-  await admin.graphql(
+  const weightResult = await admin.graphql(
     `#graphql
       mutation SetWeight($id: ID!, $input: InventoryItemInput!) {
         inventoryItemUpdate(id: $id, input: $input) { inventoryItem { id } userErrors { message } }
       }`,
     { variables: { id: itemId, input: { measurement: { weight: { value, unit } } } } },
   );
+  const weightErrors = (await weightResult.json())?.data?.inventoryItemUpdate?.userErrors || [];
+  if (weightErrors.length) throw new Error(weightErrors.map((e) => e.message).join(", "));
 }
 
 async function ensureAuctionVariantAvailable(admin, productId) {
@@ -861,6 +865,26 @@ export const loader = async ({ request }) => {
     }
   }
 
+  const weights = new Map(); // productId -> { value, unit }
+  try {
+    const weightIds = [...new Set(auctions.map((a) => a.productId))].slice(0, 100);
+    if (weightIds.length) {
+      const weightRes = await admin.graphql(
+        `#graphql
+          query CardWeights($ids: [ID!]!) {
+            nodes(ids: $ids) { ... on Product { id variants(first: 1) { nodes { inventoryItem { measurement { weight { value unit } } } } } } }
+          }`,
+        { variables: { ids: weightIds } },
+      );
+      for (const node of (await weightRes.json())?.data?.nodes || []) {
+        const w = node?.variants?.nodes?.[0]?.inventoryItem?.measurement?.weight;
+        if (node?.id && w && Number(w.value) > 0) weights.set(node.id, { value: Number(w.value), unit: w.unit });
+      }
+    }
+  } catch (error) {
+    console.error("[admin] weights lookup failed:", error?.message || error);
+  }
+
   const unpaidByWinner = new Map();
   for (const a of auctions) {
     if (!a.winnerId || !a.winnerDraftOrderId) continue;
@@ -899,6 +923,7 @@ export const loader = async ({ request }) => {
       ...auction,
       bidders,
       paymentStatus: auction.winnerDraftOrderId ? draftStatuses.get(auction.winnerDraftOrderId) || null : null,
+      weight: weights.get(auction.productId) || null,
       winnerUnpaidCount: unpaidByWinner.get(auction.winnerId)?.n || 0,
       winnerDraftCount: unpaidByWinner.get(auction.winnerId)?.drafts.size || 0,
       payDeadline: auction.winnerId
@@ -971,6 +996,22 @@ const actionImpl = async ({ request }) => {
     } catch (error) {
       return { error: "Couldn't update your menu. Please open the app again and approve the new permission, then retry." };
     }
+  }
+
+  if (intent === "set-weight") {
+    const weightAuctionId = formData.get("auctionId")?.toString() || "";
+    const weightTarget = await prisma.auction.findFirst({ where: { id: weightAuctionId, shop: session.shop }, select: { productId: true } });
+    if (!weightTarget) return { error: "Auction could not be found." };
+    const quickValue = Number(formData.get("weightValue"));
+    const quickUnitRaw = String(formData.get("weightUnit") || "");
+    const quickUnit = ["OUNCES", "POUNDS", "GRAMS", "KILOGRAMS"].includes(quickUnitRaw) ? quickUnitRaw : "OUNCES";
+    if (!Number.isFinite(quickValue) || quickValue <= 0) return { error: "Enter a weight greater than zero." };
+    try {
+      await setAuctionWeight(admin, weightTarget.productId, quickValue, quickUnit);
+    } catch (error) {
+      return { error: "Couldn't save the weight in Shopify: " + (error?.message || error) };
+    }
+    return { success: "Shipping weight saved." };
   }
 
   if (["hide-auction", "unhide-auction", "hide-paid"].includes(intent)) {
@@ -1354,6 +1395,18 @@ const actionImpl = async ({ request }) => {
       ? `<p>${finalPlain.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", "<br>")}</p>`
       : "";
     const skipProductUpdate = started && !addText;
+
+    // The shipping weight can be added or changed at any time: it doesn't change the bidding terms.
+    const editWeight = Number(formData.get("weightValue"));
+    if (Number.isFinite(editWeight) && editWeight > 0) {
+      const editUnitRaw = String(formData.get("weightUnit") || "");
+      const editUnit = ["OUNCES", "POUNDS", "GRAMS", "KILOGRAMS"].includes(editUnitRaw) ? editUnitRaw : "OUNCES";
+      try {
+        await setAuctionWeight(admin, existingAuction.productId, editWeight, editUnit);
+      } catch (error) {
+        return { error: "Couldn't save the shipping weight in Shopify: " + (error?.message || error) };
+      }
+    }
 
     /*
      * Update the existing Shopify product.
@@ -1951,8 +2004,8 @@ function AuctionForm({
         <div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Shipping weight (optional)</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <input name="weightValue" type="number" min="0" step="0.01" placeholder="e.g. 8" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, width: 120 }} />
-            <select name="weightUnit" defaultValue="OUNCES" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8 }}>
+            <input name="weightValue" type="number" min="0" step="0.01" placeholder="e.g. 8" defaultValue={source?.weight?.value ?? ""} style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, width: 120 }} />
+            <select name="weightUnit" defaultValue={source?.weight?.unit || "OUNCES"} style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8 }}>
               <option value="OUNCES">oz</option>
               <option value="POUNDS">lb</option>
               <option value="GRAMS">g</option>
@@ -2443,6 +2496,25 @@ export default function AuctionsPage() {
                     )}
                     {state === "ENDED" && !auction.winnerId && auction.status !== "CANCELLED" && (
                       <div style={{ fontSize: 12, color: "#616161" }}>Unsold: taken off your store a few minutes after it ends. Relist to put it back.</div>
+                    )}
+                    {!showRemoved && !(state === "ENDED" && (!auction.winnerId || auction.paymentStatus === "COMPLETED")) && (
+                      <details style={{ fontSize: 13 }}>
+                        <summary style={{ cursor: "pointer", color: auction.weight ? "#303030" : "#8a5a00" }}>
+                          {auction.weight ? `Shipping weight: ${auction.weight.value} ${WEIGHT_LABELS[auction.weight.unit] || ""}` : "No shipping weight yet. Add one"}
+                        </summary>
+                        <Form method="post" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+                          <input type="hidden" name="intent" value="set-weight" />
+                          <input type="hidden" name="auctionId" value={auction.id} />
+                          <input name="weightValue" type="number" min="0" step="0.01" required defaultValue={auction.weight?.value ?? ""} placeholder="e.g. 8" style={{ padding: "6px 8px", border: "1px solid #8a8a8a", borderRadius: 6, width: 80 }} />
+                          <select name="weightUnit" defaultValue={auction.weight?.unit || "OUNCES"} style={{ padding: "6px 8px", border: "1px solid #8a8a8a", borderRadius: 6 }}>
+                            <option value="OUNCES">oz</option>
+                            <option value="POUNDS">lb</option>
+                            <option value="GRAMS">g</option>
+                            <option value="KILOGRAMS">kg</option>
+                          </select>
+                          <s-button type="submit" variant="secondary">Save</s-button>
+                        </Form>
+                      </details>
                     )}
                     {auction.autoExtend && (
                       <div style={{ fontSize: 12, color: "#616161" }}>Anti-sniping on</div>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Collection with an ended auction</title>
+<link rel="stylesheet" href="/assets/auction-cards.css"></head>
+<body>
+<main>
+<section>
+<ul class="grid product-grid" id="grid">
+  <li class="grid__item" id="card-gone">
+    <div class="card-wrapper product-card-wrapper"><div class="card card--standard">
+      <div class="card__content"><div class="card__information">
+        <h3 class="card__heading"><a href="/products/gone-item" class="full-unstyled-link">Gone item</a></h3>
+        <div class="card-information"><div class="price"><span class="price-item">$0.00</span></div></div>
+      </div></div>
+    </div></div>
+  </li>
+  <li class="grid__item" id="card-live">
+    <div class="card-wrapper product-card-wrapper"><div class="card card--standard">
+      <div class="card__content"><div class="card__information">
+        <h3 class="card__heading"><a href="/products/test-1" class="full-unstyled-link">Test 1</a></h3>
+        <div class="card-information"><div class="price"><span class="price-item">$0.00</span></div></div>
+      </div></div>
+    </div></div>
+  </li>
+</ul>
+</section>
+</main>
+<script type="application/json" id="hellfire-auction-cards-config">{"endpoint":"/apps/hellfire-auctions/auction-cards","currency":"USD","locale":"en"}</script>
+<script src="/assets/auction-cards.js" defer></script>
+</body></html>

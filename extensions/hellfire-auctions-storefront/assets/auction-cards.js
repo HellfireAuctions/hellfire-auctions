@@ -100,6 +100,15 @@
   function render(badge, auction) {
     const now = Date.now() + clockOffset;
     const state = stateOf(auction, now);
+
+    // Ended auctions leave the storefront 30 minutes after they end (the order, if any, lives in My Auctions).
+    // Safety: only hide a real product card, never a big container that holds many products.
+    const gone = state === "ENDED" && now - Date.parse(auction.endsAt) > 30 * 60 * 1000;
+    const holder = badge.__hfRoot;
+    if (holder && holder !== document.body && holder.querySelectorAll('a[href*="/products/"]').length <= 3) {
+      holder.style.display = gone ? "none" : "";
+    }
+    if (gone) return;
     const label = auction.isTest
       ? state === "ENDED" ? "Test auction ended" : "Test auction"
       : state === "LIVE" ? "Live auction" : state === "UPCOMING" ? "Upcoming auction" : "Auction ended";

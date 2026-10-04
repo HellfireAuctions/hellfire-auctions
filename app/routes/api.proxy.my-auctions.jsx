@@ -149,15 +149,20 @@ export const loader = async ({ request }) => {
     const ended = now >= a.endsAt;
     const iLead = leader.get(a.id) === customerId;
     const reserveOk = a.reservePrice == null || Number(a.currentBid) >= Number(a.reservePrice);
-    const key = !myMax.has(a.id) ? "WATCHING" : now < a.startsAt ? "UPCOMING" : ended ? (iLead && reserveOk ? "WON" : "LOST") : iLead ? "WINNING" : "OUTBID";
+    const key = !myMax.has(a.id) ? "WATCHING" : now < a.startsAt ? "UPCOMING" : ended ? ((a.winnerId ? String(a.winnerId) === String(customerId) : iLead && reserveOk && !a.isTest) ? "WON" : "LOST") : iLead ? "WINNING" : "OUTBID";
     return { a, ended, key, link: links.get(a.productId) || null };
   });
   // Live auctions first (soonest ending), then ended ones.
   rows.sort((x, y) => Number(x.ended) - Number(y.ended));
   const banner = await combineBanner(shop, auctions, customerId, money);
 
+  // Sections: live (and upcoming/watched) auctions, auctions I won, auctions I lost in the last 30 days.
+  const liveRows = rows.filter((r) => !r.ended);
+  const wonRows = rows.filter((r) => r.ended && r.key === "WON");
+  const lostRows = rows.filter((r) => r.ended && r.key === "LOST" && now.getTime() - new Date(r.a.endsAt).getTime() <= 30 * 24 * 3600_000);
+
   // Each card = photo + title + the same black auction box shoppers see on product cards.
-  const cards = rows
+  const renderCards = (list) => list
     .map(({ a, ended, key, link }) => {
       const upcoming = key === "UPCOMING";
       const stateText = upcoming ? "Upcoming auction" : ended ? "Auction ended" : "Live auction";
@@ -194,6 +199,9 @@ export const loader = async ({ request }) => {
       </div>`;
     })
     .join("");
+  const liveCards = renderCards(liveRows);
+  const wonCards = renderCards(wonRows);
+  const lostCards = renderCards(lostRows);
 
   const paidCards = auctions
     .filter((a) => paidAt.has(a.id) && now.getTime() - new Date(paidAt.get(a.id)).getTime() <= 30 * 24 * 3600_000)
@@ -210,11 +218,24 @@ export const loader = async ({ request }) => {
     ? `<h2 style="margin:36px 0 6px;font-size:20px">Paid</h2><p style="margin:0 0 14px;color:#616161">Items you've paid for in the last 30 days.</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px">${paidCards}</div>`
     : "";
 
+  const sectionGrid = (html) => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px">${html}</div>`;
+  const section = (title, note, html) =>
+    html
+      ? `<h2 style="margin:34px 0 6px;font-size:20px">${title}</h2>${note ? `<p style="margin:0 0 14px;color:#616161">${note}</p>` : ""}${sectionGrid(html)}`
+      : "";
+  const sections =
+    section("Live Auctions", "", liveCards) +
+    section("Won Auctions", "Auctions you won. Pay for all of them together from the banner above.", wonCards) +
+    paidSection +
+    section("Lost Auctions", "Auctions that ended in the last 30 days where another bidder won.", lostCards);
+  const emptyMessage = sections
+    ? ""
+    : `<p>Nothing here right now.</p><p><a href="/collections/live-auctions" style="font-weight:700">Browse live auctions &rarr;</a></p>`;
+
   return liquid(`${header}
     <p style="margin:0 0 22px;color:#616161">Every auction you've bid on or are watching. This page updates itself. <a href="${esc(prefsUrl(shop, customerId))}" style="color:#616161;font-size:14px">Manage my email notifications</a></p>
     ${banner}
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px">${cards}</div>
-    ${paidSection}
+    ${sections}${emptyMessage}
   </div>
   <script>
     (function () {

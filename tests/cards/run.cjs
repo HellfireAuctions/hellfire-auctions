@@ -27,7 +27,8 @@ function mockData() {
     auctions: [
       { handle: "test-1", hasBids: true, amount: 325, bidCount: 21, hot: true, myStatus: "WINNING", startsAt: iso(-5 * 24 * H), endsAt: iso(48 * H), status: "LIVE" },
       { handle: "upcoming-item", hasBids: false, amount: 10, bidCount: 0, startsAt: iso(3 * H), endsAt: iso(5 * 24 * H), status: "UPCOMING" },
-      { handle: "ended-item", hasBids: true, amount: 40, bidCount: 3, startsAt: iso(-5 * 24 * H), endsAt: iso(-1 * H), status: "ENDED" },
+      { handle: "ended-item", hasBids: true, amount: 40, bidCount: 3, startsAt: iso(-5 * 24 * H), endsAt: iso(-10 * 60 * 1000), status: "ENDED" },
+      { handle: "gone-item", hasBids: true, amount: 55, bidCount: 4, startsAt: iso(-5 * 24 * H), endsAt: iso(-2 * H), status: "ENDED" },
     ],
   };
 }
@@ -35,6 +36,7 @@ function mockData() {
 const pages = {
   "/collections/dawn": "collection-dawn.html",
   "/collections/horizon": "collection-horizon.html",
+  "/collections/gone": "collection-gone.html",
   "/products/test-1": path.join("products", "test-1.html"),
 };
 
@@ -141,6 +143,10 @@ function check(name, condition) {
   check("Product page: no badge for the product being viewed", !pdp.slice(pdp.indexOf('id="main-product"'), pdp.indexOf('id="related"')).includes(BADGE) && !segment(pdp, "related-self").includes(BADGE));
   check("Product page: related auction card gets a badge", segment(pdp, "related-ended").includes(BADGE));
   check("Product page: exactly 1 badge total", count(pdp, BADGE) === 1);
+
+  const goneHtml = await dumpDom(`${base}/collections/gone`);
+  check("Ended 2 hours ago: the card is hidden", /id="card-gone"[^>]*display:\s*none/.test(goneHtml));
+  check("A live auction card on the same page stays visible with its badge", !/id="card-live"[^>]*display:\s*none/.test(goneHtml) && segment(goneHtml, "card-live").includes(BADGE));
 
   if (process.env.SHOT_DIR) {
     await screenshot(`${base}/collections/dawn`, path.join(process.env.SHOT_DIR, "cards-dawn.png"));

@@ -979,7 +979,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, removedCount: hiddenIds.length, showRemoved, liveBlockUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/themes/current/editor?template=index&addAppBlockId=${process.env.SHOPIFY_API_KEY}/live-auctions&target=newAppsSection`, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, removedCount: hiddenIds.length, showRemoved, adminBase: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}`, liveBlockUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/themes/current/editor?template=index&addAppBlockId=${process.env.SHOPIFY_API_KEY}/live-auctions&target=newAppsSection`, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -2216,7 +2216,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, liveBlockUrl, removedCount = 0, showRemoved = false } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, liveBlockUrl, adminBase, removedCount = 0, showRemoved = false } = useLoaderData();
   const paidCount = auctions.filter((a) => a.paymentStatus === "COMPLETED").length;
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
@@ -2304,7 +2304,7 @@ export default function AuctionsPage() {
       )}
 
       <details open style={{ background: "#fff", border: "1px solid #e3e3e3", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
-        <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 15 }}>Setup guide (4 steps, about 3 minutes)</summary>
+        <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 15 }}>Setup guide (about 10 minutes)</summary>
         <ol style={{ margin: "12px 0 0", paddingLeft: 20, display: "grid", gap: 12, fontSize: 14, lineHeight: 1.5 }}>
           <li>
             <strong>Turn on Hellfire Auctions in your theme.</strong> Click the button below. In the panel that opens on the left, switch <em>Hellfire Auctions Runtime</em> on, then click <em>Save</em> (top right). This adds the live bidding panel to auction product pages and live bid badges to product cards. It works with any theme and changes no theme code. Repeat this for any other theme you publish later.
@@ -2313,26 +2313,45 @@ export default function AuctionsPage() {
             </div>
           </li>
           <li>
-            <strong>Create your first auction</strong> with the form below: title, description, image, starting bid, optional reserve price, start time and length. The app creates the product, adds it to a <em>Live Auctions</em> collection, and starts and ends the auction automatically. The winner is invoiced through Shopify when it ends.
+            <strong>Make sure your store can take payments.</strong> Winners pay through Shopify&rsquo;s own checkout, so a payment method must be active. Check{" "}
+            <s-link href={`${adminBase}/settings/payments`} target="_top">Settings, Payments</s-link>. To try a payment without real money, turn on your provider&rsquo;s test mode (on a development store, activate the <em>Bogus Gateway</em>).
           </li>
           <li>
-            <strong>Add &ldquo;My Auctions&rdquo; to your store menu</strong> using the one-click banner (if shown) so customers can see every auction they&rsquo;re bidding on, winning or outbid.
+            <strong>Let customers sign in.</strong> Bidding needs a customer account. In{" "}
+            <s-link href={`${adminBase}/settings/customer_accounts`} target="_top">Settings, Customer accounts</s-link>{" "}
+            make sure sign-in is on and your store shows an account or sign-in link.
           </li>
           <li>
-            <strong>Test it.</strong> Open the auction on your storefront, sign in as a customer and place a bid. Bidding requires a customer account. Optional: upgrade on <em>Plans &amp; upgrades</em> for outbid and &ldquo;1 hour left&rdquo; emails.
+            <strong>Check your shipping rates.</strong> At checkout, winners pick from your store&rsquo;s own shipping options in{" "}
+            <s-link href={shippingSettingsUrl} target="_top">Settings, Shipping and delivery</s-link>. If your rates depend on weight, give each auction a weight: there&rsquo;s a field on the create form and a <em>Shipping weight</em> line on every auction card, and you can add or change it at any time. Optional: add a $0.00 rate named <em>Add to my existing order (free)</em>; when a winner picks it, add the item to their earlier order before shipping.
           </li>
           <li>
-            <strong>About the $99,999 price in your Shopify product list.</strong> Auction items are saved with a placeholder price so nobody can buy them outside the auction. It is never shown to shoppers on auction pages, and the winner always pays exactly their winning bid.
+            <strong>Create your first auction</strong> with the form below: title, description, photos, starting bid, optional reserve price, start time and length. The app creates the product, adds it to a <em>Live Auctions</em> collection, and starts and ends the auction automatically. The winner is invoiced through Shopify when it ends. Tip: a test auction (under 1 hour) never counts toward your monthly limit.
           </li>
           <li>
-            <strong>Let winners add to an order they already have.</strong> Winners already see every shipping option your store offers on their invoice and pick the one they want. To support "add to my existing order," open{" "}
-            <s-link href={shippingSettingsUrl} target="_top">Settings, Shipping and delivery</s-link>, open your shipping profile, and add a rate named <em>Add to my existing order (free)</em> at $0.00. When a winner picks it, add the item to their earlier order (it's on their customer page) before shipping.
+            <strong>Add &ldquo;My Auctions&rdquo; to your store menu</strong> using the one-click banner (if shown), so customers can see every auction they&rsquo;re bidding on, have won, lost or paid for.
           </li>
           <li>
-            <strong>Show your live auctions on any page.</strong> Add the <em>Live Auctions</em> block, for example to your home page. It lists only running auctions, soonest-ending first, and matches your theme's fonts and colors.{" "}
+            <strong>Show your live auctions on any page (optional).</strong> Add the <em>Live Auctions</em> block, for example to your home page. It lists only running auctions, soonest-ending first, and matches your theme&rsquo;s fonts and colors.{" "}
             <s-link href={liveBlockUrl} target="_top">Add the Live Auctions block to my home page</s-link>
           </li>
+          <li>
+            <strong>Languages and currencies (optional).</strong> The bidding panel, product-card badges and Live Auctions block appear in Spanish whenever a shopper browses your store in Spanish; other languages show English for now. To offer Spanish, add and publish it in{" "}
+            <s-link href={`${adminBase}/settings/languages`} target="_top">Settings, Languages</s-link>. If you sell in more than one currency, bids are always placed in your store&rsquo;s currency and shoppers also see an approximate amount in theirs.
+          </li>
+          <li>
+            <strong>Test it.</strong> Open the auction on your storefront, sign in as a customer and place a bid. When it ends, open the winner&rsquo;s invoice and pay it (in test mode) to see the whole flow. Optional: upgrade on <em>Plans &amp; upgrades</em> for outbid and &ldquo;1 hour left&rdquo; emails.
+          </li>
         </ol>
+        <div style={{ marginTop: 14, fontSize: 14, lineHeight: 1.5 }}>
+          <strong>Good to know</strong>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 20, display: "grid", gap: 6 }}>
+            <li><strong>The $99,999 price in your product list</strong> is a placeholder so nobody can buy an auction item outside the auction. Shoppers never see it, and the winner always pays exactly their winning bid.</li>
+            <li><strong>Unpaid winners</strong> get 4 days to pay, with reminders. After that you can send a reminder, offer the item to the next bidder, or cancel the sale from the auction card.</li>
+            <li><strong>Paid items</strong> are archived from your store automatically. Use <em>Clear all paid</em> above your auctions to tidy this list; nothing is deleted.</li>
+            <li><strong>Unsold auctions</strong> are taken off your store about 10 minutes after they end. <em>Relist</em> puts them back.</li>
+          </ul>
+        </div>
       </details>
 
       <s-section

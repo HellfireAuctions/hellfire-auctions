@@ -101,12 +101,18 @@
     const now = Date.now() + clockOffset;
     const state = stateOf(auction, now);
 
-    // Ended auctions leave the storefront 30 minutes after they end (the order, if any, lives in My Auctions).
-    // Safety: only hide a real product card, never a big container that holds many products.
-    const gone = state === "ENDED" && now - Date.parse(auction.endsAt) > 30 * 60 * 1000;
+    // Ended auctions leave the storefront a minute after they end; they live in My Auctions.
+    // The card root is the largest container holding links to this one product only (see findCardRoot).
+    const gone = state === "ENDED" && now - Date.parse(auction.endsAt) > 60 * 1000;
     const holder = badge.__hfRoot;
-    if (holder && holder !== document.body && holder.querySelectorAll('a[href*="/products/"]').length <= 3) {
-      holder.style.display = gone ? "none" : "";
+    if (holder && holder !== document.body) {
+      if (gone) {
+        holder.style.setProperty("display", "none", "important");
+        holder.setAttribute("data-hellfire-gone", "");
+      } else if (holder.hasAttribute("data-hellfire-gone")) {
+        holder.style.removeProperty("display");
+        holder.removeAttribute("data-hellfire-gone");
+      }
     }
     if (gone) return;
     const label = auction.isTest

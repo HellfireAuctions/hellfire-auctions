@@ -27,7 +27,7 @@ function mockData() {
     auctions: [
       { handle: "test-1", hasBids: true, amount: 325, bidCount: 21, hot: true, myStatus: "WINNING", startsAt: iso(-5 * 24 * H), endsAt: iso(48 * H), status: "LIVE" },
       { handle: "upcoming-item", hasBids: false, amount: 10, bidCount: 0, startsAt: iso(3 * H), endsAt: iso(5 * 24 * H), status: "UPCOMING" },
-      { handle: "ended-item", hasBids: true, amount: 40, bidCount: 3, startsAt: iso(-5 * 24 * H), endsAt: iso(-10 * 60 * 1000), status: "ENDED" },
+      { handle: "ended-item", hasBids: true, amount: 40, bidCount: 3, startsAt: iso(-5 * 24 * H), endsAt: iso(-20 * 1000), status: "ENDED" },
       { handle: "gone-item", hasBids: true, amount: 55, bidCount: 4, startsAt: iso(-5 * 24 * H), endsAt: iso(-2 * H), status: "ENDED" },
     ],
   };

@@ -29,6 +29,10 @@ function mockData() {
       { handle: "upcoming-item", hasBids: false, amount: 10, bidCount: 0, startsAt: iso(3 * H), endsAt: iso(5 * 24 * H), status: "UPCOMING" },
       { handle: "ended-item", hasBids: true, amount: 40, bidCount: 3, startsAt: iso(-5 * 24 * H), endsAt: iso(-20 * 1000), status: "ENDED" },
       { handle: "gone-item", hasBids: true, amount: 55, bidCount: 4, startsAt: iso(-5 * 24 * H), endsAt: iso(-2 * H), status: "ENDED" },
+      { handle: "table-gone", hasBids: true, amount: 30, bidCount: 2, startsAt: iso(-5 * 24 * H), endsAt: iso(-3 * H), status: "ENDED" },
+      { handle: "table-live", hasBids: true, amount: 45, bidCount: 5, startsAt: iso(-2 * H), endsAt: iso(5 * H), status: "LIVE" },
+      { handle: "art-gone", hasBids: true, amount: 25, bidCount: 1, startsAt: iso(-5 * 24 * H), endsAt: iso(-4 * H), status: "ENDED" },
+      { handle: "art-live", hasBids: false, amount: 12, bidCount: 0, startsAt: iso(-2 * H), endsAt: iso(7 * H), status: "LIVE" },
     ],
   };
 }
@@ -37,6 +41,10 @@ const pages = {
   "/collections/dawn": "collection-dawn.html",
   "/collections/horizon": "collection-horizon.html",
   "/collections/gone": "collection-gone.html",
+  "/collections/table": "collection-table.html",
+  "/collections/article": "collection-article.html",
+  "/pages/live-block": "live-block.html",
+  "/pages/live-empty": "live-empty.html",
   "/products/test-1": path.join("products", "test-1.html"),
 };
 
@@ -46,6 +54,15 @@ const server = http.createServer((req, res) => {
     if (mode === "error") { res.writeHead(500); return res.end("boom"); }
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(mode === "garbage" ? "{not json" : JSON.stringify(mockData()));
+  }
+  if (url.pathname === "/apps/hellfire-auctions/live-auctions") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    const list = url.searchParams.get("empty") ? [] : [
+      { id: "a", title: "Ends first", image: "", url: "/products/one", currentBid: 20, bidCount: 3, endsAt: iso(2 * H), isTest: false },
+      { id: "b", title: "Ends second", image: "", url: "/products/two", currentBid: 35, bidCount: 1, endsAt: iso(30 * H), isTest: false },
+      { id: "c", title: "Ends third", image: "", url: "/products/three", currentBid: 10, bidCount: 0, endsAt: iso(80 * H), isTest: false },
+    ];
+    return res.end(JSON.stringify({ now: new Date().toISOString(), currency: "USD", auctions: list }));
   }
   if (url.pathname.startsWith("/assets/")) {
     const file = path.join(ASSETS, path.basename(url.pathname));
@@ -147,6 +164,21 @@ function check(name, condition) {
   const goneHtml = await dumpDom(`${base}/collections/gone`);
   check("Ended 2 hours ago: the card is hidden", /id="card-gone"[^>]*display:\s*none/.test(goneHtml));
   check("A live auction card on the same page stays visible with its badge", !/id="card-live"[^>]*display:\s*none/.test(goneHtml) && segment(goneHtml, "card-live").includes(BADGE));
+
+  const tableHtml = await dumpDom(`${base}/collections/table`);
+  check("Older table-style theme: the ended card is hidden", /id="card-tgone"[^>]*display:\s*none/.test(tableHtml));
+  check("Older table-style theme: the live card keeps its badge", tableHtml.slice(tableHtml.indexOf('id="card-tlive"')).slice(0, 3000).includes(BADGE));
+  const articleHtml = await dumpDom(`${base}/collections/article`);
+  check("Card with many links to one product: the ended card is hidden", /id="card-agone"[^>]*display:\s*none/.test(articleHtml));
+  check("Card with many links to one product: the live card keeps its badge", articleHtml.slice(articleHtml.indexOf('id="card-alive"')).slice(0, 3000).includes(BADGE));
+
+  const liveHtml = await dumpDom(`${base}/pages/live-block`);
+  check("Live Auctions block shows the three live auctions", count(liveHtml, 'class="hellfire-live__card') === 3);
+  check("Live Auctions block lists the soonest-ending first", liveHtml.indexOf("Ends first") > 0 && liveHtml.indexOf("Ends first") < liveHtml.indexOf("Ends second") && liveHtml.indexOf("Ends second") < liveHtml.indexOf("Ends third"));
+  check("Live Auctions block shows a countdown and a bid count", liveHtml.includes("hellfire-live__time") && liveHtml.includes("3 bids"));
+  check("Live Auctions block never gets duplicate theme-card badges", count(liveHtml, BADGE) === 0);
+  const emptyHtml = await dumpDom(`${base}/pages/live-empty`);
+  check("Live Auctions block hides itself when nothing is running", /class="hellfire-live"[^>]*display:\s*none/.test(emptyHtml));
 
   if (process.env.SHOT_DIR) {
     await screenshot(`${base}/collections/dawn`, path.join(process.env.SHOT_DIR, "cards-dawn.png"));

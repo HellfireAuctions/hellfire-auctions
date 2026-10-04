@@ -1,0 +1,50 @@
+{%- comment -%}
+  Live Auctions: a theme-neutral showcase of the store's running auctions, soonest-ending first.
+  It draws its own cards (it never depends on the theme's product cards) and only ever lists live auctions.
+{%- endcomment -%}
+<div class="hellfire-live"
+  data-hellfire-no-badges
+  data-endpoint="/apps/hellfire-auctions/live-auctions"
+  data-max="{{ block.settings.max_items | default: 8 }}"
+  data-columns="{{ block.settings.columns | default: 'auto' }}"
+  data-hide-empty="{{ block.settings.hide_when_empty }}"
+  data-empty-message="{{ block.settings.empty_message | escape }}"
+  data-currency="{{ shop.currency }}"
+  {{ block.shopify_attributes }}>
+  {%- if block.settings.heading != blank -%}
+    <h2 class="hellfire-live__heading">{{ block.settings.heading | escape }}</h2>
+  {%- endif -%}
+  <div class="hellfire-live__grid" aria-live="polite"></div>
+  {%- if block.settings.view_all_url != blank -%}
+    <p class="hellfire-live__all"><a href="{{ block.settings.view_all_url }}">{{ block.settings.view_all_label | default: 'View all auctions' | escape }}</a></p>
+  {%- endif -%}
+</div>
+{{ 'live-auctions.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'live-auctions.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "Live Auctions",
+  "target": "section",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Live Auctions" },
+    { "type": "range", "id": "max_items", "label": "Auctions to show", "min": 1, "max": 24, "step": 1, "default": 8 },
+    {
+      "type": "select",
+      "id": "columns",
+      "label": "Columns on large screens",
+      "options": [
+        { "value": "auto", "label": "Automatic" },
+        { "value": "2", "label": "2" },
+        { "value": "3", "label": "3" },
+        { "value": "4", "label": "4" }
+      ],
+      "default": "auto"
+    },
+    { "type": "checkbox", "id": "hide_when_empty", "label": "Hide this section when no auction is running", "default": true },
+    { "type": "text", "id": "empty_message", "label": "Message when nothing is running", "default": "No live auctions right now. Check back soon." },
+    { "type": "url", "id": "view_all_url", "label": "View all link (optional)" },
+    { "type": "text", "id": "view_all_label", "label": "View all link text", "default": "View all auctions" }
+  ]
+}
+{% endschema %}

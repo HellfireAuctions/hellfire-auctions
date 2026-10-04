@@ -1,0 +1,29 @@
+/* Live Auctions block: neutral on purpose (inherits the theme's fonts and colours). */
+.hellfire-live { max-width: 1200px; margin: 0 auto; padding: 24px 16px; color: inherit; font-family: inherit; box-sizing: border-box; }
+.hellfire-live *, .hellfire-live *::before, .hellfire-live *::after { box-sizing: border-box; }
+.hellfire-live__heading { margin: 0 0 16px; }
+.hellfire-live__grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); }
+.hellfire-live[data-columns="2"] .hellfire-live__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.hellfire-live[data-columns="3"] .hellfire-live__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hellfire-live[data-columns="4"] .hellfire-live__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 720px) {
+  .hellfire-live[data-columns="3"] .hellfire-live__grid,
+  .hellfire-live[data-columns="4"] .hellfire-live__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 380px) {
+  .hellfire-live[data-columns] .hellfire-live__grid { grid-template-columns: minmax(0, 1fr); }
+}
+.hellfire-live__card { position: relative; display: flex; flex-direction: column; overflow: hidden; border: 1px solid rgba(127, 127, 127, 0.35); border-radius: 12px; color: inherit; text-decoration: none; background: transparent; }
+.hellfire-live__card:hover, .hellfire-live__card:focus-visible { border-color: currentColor; }
+@media (prefers-reduced-motion: no-preference) { .hellfire-live__card { transition: transform 0.15s ease; } .hellfire-live__card:hover { transform: translateY(-2px); } }
+.hellfire-live__media { aspect-ratio: 1 / 1; background: rgba(127, 127, 127, 0.12); }
+.hellfire-live__media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hellfire-live__body { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px 14px; }
+.hellfire-live__title { font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+.hellfire-live__bid strong { font-weight: 800; }
+.hellfire-live__meta { display: flex; justify-content: space-between; gap: 8px; font-size: 0.875em; opacity: 0.85; }
+.hellfire-live__time { font-variant-numeric: tabular-nums; font-weight: 700; }
+.hellfire-live__chip { position: absolute; top: 10px; left: 10px; padding: 3px 9px; border-radius: 999px; background: #d4380d; color: #fff; font-size: 0.75em; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
+.hellfire-live__chip--test { background: #6b6b6b; }
+.hellfire-live__card.is-soon .hellfire-live__time { color: #d4380d; }
+.hellfire-live__empty, .hellfire-live__all { margin: 8px 0 0; }

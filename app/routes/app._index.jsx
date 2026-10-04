@@ -954,7 +954,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, removedCount: hiddenIds.length, showRemoved, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, removedCount: hiddenIds.length, showRemoved, liveBlockUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/themes/current/editor?template=index&addAppBlockId=${process.env.SHOPIFY_API_KEY}/live-auctions&target=newAppsSection`, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -2163,7 +2163,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, removedCount = 0, showRemoved = false } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, liveBlockUrl, removedCount = 0, showRemoved = false } = useLoaderData();
   const paidCount = auctions.filter((a) => a.paymentStatus === "COMPLETED").length;
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
@@ -2274,6 +2274,10 @@ export default function AuctionsPage() {
           <li>
             <strong>Let winners add to an order they already have.</strong> Winners already see every shipping option your store offers on their invoice and pick the one they want. To support "add to my existing order," open{" "}
             <s-link href={shippingSettingsUrl} target="_top">Settings, Shipping and delivery</s-link>, open your shipping profile, and add a rate named <em>Add to my existing order (free)</em> at $0.00. When a winner picks it, add the item to their earlier order (it's on their customer page) before shipping.
+          </li>
+          <li>
+            <strong>Show your live auctions on any page.</strong> Add the <em>Live Auctions</em> block, for example to your home page. It lists only running auctions, soonest-ending first, and matches your theme's fonts and colors.{" "}
+            <s-link href={liveBlockUrl} target="_top">Add the Live Auctions block to my home page</s-link>
           </li>
         </ol>
       </details>

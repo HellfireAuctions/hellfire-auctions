@@ -692,8 +692,8 @@ async function ownerWatchdog() {
   const dayAgo = new Date(Date.now() - 24 * 3600_000);
   const monthAgo = new Date(Date.now() - 30 * 24 * 3600_000);
   const [emails24h, emails30d, dbRows, storeRows] = await Promise.all([
-    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" } } }),
-    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF"] } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF"] } } }),
     prisma.$queryRaw`SELECT pg_database_size(current_database())::bigint AS bytes`,
     prisma.auction.groupBy({ by: ["shop"], where: { createdAt: { gte: monthAgo } } }),
   ]);

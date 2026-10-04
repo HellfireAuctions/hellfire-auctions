@@ -720,9 +720,16 @@ export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
   const timezone = await shopTimezone(admin);
 
+  const showRemoved = new URL(request.url).searchParams.get("removed") === "1";
+  const hiddenRows = await prisma.$queryRaw`
+    SELECT n."auctionId" AS id FROM "AuctionNotification" n
+    JOIN "Auction" a ON a."id" = n."auctionId"
+    WHERE a."shop" = ${session.shop} AND n."type" = 'ADMIN_HIDDEN'`;
+  const hiddenIds = hiddenRows.map((r) => r.id);
   const auctions = await prisma.auction.findMany({
     where: {
       shop: session.shop,
+      ...(showRemoved ? { id: { in: hiddenIds } } : hiddenIds.length ? { id: { notIn: hiddenIds } } : {}),
     },
     orderBy: {
       createdAt: "desc",
@@ -947,7 +954,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, removedCount: hiddenIds.length, showRemoved, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -964,6 +971,30 @@ const actionImpl = async ({ request }) => {
     } catch (error) {
       return { error: "Couldn't update your menu. Please open the app again and approve the new permission, then retry." };
     }
+  }
+
+  if (["hide-auction", "unhide-auction", "hide-paid"].includes(intent)) {
+    if (intent === "hide-paid") {
+      const paidRows = await prisma.$queryRaw`
+        SELECT n."auctionId" AS id FROM "AuctionNotification" n
+        JOIN "Auction" a ON a."id" = n."auctionId"
+        WHERE a."shop" = ${session.shop} AND n."type" = 'PAID'`;
+      if (!paidRows.length) return { success: "There are no paid auctions to clear." };
+      await prisma.auctionNotification.createMany({
+        data: paidRows.map((r) => ({ auctionId: r.id, customerId: "__admin__", type: "ADMIN_HIDDEN", key: "1" })),
+        skipDuplicates: true,
+      });
+      return { success: `Removed ${paidRows.length} paid auction${paidRows.length === 1 ? "" : "s"} from the list. Your records and insights are unchanged. Use "Show removed" to bring any back.` };
+    }
+    const hideId = formData.get("auctionId")?.toString() || "";
+    const owned = await prisma.auction.findFirst({ where: { id: hideId, shop: session.shop }, select: { id: true } });
+    if (!owned) return { error: "Auction could not be found." };
+    if (intent === "hide-auction") {
+      await prisma.auctionNotification.createMany({ data: [{ auctionId: hideId, customerId: "__admin__", type: "ADMIN_HIDDEN", key: "1" }], skipDuplicates: true });
+      return { success: "Removed from the list. Use \"Show removed\" to bring it back." };
+    }
+    await prisma.auctionNotification.deleteMany({ where: { auctionId: hideId, type: "ADMIN_HIDDEN" } });
+    return { success: "Restored to the list." };
   }
 
   if (["remind-winner", "offer-next", "cancel-sale", "combine-wins"].includes(intent)) {
@@ -2131,7 +2162,8 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, removedCount = 0, showRemoved = false } = useLoaderData();
+  const paidCount = auctions.filter((a) => a.paymentStatus === "COMPLETED").length;
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
   const revalidator = useRevalidator();
@@ -2275,6 +2307,22 @@ export default function AuctionsPage() {
       </s-section>
 
       <s-section heading="Auctions">
+        {(paidCount > 0 || removedCount > 0 || showRemoved) && (
+          <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", margin: "0 0 14px" }}>
+            {showRemoved && <strong>Removed auctions</strong>}
+            {!showRemoved && paidCount > 0 && (
+              <Form method="post" onSubmit={(e) => { if (!window.confirm("Remove all paid auctions from this list? They stay in your records and insights, and you can bring them back from Show removed.")) e.preventDefault(); }}>
+                <input type="hidden" name="intent" value="hide-paid" />
+                <s-button type="submit" variant="secondary">Clear all paid ({paidCount})</s-button>
+              </Form>
+            )}
+            {showRemoved ? (
+              <s-link href="/app">Back to your auctions</s-link>
+            ) : removedCount > 0 ? (
+              <s-link href="/app?removed=1">Show removed ({removedCount})</s-link>
+            ) : null}
+          </div>
+        )}
 
         {auctions.length === 0 ? (
           <s-empty-state heading="No auctions yet">
@@ -2438,6 +2486,19 @@ export default function AuctionsPage() {
                       >
                         Sell similar
                       </s-button>
+                      {showRemoved ? (
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="unhide-auction" />
+                          <input type="hidden" name="auctionId" value={auction.id} />
+                          <s-button type="submit" variant="tertiary">Restore</s-button>
+                        </Form>
+                      ) : auction.paymentStatus === "COMPLETED" ? (
+                        <Form method="post">
+                          <input type="hidden" name="intent" value="hide-auction" />
+                          <input type="hidden" name="auctionId" value={auction.id} />
+                          <s-button type="submit" variant="tertiary">Remove from list</s-button>
+                        </Form>
+                      ) : null}
                       {state !== "ENDED" && auction.status !== "CANCELLED" && (
                         <Form method="post" onSubmit={(e) => { if (!window.confirm("End this auction now WITHOUT a sale? Nobody will be invoiced and the product will be hidden. Use this if there's a problem with the item.")) e.preventDefault(); }}>
                           <input type="hidden" name="intent" value="end" />

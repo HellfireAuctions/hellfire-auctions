@@ -795,7 +795,30 @@ export async function notifyCombinedInvoice({ shop, customerId, count, total, ur
       `We combined your ${count} unpaid wins into one invoice (${money(total)} before shipping and tax), so you only pay shipping once.`,
       "Your earlier separate invoice links no longer work. Please use the button below and pay within 4 days.",
     ],
-    buttonLabel: "Pay for all together",
+    buttonLabel: "Pay all wins together",
+    buttonUrl: url,
+    shopName: data?.shop?.name || "the store",
+    replyTo: data?.shop?.contactEmail,
+  });
+}
+
+// A new win was added to the buyer's unpaid COMBINED invoice.
+export async function notifyJoinedInvoice({ shop, customerId, title, count, total, url }) {
+  if (!notificationsEnabled()) return;
+  const data = await lookup(shop, customerId, "gid://shopify/Product/0");
+  useCurrency(data);
+  const email = data?.customer?.email;
+  if (!email) return;
+  await sendEmail({
+    to: email,
+    subject: `Added to your invoice: ${title}`,
+    heading: "Another win added to your invoice",
+    lines: [
+      "Hey there,",
+      `You won "${title}". Because you chose to pay your wins together, we added it to your combined invoice, so you still pay shipping only once.`,
+      `Your invoice now has ${count} items (${money(total)} before shipping and tax). Your 4-day payment window restarted today.`,
+    ],
+    buttonLabel: "Pay all wins together",
     buttonUrl: url,
     shopName: data?.shop?.name || "the store",
     replyTo: data?.shop?.contactEmail,

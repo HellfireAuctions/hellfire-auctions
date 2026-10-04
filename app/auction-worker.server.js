@@ -3,7 +3,7 @@ import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { isDevelopmentStore } from "./plans.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice } from "./notifications.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -36,6 +36,11 @@ function throwUserErrors(userErrors) {
 async function createAndSendWinnerInvoice(auction, winnerId, opts = {}) {
   // Inventory apps or manual edits can set the item to 0, which would break the winner's checkout.
   await ensureInvoiceStock(auction).catch((error) => console.error("[hellfire-auctions] stock re-check failed:", error?.message || error));
+  // A buyer who already combined their wins into one unpaid invoice gets new wins added to it.
+  if (!auction.winnerDraftOrderId && !opts.secondChance) {
+    const joined = await tryJoinCombinedInvoice(auction, winnerId);
+    if (joined) return joined;
+  }
   let draftOrderId = auction.winnerDraftOrderId || null;
   let checkoutUrl = auction.winnerCheckoutUrl || null;
 
@@ -966,6 +971,60 @@ export async function combineWinnerInvoices(shop, customerId, { notifyBuyer = fa
   } catch (error) {
     console.error("[hellfire-auctions] combine failed:", error?.message || error);
     return { error: "Couldn't combine the invoices. Please try again, or pay each one separately." };
+  } finally {
+    combining.delete(lockKey);
+  }
+}
+
+// Joins a new win onto the buyer's unpaid COMBINED invoice (two or more items already on one invoice they chose).
+// Anything unexpected falls back to a normal separate invoice, so a win is never left without one.
+async function tryJoinCombinedInvoice(auction, winnerId) {
+  const shop = auction.shop;
+  const lockKey = `${shop}|${winnerId}`;
+  if (combining.has(lockKey)) return null;
+  combining.add(lockKey);
+  try {
+    const others = await prisma.auction.findMany({
+      where: { shop, winnerId: String(winnerId), status: "ENDED", winnerDraftOrderId: { not: null }, id: { not: auction.id } },
+      select: { id: true, title: true, productId: true, currentBid: true, winnerDraftOrderId: true, winnerCheckoutUrl: true },
+    });
+    const byDraft = new Map();
+    for (const o of others) {
+      if (!byDraft.has(o.winnerDraftOrderId)) byDraft.set(o.winnerDraftOrderId, []);
+      byDraft.get(o.winnerDraftOrderId).push(o);
+    }
+    for (const [draftId, items] of byDraft) {
+      if (items.length < 2) continue; // only invoices the buyer already combined
+      if (!["OPEN", "INVOICE_SENT"].includes(await draftStatus(shop, draftId))) continue;
+      const everything = [...items, auction];
+      const lines = [];
+      for (const item of everything) {
+        const line = await variantLine(shop, item);
+        if (!line) return null;
+        lines.push(line);
+      }
+      const r = await adminGraphql(shop, `#graphql
+        mutation JoinDraft($id: ID!, $input: DraftOrderInput!) {
+          draftOrderUpdate(id: $id, input: $input) { draftOrder { id } userErrors { message } }
+        }`, { id: draftId, input: { lineItems: lines } });
+      if ((r?.draftOrderUpdate?.userErrors || []).length || !r?.draftOrderUpdate?.draftOrder?.id) return null;
+      const checkoutUrl = items[0].winnerCheckoutUrl;
+      const total = everything.reduce((s, x) => s + Number(x.currentBid || 0), 0);
+      await prisma.auction.updateMany({ where: { winnerDraftOrderId: draftId }, data: { winnerNotifiedAt: new Date() } });
+      await prisma.auction.update({
+        where: { id: auction.id },
+        data: { winnerDraftOrderId: draftId, winnerCheckoutUrl: checkoutUrl, winnerNotifiedAt: new Date() },
+      });
+      console.log("[hellfire-auctions] win joined the buyer's combined invoice", JSON.stringify({ shop, winnerId, items: everything.length }));
+      notifyJoinedInvoice({ shop, customerId: winnerId, title: auction.title, count: everything.length, total, url: checkoutUrl }).catch((error) =>
+        console.error("[hellfire-auctions] joined-invoice email failed:", error?.message || error),
+      );
+      return { draftOrderId: draftId, checkoutUrl };
+    }
+    return null;
+  } catch (error) {
+    console.error("[hellfire-auctions] join failed, issuing a separate invoice:", error?.message || error);
+    return null;
   } finally {
     combining.delete(lockKey);
   }

@@ -52,7 +52,7 @@ const STATUS = {
   UPCOMING: { text: "UPCOMING", bg: "#b98900" },
 };
 
-// Unpaid wins: a Pay now / Pay for all together banner (statuses cached for 45 seconds).
+// Unpaid wins: a Pay now / Pay all wins together banner (statuses cached for 45 seconds).
 const unpaidCache = new Map();
 async function combineBanner(shop, auctions, customerId, money) {
   const wins = auctions.filter((a) => String(a.winnerId) === String(customerId) && a.winnerDraftOrderId && a.winnerCheckoutUrl);
@@ -88,7 +88,7 @@ async function combineBanner(shop, auctions, customerId, money) {
   if (drafts.size === 1) {
     return `<div style="${box}"><div><strong>Your ${unpaid.length} wins are on one invoice</strong><br>${money(total)} in total, one shipping charge</div><a href="${esc(unpaid[0].winnerCheckoutUrl)}" style="${btn}">Pay now</a></div>`;
   }
-  return `<div style="${box}"><div><strong>You have ${unpaid.length} unpaid wins</strong> (${money(total)})<br>Pay for all together and pay shipping once.<div id="hf-combine-msg" style="color:#8a1c13;margin-top:4px"></div></div><button id="hf-combine-btn" type="button" style="${btn}">Pay for all together</button></div>`;
+  return `<div style="${box}"><div><strong>You have ${unpaid.length} unpaid wins</strong> (${money(total)})<br>Pay all wins together and pay shipping once.<div id="hf-combine-msg" style="color:#8a1c13;margin-top:4px"></div></div><button id="hf-combine-btn" type="button" style="${btn}">Pay all wins together</button></div>`;
 }
 
 export const loader = async ({ request }) => {
@@ -211,7 +211,7 @@ export const loader = async ({ request }) => {
         window.__hfBusy = true; cb.disabled = true; cb.textContent = "Preparing your invoice...";
         function fail(msg) {
           document.getElementById("hf-combine-msg").textContent = msg || "Couldn't combine your wins. Please try again.";
-          cb.disabled = false; cb.textContent = "Pay for all together"; window.__hfBusy = false;
+          cb.disabled = false; cb.textContent = "Pay all wins together"; window.__hfBusy = false;
         }
         fetch("/apps/hellfire-auctions/combine-invoice", { method: "POST", credentials: "same-origin" })
           .then(function (r) { return r.json(); })

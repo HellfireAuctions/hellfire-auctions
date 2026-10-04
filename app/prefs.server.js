@@ -28,11 +28,21 @@ export function prefsUrl(shop, customerId) {
 
 export async function getPrefs(shop, customerId) {
   const row = await prisma.notificationPref.findUnique({ where: { shop_customerId: { shop, customerId: String(customerId) } } });
-  return { outbid: row?.outbid ?? true, reminders: row?.reminders ?? true, results: row?.results ?? true };
+  return {
+    outbid: row?.outbid ?? true,
+    reminders: row?.reminders ?? true,
+    results: row?.results ?? true,
+    essentialOnly: row?.essentialOnly ?? false,
+  };
 }
 
 export async function savePrefs(shop, customerId, prefs) {
-  const data = { outbid: Boolean(prefs.outbid), reminders: Boolean(prefs.reminders), results: Boolean(prefs.results) };
+  const data = {
+    outbid: Boolean(prefs.outbid),
+    reminders: Boolean(prefs.reminders),
+    results: Boolean(prefs.results),
+    essentialOnly: Boolean(prefs.essentialOnly),
+  };
   await prisma.notificationPref.upsert({
     where: { shop_customerId: { shop, customerId: String(customerId) } },
     create: { shop, customerId: String(customerId), ...data },
@@ -41,7 +51,9 @@ export async function savePrefs(shop, customerId, prefs) {
   return data;
 }
 
-export async function prefsAllow(shop, customerId, category) {
+// With "only necessary emails" on, the only optional-type email still sent is the 1-hour-left reminder.
+export async function prefsAllow(shop, customerId, category, type) {
   const prefs = await getPrefs(shop, customerId);
+  if (prefs.essentialOnly) return type === "ENDING_SOON";
   return prefs[category] !== false;
 }

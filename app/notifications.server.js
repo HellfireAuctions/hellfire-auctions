@@ -97,7 +97,7 @@ async function claimNotice({ auctionId, customerId, type, key }) {
   const category = OPTIONAL_CATEGORY[type];
   if (category && auctionId && customerId) {
     const owner = await prisma.auction.findUnique({ where: { id: auctionId }, select: { shop: true } });
-    if (owner && !(await prefsAllow(owner.shop, customerId, category))) return false; // the customer turned this off
+    if (owner && !(await prefsAllow(owner.shop, customerId, category, type))) return false; // the customer turned this off
   }
   try {
     await prisma.auctionNotification.create({

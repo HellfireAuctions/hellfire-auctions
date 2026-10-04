@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Form, useActionData, useLoaderData } from "react-router";
 import { getPrefs, readPrefsToken, savePrefs } from "../prefs.server";
 
@@ -10,8 +11,8 @@ const S = {
   page: { maxWidth: 560, margin: "0 auto", padding: "40px 22px 70px", fontFamily: "Arial, Helvetica, sans-serif", color: "#1c1c1c", lineHeight: 1.55 },
   card: { border: "1px solid #e3e3e3", borderRadius: 16, padding: "22px 20px", background: "#fff" },
   row: { display: "flex", gap: 12, alignItems: "flex-start", padding: "12px 0", borderBottom: "1px solid #eee" },
-  btn: { background: "#ff3b30", color: "#fff", fontWeight: 800, padding: "12px 20px", borderRadius: 8, border: 0, cursor: "pointer", fontSize: 15 },
-  btn2: { background: "#fff", color: "#1c1c1c", fontWeight: 700, padding: "12px 20px", borderRadius: 8, border: "2px solid #1c1c1c", cursor: "pointer", fontSize: 15 },
+  master: { display: "flex", gap: 12, alignItems: "flex-start", padding: "14px", background: "#fff8e1", border: "1px solid #ffd60a", borderRadius: 12, marginBottom: 16 },
+  btn: { background: "#ff3b30", color: "#fff", fontWeight: 800, padding: "12px 22px", borderRadius: 8, border: 0, cursor: "pointer", fontSize: 15 },
 };
 
 export const loader = async ({ request }) => {
@@ -26,20 +27,24 @@ export const action = async ({ request }) => {
   const who = readPrefsToken(token);
   if (!who) return Response.json({ error: "This link isn't valid." }, { status: 400 });
   const form = await request.formData();
-  // One-click unsubscribe, sent by mail providers as "List-Unsubscribe=One-Click".
+  // One-click unsubscribe, sent by mail providers as "List-Unsubscribe=One-Click": keep only the necessary emails.
   if (form.get("List-Unsubscribe")) {
-    await savePrefs(who.shop, who.customerId, { outbid: false, reminders: false, results: false });
+    await savePrefs(who.shop, who.customerId, { outbid: false, reminders: false, results: false, essentialOnly: true });
     return new Response("Unsubscribed", { status: 200 });
   }
-  const none = form.get("intent") === "none";
+  const essentialOnly = form.get("essentialOnly") === "on";
+  const current = await getPrefs(who.shop, who.customerId);
   const prefs = await savePrefs(
     who.shop,
     who.customerId,
-    none ? { outbid: false, reminders: false, results: false } : {
-      outbid: form.get("outbid") === "on",
-      reminders: form.get("reminders") === "on",
-      results: form.get("results") === "on",
-    },
+    essentialOnly
+      ? { ...current, essentialOnly: true } // keep their individual choices for later
+      : {
+          outbid: form.get("outbid") === "on",
+          reminders: form.get("reminders") === "on",
+          results: form.get("results") === "on",
+          essentialOnly: false,
+        },
   );
   return { saved: true, prefs };
 };
@@ -47,6 +52,9 @@ export const action = async ({ request }) => {
 export default function EmailPreferences() {
   const data = useLoaderData();
   const result = useActionData();
+  const prefs = data.valid ? result?.prefs || data.prefs : null;
+  const [essential, setEssential] = useState(Boolean(prefs?.essentialOnly));
+
   if (!data.valid) {
     return (
       <main style={S.page}>
@@ -55,7 +63,7 @@ export default function EmailPreferences() {
       </main>
     );
   }
-  const prefs = result?.prefs || data.prefs;
+  const dim = { opacity: essential ? 0.5 : 1 };
   return (
     <main style={S.page}>
       <h1 style={{ margin: "0 0 6px" }}>Email preferences</h1>
@@ -65,22 +73,42 @@ export default function EmailPreferences() {
           Saved. Your choices are updated.
         </div>
       )}
-      <Form method="post" action={`/email-preferences?t=${data.token}`} key={JSON.stringify(prefs)} style={S.card}>
-        <label style={S.row}>
-          <input type="checkbox" name="outbid" defaultChecked={prefs.outbid} style={{ marginTop: 4 }} />
-          <span><strong>Outbid alerts</strong><br />Tell me right away when someone outbids me.</span>
+      <Form method="post" action={`/email-preferences?t=${data.token}`} style={S.card}>
+        <label style={S.master}>
+          <input
+            type="checkbox"
+            name="essentialOnly"
+            checked={essential}
+            onChange={(e) => setEssential(e.target.checked)}
+            style={{ marginTop: 3, width: 20, height: 20 }}
+          />
+          <span>
+            <strong>Receive only necessary emails</strong>
+            <br />
+            <span style={{ color: "#616161", fontSize: 14 }}>
+              Necessary emails are the "1 hour left" reminder before an auction ends, and emails about auctions you win: your winner notice, your invoice and payment reminders. Turning this on switches off everything else, including outbid alerts, "starting" alerts for auctions you're watching, and results emails.
+            </span>
+          </span>
         </label>
-        <label style={S.row}>
-          <input type="checkbox" name="reminders" defaultChecked={prefs.reminders} style={{ marginTop: 4 }} />
-          <span><strong>Reminders</strong><br />"1 hour left" on auctions I bid on, and "starting" or "ending soon" on auctions I'm watching.</span>
-        </label>
-        <label style={{ ...S.row, borderBottom: 0 }}>
-          <input type="checkbox" name="results" defaultChecked={prefs.results} style={{ marginTop: 4 }} />
-          <span><strong>Results</strong><br />When an auction ends and I didn't win, or the reserve wasn't met.</span>
-        </label>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+
+        <div style={dim}>
+          <div style={{ fontWeight: 700, margin: "4px 0" }}>Or choose exactly what you'd like</div>
+          <label style={S.row}>
+            <input type="checkbox" name="outbid" defaultChecked={prefs.outbid} disabled={essential} style={{ marginTop: 4 }} />
+            <span><strong>Outbid alerts</strong><br />Tell me right away when someone outbids me.</span>
+          </label>
+          <label style={S.row}>
+            <input type="checkbox" name="reminders" defaultChecked={prefs.reminders} disabled={essential} style={{ marginTop: 4 }} />
+            <span><strong>Reminders</strong><br />"1 hour left" on auctions I bid on, and "starting" or "ending soon" on auctions I'm watching.</span>
+          </label>
+          <label style={{ ...S.row, borderBottom: 0 }}>
+            <input type="checkbox" name="results" defaultChecked={prefs.results} disabled={essential} style={{ marginTop: 4 }} />
+            <span><strong>Results</strong><br />When an auction ends and I didn't win, or the reserve wasn't met.</span>
+          </label>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
           <button type="submit" name="intent" value="save" style={S.btn}>Save my choices</button>
-          <button type="submit" name="intent" value="none" style={S.btn2}>Turn all of these off</button>
         </div>
       </Form>
       <p style={{ color: "#616161", fontSize: 14, marginTop: 16 }}>

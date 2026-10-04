@@ -131,6 +131,7 @@ model NotificationPref {
   outbid     Boolean  @default(true)
   reminders  Boolean  @default(true)
   results    Boolean  @default(true)
+  essentialOnly Boolean @default(false)
   updatedAt  DateTime @default(now()) @updatedAt
 
   @@unique([shop, customerId])

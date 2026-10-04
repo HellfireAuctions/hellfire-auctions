@@ -1,5 +1,6 @@
 import { authenticate, unauthenticated } from "../shopify.server";
 import { prefsUrl } from "../prefs.server";
+import { runPaymentSweep } from "../auction-worker.server";
 import prisma from "../db.server";
 import { shopCurrency, formatMoney } from "../currency.server";
 import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
@@ -98,6 +99,7 @@ export const loader = async ({ request }) => {
   const currency = await shopCurrency(shop);
   const money = (v) => formatMoney(v, currency);
   const customerId = url.searchParams.get("logged_in_customer_id");
+  runPaymentSweep().catch(() => {}); // pick up payments right away
 
   const header = `<div data-hellfire-no-badges style="max-width:1100px;margin:0 auto;padding:32px 20px 60px">
     <h1 style="margin:0 0 6px">My Auctions</h1>`;

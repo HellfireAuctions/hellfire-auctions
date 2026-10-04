@@ -5,7 +5,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction, getShopPlan } from "../plans.server";
-import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor } from "../auction-worker.server";
+import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep } from "../auction-worker.server";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -769,6 +769,7 @@ export const loader = async ({ request }) => {
   const blockedRows = await prisma.blockedBidder.findMany({ where: { shop: session.shop }, orderBy: { createdAt: "desc" }, take: 100 });
 
   const planNow = await getShopPlan(session.shop);
+  runPaymentSweep().catch(() => {}); // pick up payments while the merchant is looking
   const totalAuctions = await prisma.auction.count({ where: { shop: session.shop } });
   const liveIds = auctions
     .filter((a) => new Date(a.startsAt).getTime() <= Date.now() && new Date(a.endsAt).getTime() > Date.now())

@@ -1034,8 +1034,8 @@ async function tryJoinCombinedInvoice(auction, winnerId) {
 
 // ---------- paid invoices: archive the product from the storefront, remember when it was paid ----------
 let lastPaidSweep = 0;
-async function paymentSweep() {
-  if (Date.now() - lastPaidSweep < 9 * 60_000) return;
+async function paymentSweep(minGapMs = 9 * 60_000) {
+  if (Date.now() - lastPaidSweep < minGapMs) return;
   lastPaidSweep = Date.now();
   const rows = await prisma.auction.findMany({
     where: {
@@ -1067,6 +1067,12 @@ async function paymentSweep() {
           query PaidStatuses($ids: [ID!]!) { nodes(ids: $ids) { ... on DraftOrder { id status } } }`, { ids: draftIds.slice(i, i + 50) });
         for (const n of d?.nodes || []) if (n?.id) statusById.set(n.id, n.status);
       }
+      const tally = {};
+      for (const r of list) {
+        const s = statusById.get(r.winnerDraftOrderId) || "NOT_FOUND";
+        tally[s] = (tally[s] || 0) + 1;
+      }
+      console.log("[hellfire-auctions] payment sweep:", shop, JSON.stringify(tally));
       for (const r of list) {
         if (statusById.get(r.winnerDraftOrderId) !== "COMPLETED") continue;
         if (!paidMarked.has(r.id)) {
@@ -1088,6 +1094,12 @@ async function paymentSweep() {
       console.error("[hellfire-auctions] payment sweep failed for", shop, error?.message || error);
     }
   }
+}
+
+// Also run when a merchant opens the app or a customer opens My Auctions (at most every 45 seconds),
+// so a paid item is archived within a minute of the buyer coming back to the store.
+export async function runPaymentSweep(minGapMs = 45_000) {
+  return paymentSweep(minGapMs);
 }
 
 async function tick() {

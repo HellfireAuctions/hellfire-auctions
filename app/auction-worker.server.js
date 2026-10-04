@@ -692,8 +692,8 @@ async function ownerWatchdog() {
   const dayAgo = new Date(Date.now() - 24 * 3600_000);
   const monthAgo = new Date(Date.now() - 30 * 24 * 3600_000);
   const [emails24h, emails30d, dbRows, storeRows] = await Promise.all([
-    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF"] } } }),
-    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF"] } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED"] } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED"] } } }),
     prisma.$queryRaw`SELECT pg_database_size(current_database())::bigint AS bytes`,
     prisma.auction.groupBy({ by: ["shop"], where: { createdAt: { gte: monthAgo } } }),
   ]);
@@ -1102,6 +1102,58 @@ export async function runPaymentSweep(minGapMs = 45_000) {
   return paymentSweep(minGapMs);
 }
 
+// ---------- unsold auctions: take the product off the Online Store (any theme, anywhere on the store) ----------
+// An auction that ended with no winner (no bids, reserve not met, ended early, or a test on a live store) is
+// unpublished 10 minutes after it ends. Relisting republishes it. Sold items are archived once paid instead.
+let lastUnsoldSweep = 0;
+async function unsoldSweep(minGapMs = 9 * 60_000) {
+  if (Date.now() - lastUnsoldSweep < minGapMs) return;
+  lastUnsoldSweep = Date.now();
+  const rows = await prisma.auction.findMany({
+    where: {
+      status: { in: ["ENDED", "CANCELLED"] },
+      winnerId: null,
+      endsAt: { lt: new Date(Date.now() - 10 * 60_000), gt: new Date(Date.now() - 7 * 24 * 3600_000) },
+    },
+    orderBy: { endsAt: "desc" },
+    take: 200,
+  });
+  if (!rows.length) return;
+  const marks = await prisma.auctionNotification.findMany({
+    where: { auctionId: { in: rows.map((r) => r.id) }, type: "UNPUBLISHED" },
+    select: { auctionId: true },
+  });
+  const handled = new Set(marks.map((m) => m.auctionId));
+  const publicationByShop = new Map();
+  for (const r of rows.filter((x) => !handled.has(x.id))) {
+    try {
+      // If the item was relisted (a newer auction exists for the same product), leave it on sale.
+      const newer = await prisma.auction.count({ where: { shop: r.shop, productId: r.productId, createdAt: { gt: r.createdAt } } });
+      if (newer) {
+        await prisma.auctionNotification.create({ data: { auctionId: r.id, customerId: "__admin__", type: "UNPUBLISHED", key: "skipped" } }).catch(() => {});
+        continue;
+      }
+      if (!publicationByShop.has(r.shop)) {
+        const d = await adminGraphql(r.shop, `#graphql
+          query OnlineStorePublication { publications(first: 50) { nodes { id name } } }`);
+        publicationByShop.set(r.shop, d?.publications?.nodes?.find((p) => p.name === "Online Store")?.id || null);
+      }
+      const publicationId = publicationByShop.get(r.shop);
+      if (!publicationId) continue;
+      const res = await adminGraphql(r.shop, `#graphql
+        mutation UnpublishUnsold($id: ID!, $input: [PublicationInput!]!) {
+          publishableUnpublish(id: $id, input: $input) { userErrors { message } }
+        }`, { id: r.productId, input: [{ publicationId }] });
+      const errors = res?.publishableUnpublish?.userErrors || [];
+      if (errors.length) throw new Error(errors.map((e) => e.message).join(", "));
+      await prisma.auctionNotification.create({ data: { auctionId: r.id, customerId: "__admin__", type: "UNPUBLISHED", key: "1" } }).catch(() => {});
+      console.log("[hellfire-auctions] unsold auction taken off the store", r.id);
+    } catch (error) {
+      console.error("[hellfire-auctions] unpublish failed:", r.id, error?.message || error);
+    }
+  }
+}
+
 async function tick() {
   await winnerCatchUpOnce().catch((error) => console.error("[hellfire-auctions] winner catch-up error:", error?.message || error));
   await backfillBidHistoryOnce().catch((error) => console.error("[hellfire-auctions] history backfill error:", error?.message || error));
@@ -1113,6 +1165,7 @@ async function tick() {
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));
   await paymentSweep().catch((error) => console.error("[hellfire-auctions] payment sweep error:", error?.message || error));
+  await unsoldSweep().catch((error) => console.error("[hellfire-auctions] unsold sweep error:", error?.message || error));
   await sendWatcherReminders().catch((error) => console.error("[hellfire-auctions] watcher reminders error:", error?.message || error));
   const now = new Date();
 

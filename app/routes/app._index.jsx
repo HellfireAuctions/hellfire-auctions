@@ -1145,6 +1145,7 @@ const actionImpl = async ({ request }) => {
       try {
         await setProductStatus("ACTIVE");
         await liveCollection(true);
+        await ensureAuctionStorefront(admin, target.productId); // republish if it was taken off the store
       } catch (error) {
         return { error: "Couldn't put the product back on sale in Shopify: " + (error?.message || error) };
       }
@@ -2435,6 +2436,9 @@ export default function AuctionsPage() {
                       <div style={{ fontSize: 12, color: "#b98900", fontWeight: 600 }}>
                         Test auction: no order or invoice is created on live stores
                       </div>
+                    )}
+                    {state === "ENDED" && !auction.winnerId && auction.status !== "CANCELLED" && (
+                      <div style={{ fontSize: 12, color: "#616161" }}>Unsold: taken off your store a few minutes after it ends. Relist to put it back.</div>
                     )}
                     {auction.autoExtend && (
                       <div style={{ fontSize: 12, color: "#616161" }}>Anti-sniping on</div>

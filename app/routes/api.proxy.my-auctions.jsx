@@ -137,8 +137,15 @@ export const loader = async ({ request }) => {
   const links = await productLinks(shop, [...new Set(auctions.map((a) => a.productId))]);
   const plan = await getShopPlan(shop);
 
+  // Paid items leave the main list; the last 30 days appear in their own "Paid" section.
+  const paidMarks = await prisma.auctionNotification.findMany({
+    where: { type: "PAID", customerId: String(customerId), auctionId: { in: ids } },
+    select: { auctionId: true, sentAt: true },
+  });
+  const paidAt = new Map(paidMarks.map((m) => [m.auctionId, m.sentAt]));
+
   const now = new Date();
-  const rows = auctions.map((a) => {
+  const rows = auctions.filter((a) => !paidAt.has(a.id)).map((a) => {
     const ended = now >= a.endsAt;
     const iLead = leader.get(a.id) === customerId;
     const reserveOk = a.reservePrice == null || Number(a.currentBid) >= Number(a.reservePrice);
@@ -188,10 +195,26 @@ export const loader = async ({ request }) => {
     })
     .join("");
 
+  const paidCards = auctions
+    .filter((a) => paidAt.has(a.id) && now.getTime() - new Date(paidAt.get(a.id)).getTime() <= 30 * 24 * 3600_000)
+    .sort((x, y) => new Date(paidAt.get(y.id)) - new Date(paidAt.get(x.id)))
+    .map((a) => {
+      const img = a.imageUrl
+        ? `<img src="${esc(a.imageUrl)}" alt="${esc(a.title)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block">`
+        : `<div style="aspect-ratio:1/1;background:linear-gradient(135deg,#3d0000,#ff3b30)"></div>`;
+      const when = new Date(paidAt.get(a.id)).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return `<div style="border:1px solid #e3e3e3;border-radius:12px;overflow:hidden;background:#fff">${img}<div style="padding:10px 12px"><div style="font-weight:700">${esc(a.title)}</div><div style="color:#0f6b34;font-weight:700;margin-top:4px">&#10004; Paid &middot; ${money(a.currentBid)}</div><div style="color:#616161;font-size:13px">${when}</div></div></div>`;
+    })
+    .join("");
+  const paidSection = paidCards
+    ? `<h2 style="margin:36px 0 6px;font-size:20px">Paid</h2><p style="margin:0 0 14px;color:#616161">Items you've paid for in the last 30 days.</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px">${paidCards}</div>`
+    : "";
+
   return liquid(`${header}
     <p style="margin:0 0 22px;color:#616161">Every auction you've bid on or are watching. This page updates itself. <a href="${esc(prefsUrl(shop, customerId))}" style="color:#616161;font-size:14px">Manage my email notifications</a></p>
     ${banner}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px">${cards}</div>
+    ${paidSection}
   </div>
   <script>
     (function () {

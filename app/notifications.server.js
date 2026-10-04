@@ -815,7 +815,7 @@ export async function notifyJoinedInvoice({ shop, customerId, title, count, tota
     heading: "Another win added to your invoice",
     lines: [
       "Hey there,",
-      `You won "${title}". Because you chose to pay your wins together, we added it to your combined invoice, so you still pay shipping only once.`,
+      `You won "${title}". We added it to your open invoice, so you pay shipping only once.`,
       `Your invoice now has ${count} items (${money(total)} before shipping and tax). Your 4-day payment window restarted today.`,
     ],
     buttonLabel: "Pay all wins together",

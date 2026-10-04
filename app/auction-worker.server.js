@@ -986,15 +986,17 @@ async function tryJoinCombinedInvoice(auction, winnerId) {
   try {
     const others = await prisma.auction.findMany({
       where: { shop, winnerId: String(winnerId), status: "ENDED", winnerDraftOrderId: { not: null }, id: { not: auction.id } },
-      select: { id: true, title: true, productId: true, currentBid: true, winnerDraftOrderId: true, winnerCheckoutUrl: true },
+      select: { id: true, title: true, productId: true, currentBid: true, endsAt: true, winnerDraftOrderId: true, winnerCheckoutUrl: true },
     });
     const byDraft = new Map();
     for (const o of others) {
       if (!byDraft.has(o.winnerDraftOrderId)) byDraft.set(o.winnerDraftOrderId, []);
       byDraft.get(o.winnerDraftOrderId).push(o);
     }
-    for (const [draftId, items] of byDraft) {
-      if (items.length < 2) continue; // only invoices the buyer already combined
+    // Prefer the invoice with the most items. Invoices older than 72 hours aren't reopened, so one never grows forever.
+    for (const [draftId, items] of [...byDraft.entries()].sort((a, b) => b[1].length - a[1].length)) {
+      const oldest = Math.min(...items.map((i) => new Date(i.endsAt).getTime()));
+      if (Date.now() - oldest > 72 * 3600_000) continue;
       if (!["OPEN", "INVOICE_SENT"].includes(await draftStatus(shop, draftId))) continue;
       const everything = [...items, auction];
       const lines = [];
@@ -1030,6 +1032,64 @@ async function tryJoinCombinedInvoice(auction, winnerId) {
   }
 }
 
+// ---------- paid invoices: archive the product from the storefront, remember when it was paid ----------
+let lastPaidSweep = 0;
+async function paymentSweep() {
+  if (Date.now() - lastPaidSweep < 9 * 60_000) return;
+  lastPaidSweep = Date.now();
+  const rows = await prisma.auction.findMany({
+    where: {
+      status: "ENDED",
+      winnerId: { not: null },
+      winnerDraftOrderId: { not: null },
+      winnerNotifiedAt: { gte: new Date(Date.now() - 14 * 24 * 3600_000) },
+    },
+    take: 300,
+  });
+  if (!rows.length) return;
+  const marks = await prisma.auctionNotification.findMany({
+    where: { auctionId: { in: rows.map((r) => r.id) }, type: { in: ["PAID", "ARCHIVED"] } },
+    select: { auctionId: true, type: true },
+  });
+  const archived = new Set(marks.filter((m) => m.type === "ARCHIVED").map((m) => m.auctionId));
+  const paidMarked = new Set(marks.filter((m) => m.type === "PAID").map((m) => m.auctionId));
+  const byShop = new Map();
+  for (const r of rows.filter((x) => !archived.has(x.id))) {
+    if (!byShop.has(r.shop)) byShop.set(r.shop, []);
+    byShop.get(r.shop).push(r);
+  }
+  for (const [shop, list] of byShop) {
+    try {
+      const draftIds = [...new Set(list.map((r) => r.winnerDraftOrderId))];
+      const statusById = new Map();
+      for (let i = 0; i < draftIds.length; i += 50) {
+        const d = await adminGraphql(shop, `#graphql
+          query PaidStatuses($ids: [ID!]!) { nodes(ids: $ids) { ... on DraftOrder { id status } } }`, { ids: draftIds.slice(i, i + 50) });
+        for (const n of d?.nodes || []) if (n?.id) statusById.set(n.id, n.status);
+      }
+      for (const r of list) {
+        if (statusById.get(r.winnerDraftOrderId) !== "COMPLETED") continue;
+        if (!paidMarked.has(r.id)) {
+          await prisma.auctionNotification.create({ data: { auctionId: r.id, customerId: String(r.winnerId), type: "PAID", key: "1" } }).catch(() => {});
+        }
+        try {
+          const res = await adminGraphql(shop, `#graphql
+            mutation ArchivePaid($product: ProductUpdateInput!) {
+              productUpdate(product: $product) { product { id } userErrors { message } }
+            }`, { product: { id: r.productId, status: "ARCHIVED" } });
+          if ((res?.productUpdate?.userErrors || []).length) throw new Error(res.productUpdate.userErrors.map((e) => e.message).join(", "));
+          await prisma.auctionNotification.create({ data: { auctionId: r.id, customerId: String(r.winnerId), type: "ARCHIVED", key: "1" } }).catch(() => {});
+          console.log("[hellfire-auctions] paid item archived from the storefront", r.id);
+        } catch (error) {
+          console.error("[hellfire-auctions] archive failed:", r.id, error?.message || error);
+        }
+      }
+    } catch (error) {
+      console.error("[hellfire-auctions] payment sweep failed for", shop, error?.message || error);
+    }
+  }
+}
+
 async function tick() {
   await winnerCatchUpOnce().catch((error) => console.error("[hellfire-auctions] winner catch-up error:", error?.message || error));
   await backfillBidHistoryOnce().catch((error) => console.error("[hellfire-auctions] history backfill error:", error?.message || error));
@@ -1040,6 +1100,7 @@ async function tick() {
   await lockExistingAuctionInventory().catch((error) => console.error("[hellfire-auctions] stock lock error:", error?.message || error));
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));
+  await paymentSweep().catch((error) => console.error("[hellfire-auctions] payment sweep error:", error?.message || error));
   await sendWatcherReminders().catch((error) => console.error("[hellfire-auctions] watcher reminders error:", error?.message || error));
   const now = new Date();
 
@@ -1132,10 +1193,12 @@ async function nextDelayMs() {
     prisma.auction.count({ where: { endsAt: { gt: now, lte: hourAhead } } }),
   ]);
   const waits = [MAX_SLEEP_MS];
-  const unpaidWatch = await prisma.auction.count({
-    where: { status: "ENDED", winnerId: { not: null }, winnerNotifiedAt: { gte: new Date(Date.now() - 7 * 24 * 3600_000) } },
-  });
-  if (unpaidWatch) waits.push(30 * 60_000);
+  const waiting = await prisma.$queryRaw`
+    SELECT COUNT(*)::int AS n FROM "Auction" a
+    WHERE a."status" = 'ENDED' AND a."winnerId" IS NOT NULL
+      AND a."winnerNotifiedAt" >= now() - interval '5 days'
+      AND NOT EXISTS (SELECT 1 FROM "AuctionNotification" n WHERE n."auctionId" = a."id" AND n."type" = 'ARCHIVED')`;
+  if (Number(waiting?.[0]?.n || 0) > 0) waits.push(10 * 60_000);
   if (nextStart) waits.push(nextStart.startsAt.getTime() - now.getTime() + 1000);
   if (nextEnd) waits.push(nextEnd.endsAt.getTime() - now.getTime() + 1000);
   if (nextReminder) waits.push(nextReminder.endsAt.getTime() - ENDING_SOON_WINDOW_MS - now.getTime() + 1000);

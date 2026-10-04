@@ -45,6 +45,10 @@ const pages = {
   "/collections/article": "collection-article.html",
   "/pages/live-block": "live-block.html",
   "/pages/live-empty": "live-empty.html",
+  "/collections/es": "collection-es.html",
+  "/pages/live-es": "live-es.html",
+  "/products/hf-es": "product-es.html",
+  "/products/hf-en": "product-en.html",
   "/products/test-1": path.join("products", "test-1.html"),
 };
 
@@ -54,6 +58,13 @@ const server = http.createServer((req, res) => {
     if (mode === "error") { res.writeHead(500); return res.end("boom"); }
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(mode === "garbage" ? "{not json" : JSON.stringify(mockData()));
+  }
+  if (url.pathname === "/apps/hellfire-auctions/auction") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({
+      now: new Date().toISOString(), currency: "USD", loggedInCustomerId: "1",
+      auction: { status: "LIVE", currentBid: 20, startingBid: 10, minimumBid: 21, bidCount: 3, highestBidder: "b***r", startsAt: iso(-H), endsAt: iso(5 * H), history: [{ bidder: "b***r", amount: 20, at: iso(-60000), mine: true }], canWatch: true, watching: false, hasReserve: true, reserveMet: false, myStatus: "WINNING", myMaximumBid: 25 },
+    }));
   }
   if (url.pathname === "/apps/hellfire-auctions/live-auctions") {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -179,6 +190,17 @@ function check(name, condition) {
   check("Live Auctions block never gets duplicate theme-card badges", count(liveHtml, BADGE) === 0);
   const emptyHtml = await dumpDom(`${base}/pages/live-empty`);
   check("Live Auctions block hides itself when nothing is running", /class="hellfire-live"[^>]*display:\s*none/.test(emptyHtml));
+
+  const esCards = await dumpDom(`${base}/collections/es`);
+  check("Spanish store: card badge says Puja actual and 21 pujas", esCards.includes("Puja actual") && esCards.includes("21 pujas") && esCards.includes("Quedan"));
+  const esLive = await dumpDom(`${base}/pages/live-es`);
+  check("Spanish store: Live Auctions block in Spanish", esLive.includes("Puja actual") && esLive.includes("3 pujas"));
+  const panelEs = await dumpDom(`${base}/products/hf-es`);
+  check("Spanish store: bid panel labels", panelEs.includes("Puja más alta") && panelEs.includes("Puja inicial") && panelEs.includes("Historial de pujas"));
+  check("Spanish store: bid button and my status", panelEs.includes("PUJAR") && panelEs.includes("Eres el mejor postor"));
+  check("Spanish store: signed-in bidder is not treated as logged out", !panelEs.includes('data-hf-login="1"') && panelEs.includes("Seguir esta subasta"));
+  const panelEn = await dumpDom(`${base}/products/hf-en`);
+  check("English store: bid panel unchanged", panelEn.includes("Highest Bid") && panelEn.includes("INCREASE BID") && panelEn.includes("Watch this auction") && !panelEn.includes("Puja"));
 
   if (process.env.SHOT_DIR) {
     await screenshot(`${base}/collections/dawn`, path.join(process.env.SHOT_DIR, "cards-dawn.png"));

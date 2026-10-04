@@ -34,6 +34,15 @@
     }
   }
 
+  // Wording follows the language the shopper is browsing the store in (any theme).
+  const LANG = String(config.locale || (window.Shopify && window.Shopify.locale) || document.documentElement.getAttribute("lang") || "en").slice(0, 2).toLowerCase();
+  const ES = {"Test auction":"Subasta de prueba","Test auction ended":"Subasta de prueba terminada","Live auction":"Subasta en vivo","Upcoming auction":"Próxima subasta","Auction ended":"Subasta terminada","Winning Bid":"Puja ganadora","Current Bid":"Puja actual","Starting Bid":"Puja inicial","{time} left":"Quedan {time}","Starts in {time}":"Empieza en {time}","1 bid":"1 puja","{n} bids":"{n} pujas","WINNING":"GANANDO","OUTBID":"SUPERADO","WON":"GANADA","HIGH BIDDER":"MEJOR POSTOR","Reserve met":"Reserva alcanzada","Reserve not met":"Reserva no alcanzada","HOT":"POPULAR"};
+  function T(s, vars) {
+    let out = LANG === "es" && Object.prototype.hasOwnProperty.call(ES, s) ? ES[s] : s;
+    if (vars) for (const k of Object.keys(vars)) out = out.split("{" + k + "}").join(String(vars[k]));
+    return out;
+  }
+
   function handleFromHref(href) {
     if (!href) return null;
     try {
@@ -115,14 +124,14 @@
       }
     }
     if (gone) return;
-    const label = auction.isTest
+    const label = T(auction.isTest
       ? state === "ENDED" ? "Test auction ended" : "Test auction"
-      : state === "LIVE" ? "Live auction" : state === "UPCOMING" ? "Upcoming auction" : "Auction ended";
-    const amountLabel = auction.hasBids ? (state === "ENDED" ? "Winning Bid" : "Current Bid") : "Starting Bid";
+      : state === "LIVE" ? "Live auction" : state === "UPCOMING" ? "Upcoming auction" : "Auction ended");
+    const amountLabel = T(auction.hasBids ? (state === "ENDED" ? "Winning Bid" : "Current Bid") : "Starting Bid");
     let timing = "";
-    if (state === "LIVE") timing = `${formatRemaining(Date.parse(auction.endsAt) - now)} left`;
-    if (state === "UPCOMING") timing = `Starts in ${formatRemaining(Date.parse(auction.startsAt) - now)}`;
-    const bids = `${auction.bidCount} bid${auction.bidCount === 1 ? "" : "s"}`;
+    if (state === "LIVE") timing = T("{time} left", { time: formatRemaining(Date.parse(auction.endsAt) - now) });
+    if (state === "UPCOMING") timing = T("Starts in {time}", { time: formatRemaining(Date.parse(auction.startsAt) - now) });
+    const bids = auction.bidCount === 1 ? T("1 bid") : T("{n} bids", { n: auction.bidCount });
 
     badge.dataset.state = state.toLowerCase();
     const mineEl = badge.querySelector(".hellfire-card-badge__mine");
@@ -131,16 +140,16 @@
       if (mine && state === "ENDED") mine = mine === "WINNING" && auction.reserveMet !== false ? "WON" : "";
       if (mine === "WINNING" && auction.reserveMet === false) mine = "RESERVE";
       mineEl.dataset.mine = mine.toLowerCase();
-      setText(mineEl, mine === "WINNING" ? "\u2714 WINNING" : mine === "OUTBID" ? "\u2716 OUTBID" : mine === "WON" ? "\u{1F3C6} WON" : mine === "RESERVE" ? "\u2714 HIGH BIDDER" : "");
+      setText(mineEl, mine === "WINNING" ? "\u2714 " + T("WINNING") : mine === "OUTBID" ? "\u2716 " + T("OUTBID") : mine === "WON" ? "\u{1F3C6} " + T("WON") : mine === "RESERVE" ? "\u2714 " + T("HIGH BIDDER") : "");
     }
     const reserveEl = badge.querySelector(".hellfire-card-badge__reserve");
     if (reserveEl) {
       const r = auction.hasReserve ? (auction.reserveMet ? "yes" : "no") : "";
       reserveEl.dataset.reserve = r;
-      setText(reserveEl, r === "yes" ? "\u2714 Reserve met" : r === "no" ? "Reserve not met" : "");
+      setText(reserveEl, r === "yes" ? "\u2714 " + T("Reserve met") : r === "no" ? T("Reserve not met") : "");
     }
     badge.dataset.hot = auction.hot && state === "LIVE" ? "true" : "false";
-    setText(badge.querySelector(".hellfire-card-badge__hot"), auction.hot && state === "LIVE" ? "\u{1F525} HOT" : "");
+    setText(badge.querySelector(".hellfire-card-badge__hot"), auction.hot && state === "LIVE" ? "\u{1F525} " + T("HOT") : "");
     setText(badge.querySelector(".hellfire-card-badge__brand"), "");
     setText(badge.querySelector(".hellfire-card-badge__state"), label);
     setText(badge.querySelector(".hellfire-card-badge__amount-label"), amountLabel);

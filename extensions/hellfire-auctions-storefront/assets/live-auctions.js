@@ -3,6 +3,9 @@
   window.__hellfireLiveInit = true;
 
   var REFRESH_MS = 20000;
+  var LANG = String((window.Shopify && window.Shopify.locale) || document.documentElement.getAttribute("lang") || "en").slice(0, 2).toLowerCase();
+  var ES = {"Test":"Prueba","Ending soon":"Termina pronto","Current bid":"Puja actual","Starting bid":"Puja inicial","1 bid":"1 puja","{n} bids":"{n} pujas","No bids yet":"Aún sin pujas"};
+  function T(s) { return LANG === "es" && Object.prototype.hasOwnProperty.call(ES, s) ? ES[s] : s; }
 
   function money(v, cur) {
     try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur || "USD" }).format(Number(v || 0)); }
@@ -70,19 +73,19 @@
           media.appendChild(img);
         }
         card.appendChild(media);
-        if (a.isTest) card.appendChild(node("span", "hellfire-live__chip hellfire-live__chip--test", "Test"));
-        else if (Date.parse(a.endsAt) - now < 3600000) card.appendChild(node("span", "hellfire-live__chip", "Ending soon"));
+        if (a.isTest) card.appendChild(node("span", "hellfire-live__chip hellfire-live__chip--test", T("Test")));
+        else if (Date.parse(a.endsAt) - now < 3600000) card.appendChild(node("span", "hellfire-live__chip", T("Ending soon")));
         var body = node("div", "hellfire-live__body");
         body.appendChild(node("div", "hellfire-live__title", a.title));
         var bid = node("div", "hellfire-live__bid");
-        bid.appendChild(document.createTextNode(a.bidCount ? "Current bid " : "Starting bid "));
+        bid.appendChild(document.createTextNode((a.bidCount ? T("Current bid") : T("Starting bid")) + " "));
         bid.appendChild(node("strong", "", money(a.currentBid, currency)));
         body.appendChild(bid);
         var meta = node("div", "hellfire-live__meta");
         var time = node("span", "hellfire-live__time", left(Date.parse(a.endsAt) - now));
         time.setAttribute("data-end", a.endsAt);
         meta.appendChild(time);
-        meta.appendChild(node("span", "", a.bidCount === 1 ? "1 bid" : a.bidCount ? a.bidCount + " bids" : "No bids yet"));
+        meta.appendChild(node("span", "", a.bidCount === 1 ? T("1 bid") : a.bidCount ? T("{n} bids").replace("{n}", a.bidCount) : T("No bids yet")));
         body.appendChild(meta);
         card.appendChild(body);
         grid.appendChild(card);

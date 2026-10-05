@@ -21,46 +21,181 @@ const esc = (value) =>
 
 const money = (v) => `$${Number(v || 0).toFixed(2)}`;
 
-const T = makeT({
-  "My Auctions": "Mis subastas",
-  "Sign in to see the auctions you're bidding on.": "Inicia sesión para ver las subastas en las que estás pujando.",
-  "Sign in": "Iniciar sesión",
-  "You haven't bid on any auctions yet.": "Aún no has pujado en ninguna subasta.",
-  "Browse live auctions": "Ver subastas en vivo",
-  "You have an unpaid win": "Tienes una victoria sin pagar",
-  "Pay now": "Pagar ahora",
-  "Your {n} wins are on one invoice": "Tus {n} victorias están en una sola factura",
-  "{total} in total, one shipping charge": "{total} en total, un solo cargo de envío",
-  "You have {n} unpaid wins": "Tienes {n} victorias sin pagar",
-  "Pay all wins together and pay shipping once.": "Paga todas tus victorias juntas y paga el envío una sola vez.",
-  "Pay all wins together": "Pagar todas juntas",
-  "WINNING": "GANANDO",
-  "OUTBID": "SUPERADO",
-  "WON": "GANADA",
-  "HIGH BIDDER": "MEJOR POSTOR",
-  "HOT": "POPULAR",
-  "Upcoming auction": "Próxima subasta",
-  "Auction ended": "Subasta terminada",
-  "Live auction": "Subasta en vivo",
-  "Winning Bid": "Puja ganadora",
-  "Current Bid": "Puja actual",
-  "Starting Bid": "Puja inicial",
-  "Reserve met": "Reserva alcanzada",
-  "Reserve not met": "Reserva no alcanzada",
-  "1 bid": "1 puja",
-  "{n} bids": "{n} pujas",
-  "Starts in ": "Empieza en ",
-  "Bid again": "Pujar de nuevo",
-  "Items you've paid for in the last 30 days.": "Artículos que pagaste en los últimos 30 días.",
-  "Live Auctions": "Subastas en vivo",
-  "Won Auctions": "Subastas ganadas",
-  "Lost Auctions": "Subastas perdidas",
-  "Auctions you won. Pay for all of them together from the banner above.": "Subastas que ganaste. Paga todas juntas desde el aviso de arriba.",
-  "Auctions that ended in the last 30 days where another bidder won.": "Subastas terminadas en los últimos 30 días en las que ganó otro postor.",
-  "Nothing here right now.": "No hay nada por ahora.",
-  "Every auction you've bid on or are watching. This page updates itself.": "Todas las subastas en las que has pujado o que sigues. Esta página se actualiza sola.",
-  "Manage my email notifications": "Administrar mis notificaciones por email"
-});
+/*I18N:myauctions*/const DICT = {
+  "es": {
+    "My Auctions": "Mis subastas",
+    "Sign in to see the auctions you're bidding on.": "Inicia sesión para ver las subastas en las que estás pujando.",
+    "Sign in": "Iniciar sesión",
+    "You haven't bid on any auctions yet.": "Aún no has pujado en ninguna subasta.",
+    "Browse live auctions": "Ver subastas en vivo",
+    "You have an unpaid win": "Tienes una victoria sin pagar",
+    "Pay now": "Pagar ahora",
+    "Your {n} wins are on one invoice": "Tus {n} victorias están en una sola factura",
+    "{total} in total, one shipping charge": "{total} en total, un solo cargo de envío",
+    "You have {n} unpaid wins": "Tienes {n} victorias sin pagar",
+    "Pay all wins together and pay shipping once.": "Paga todas tus victorias juntas y paga el envío una sola vez.",
+    "Pay all wins together": "Pagar todas juntas",
+    "WINNING": "GANANDO",
+    "OUTBID": "SUPERADO",
+    "WON": "GANADA",
+    "HIGH BIDDER": "MEJOR POSTOR",
+    "HOT": "POPULAR",
+    "Upcoming auction": "Próxima subasta",
+    "Auction ended": "Subasta terminada",
+    "Live auction": "Subasta en vivo",
+    "Winning Bid": "Puja ganadora",
+    "Current Bid": "Puja actual",
+    "Starting Bid": "Puja inicial",
+    "Reserve met": "Precio de reserva alcanzado",
+    "Reserve not met": "Precio de reserva no alcanzado",
+    "1 bid": "1 puja",
+    "{n} bids": "{n} pujas",
+    "Starts in ": "Empieza en ",
+    "Bid again": "Pujar de nuevo",
+    "Items you've paid for in the last 30 days.": "Artículos que pagaste en los últimos 30 días.",
+    "Live Auctions": "Subastas en vivo",
+    "Won Auctions": "Subastas ganadas",
+    "Lost Auctions": "Subastas perdidas",
+    "Auctions you won. Pay for all of them together from the banner above.": "Subastas que ganaste. Paga todas juntas desde el aviso de arriba.",
+    "Auctions that ended in the last 30 days where another bidder won.": "Subastas terminadas en los últimos 30 días en las que ganó otro postor.",
+    "Nothing here right now.": "No hay nada por ahora.",
+    "Every auction you've bid on or are watching. This page updates itself.": "Todas las subastas en las que has pujado o que sigues. Esta página se actualiza sola.",
+    "Manage my email notifications": "Administrar mis notificaciones por email",
+    "ended": "terminada",
+    "Preparing your invoice...": "Preparando tu factura...",
+    "Couldn't combine your wins. Please try again.": "No se pudieron combinar tus victorias. Inténtalo de nuevo."
+  },
+  "fr": {
+    "My Auctions": "Mes enchères",
+    "Sign in to see the auctions you're bidding on.": "Connectez-vous pour voir les enchères auxquelles vous participez.",
+    "Sign in": "Se connecter",
+    "You haven't bid on any auctions yet.": "Vous n’avez encore enchéri sur aucune enchère.",
+    "Browse live auctions": "Voir les enchères en cours",
+    "You have an unpaid win": "Vous avez une enchère gagnée à payer",
+    "Pay now": "Payer maintenant",
+    "Your {n} wins are on one invoice": "Vos {n} enchères gagnées sont sur une seule facture",
+    "{total} in total, one shipping charge": "{total} au total, un seul envoi",
+    "You have {n} unpaid wins": "Vous avez {n} enchères gagnées à payer",
+    "Pay all wins together and pay shipping once.": "Payez toutes vos enchères gagnées ensemble et ne payez l’envoi qu’une fois.",
+    "Pay all wins together": "Tout payer ensemble",
+    "WINNING": "EN TÊTE",
+    "OUTBID": "SURENCHÉRI",
+    "WON": "GAGNÉE",
+    "HIGH BIDDER": "MEILLEUR ENCHÉRISSEUR",
+    "HOT": "POPULAIRE",
+    "Upcoming auction": "Enchère à venir",
+    "Auction ended": "Enchère terminée",
+    "Live auction": "Enchère en cours",
+    "Winning Bid": "Enchère gagnante",
+    "Current Bid": "Enchère actuelle",
+    "Starting Bid": "Mise de départ",
+    "Reserve met": "Prix de réserve atteint",
+    "Reserve not met": "Prix de réserve non atteint",
+    "1 bid": "1 enchère",
+    "{n} bids": "{n} enchères",
+    "Starts in ": "Commence dans ",
+    "Bid again": "Enchérir à nouveau",
+    "Items you've paid for in the last 30 days.": "Articles que vous avez payés au cours des 30 derniers jours.",
+    "Live Auctions": "Enchères en cours",
+    "Won Auctions": "Enchères gagnées",
+    "Lost Auctions": "Enchères perdues",
+    "Auctions you won. Pay for all of them together from the banner above.": "Enchères que vous avez gagnées. Payez-les toutes ensemble depuis le bandeau ci-dessus.",
+    "Auctions that ended in the last 30 days where another bidder won.": "Enchères terminées au cours des 30 derniers jours et remportées par un autre enchérisseur.",
+    "Nothing here right now.": "Rien ici pour le moment.",
+    "Every auction you've bid on or are watching. This page updates itself.": "Toutes les enchères auxquelles vous participez ou que vous suivez. Cette page se met à jour toute seule.",
+    "Manage my email notifications": "Gérer mes notifications par e-mail",
+    "ended": "terminée",
+    "Preparing your invoice...": "Préparation de votre facture...",
+    "Couldn't combine your wins. Please try again.": "Impossible de regrouper vos enchères gagnées. Veuillez réessayer."
+  },
+  "de": {
+    "My Auctions": "Meine Auktionen",
+    "Sign in to see the auctions you're bidding on.": "Melden Sie sich an, um die Auktionen zu sehen, bei denen Sie bieten.",
+    "Sign in": "Anmelden",
+    "You haven't bid on any auctions yet.": "Sie haben noch bei keiner Auktion geboten.",
+    "Browse live auctions": "Live-Auktionen ansehen",
+    "You have an unpaid win": "Sie haben eine gewonnene Auktion, die noch nicht bezahlt ist",
+    "Pay now": "Jetzt bezahlen",
+    "Your {n} wins are on one invoice": "Ihre {n} gewonnenen Auktionen stehen auf einer Rechnung",
+    "{total} in total, one shipping charge": "{total} insgesamt, einmal Versand",
+    "You have {n} unpaid wins": "Sie haben {n} gewonnene Auktionen, die noch nicht bezahlt sind",
+    "Pay all wins together and pay shipping once.": "Bezahlen Sie alle Gewinne zusammen und zahlen Sie den Versand nur einmal.",
+    "Pay all wins together": "Alle zusammen bezahlen",
+    "WINNING": "FÜHREND",
+    "OUTBID": "ÜBERBOTEN",
+    "WON": "GEWONNEN",
+    "HIGH BIDDER": "HÖCHSTBIETENDER",
+    "HOT": "BELIEBT",
+    "Upcoming auction": "Kommende Auktion",
+    "Auction ended": "Auktion beendet",
+    "Live auction": "Live-Auktion",
+    "Winning Bid": "Siegergebot",
+    "Current Bid": "Aktuelles Gebot",
+    "Starting Bid": "Startgebot",
+    "Reserve met": "Mindestpreis erreicht",
+    "Reserve not met": "Mindestpreis nicht erreicht",
+    "1 bid": "1 Gebot",
+    "{n} bids": "{n} Gebote",
+    "Starts in ": "Startet in ",
+    "Bid again": "Erneut bieten",
+    "Items you've paid for in the last 30 days.": "Artikel, die Sie in den letzten 30 Tagen bezahlt haben.",
+    "Live Auctions": "Live-Auktionen",
+    "Won Auctions": "Gewonnene Auktionen",
+    "Lost Auctions": "Verlorene Auktionen",
+    "Auctions you won. Pay for all of them together from the banner above.": "Auktionen, die Sie gewonnen haben. Bezahlen Sie alle zusammen über das Banner oben.",
+    "Auctions that ended in the last 30 days where another bidder won.": "Auktionen der letzten 30 Tage, die ein anderer Bieter gewonnen hat.",
+    "Nothing here right now.": "Im Moment nichts vorhanden.",
+    "Every auction you've bid on or are watching. This page updates itself.": "Alle Auktionen, bei denen Sie geboten haben oder die Sie beobachten. Diese Seite aktualisiert sich selbst.",
+    "Manage my email notifications": "Meine E-Mail-Benachrichtigungen verwalten",
+    "ended": "beendet",
+    "Preparing your invoice...": "Ihre Rechnung wird vorbereitet...",
+    "Couldn't combine your wins. Please try again.": "Ihre Gewinne konnten nicht zusammengefasst werden. Bitte versuchen Sie es erneut."
+  },
+  "pt": {
+    "My Auctions": "Meus leilões",
+    "Sign in to see the auctions you're bidding on.": "Entre para ver os leilões em que você está dando lances.",
+    "Sign in": "Entrar",
+    "You haven't bid on any auctions yet.": "Você ainda não deu lances em nenhum leilão.",
+    "Browse live auctions": "Ver leilões ao vivo",
+    "You have an unpaid win": "Você tem um leilão ganho sem pagar",
+    "Pay now": "Pagar agora",
+    "Your {n} wins are on one invoice": "Seus {n} leilões ganhos estão em uma única fatura",
+    "{total} in total, one shipping charge": "{total} no total, um único frete",
+    "You have {n} unpaid wins": "Você tem {n} leilões ganhos sem pagar",
+    "Pay all wins together and pay shipping once.": "Pague todos os leilões ganhos juntos e pague o frete uma só vez.",
+    "Pay all wins together": "Pagar tudo junto",
+    "WINNING": "GANHANDO",
+    "OUTBID": "SUPERADO",
+    "WON": "GANHO",
+    "HIGH BIDDER": "MAIOR LICITANTE",
+    "HOT": "EM ALTA",
+    "Upcoming auction": "Próximo leilão",
+    "Auction ended": "Leilão encerrado",
+    "Live auction": "Leilão ao vivo",
+    "Winning Bid": "Lance vencedor",
+    "Current Bid": "Lance atual",
+    "Starting Bid": "Lance inicial",
+    "Reserve met": "Preço de reserva atingido",
+    "Reserve not met": "Preço de reserva não atingido",
+    "1 bid": "1 lance",
+    "{n} bids": "{n} lances",
+    "Starts in ": "Começa em ",
+    "Bid again": "Dar novo lance",
+    "Items you've paid for in the last 30 days.": "Itens que você pagou nos últimos 30 dias.",
+    "Live Auctions": "Leilões ao vivo",
+    "Won Auctions": "Leilões ganhos",
+    "Lost Auctions": "Leilões perdidos",
+    "Auctions you won. Pay for all of them together from the banner above.": "Leilões que você ganhou. Pague todos juntos pelo aviso acima.",
+    "Auctions that ended in the last 30 days where another bidder won.": "Leilões encerrados nos últimos 30 dias em que outro licitante ganhou.",
+    "Nothing here right now.": "Nada aqui no momento.",
+    "Every auction you've bid on or are watching. This page updates itself.": "Todos os leilões em que você deu lances ou que está acompanhando. Esta página se atualiza sozinha.",
+    "Manage my email notifications": "Gerenciar minhas notificações por e-mail",
+    "ended": "encerrado",
+    "Preparing your invoice...": "Preparando sua fatura...",
+    "Couldn't combine your wins. Please try again.": "Não foi possível combinar seus leilões ganhos. Tente novamente."
+  }
+};/*END*/
+const T = makeT(DICT);
 
 function liquid(body) {
   return new Response(LIQUID_LANG + body, { headers: { "Content-Type": "application/liquid" } });
@@ -221,7 +356,7 @@ export const loader = async ({ request }) => {
       const bids = a.bidCount === 1 ? T("1 bid") : T("{n} bids", { n: a.bidCount });
       const timing = ended
         ? ""
-        : ` &middot; <span data-hf-ends="${(upcoming ? a.startsAt : a.endsAt).toISOString()}" data-hf-prefix="${upcoming ? T("Starts in ") : P("", "Quedan ")}" data-hf-suffix="${upcoming ? "" : P(" left", "")}"></span>`;
+        : ` &middot; <span data-hf-ends="${(upcoming ? a.startsAt : a.endsAt).toISOString()}" data-hf-prefix="${upcoming ? T("Starts in ") : P("", { es: "Quedan ", fr: "Il reste ", de: "Noch ", pt: "Faltam " })}" data-hf-suffix="${upcoming ? "" : P(" left", { es: "", fr: "", de: "", pt: "" })}"></span>`;
       const img = a.imageUrl
         ? `<img src="${esc(a.imageUrl)}" alt="${esc(a.title)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block">`
         : `<div style="aspect-ratio:1/1;background:linear-gradient(135deg,#3d0000,#ff3b30)"></div>`;
@@ -256,12 +391,13 @@ export const loader = async ({ request }) => {
         ? `<img src="${esc(a.imageUrl)}" alt="${esc(a.title)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block">`
         : `<div style="aspect-ratio:1/1;background:linear-gradient(135deg,#3d0000,#ff3b30)"></div>`;
       const paidDate = new Date(paidAt.get(a.id));
-      const when = P(paidDate.toLocaleDateString("en-US", { month: "short", day: "numeric" }), paidDate.toLocaleDateString("es", { month: "short", day: "numeric" }));
-      return `<div style="border:1px solid #e3e3e3;border-radius:12px;overflow:hidden;background:#fff">${img}<div style="padding:10px 12px"><div style="font-weight:700">${esc(a.title)}</div><div style="color:#0f6b34;font-weight:700;margin-top:4px">&#10004; ${P("Paid", "Pagado")} &middot; ${money(a.currentBid)}</div><div style="color:#616161;font-size:13px">${when}</div></div></div>`;
+      const dayIn = (lang) => paidDate.toLocaleDateString(lang, { month: "short", day: "numeric" });
+      const when = P(dayIn("en-US"), { es: dayIn("es"), fr: dayIn("fr"), de: dayIn("de"), pt: dayIn("pt") });
+      return `<div style="border:1px solid #e3e3e3;border-radius:12px;overflow:hidden;background:#fff">${img}<div style="padding:10px 12px"><div style="font-weight:700">${esc(a.title)}</div><div style="color:#0f6b34;font-weight:700;margin-top:4px">&#10004; ${P("Paid", { es: "Pagado", fr: "Payé", de: "Bezahlt", pt: "Pago" })} &middot; ${money(a.currentBid)}</div><div style="color:#616161;font-size:13px">${when}</div></div></div>`;
     })
     .join("");
   const paidSection = paidCards
-    ? `<h2 style="margin:36px 0 6px;font-size:20px">${P("Paid", "Pagadas")}</h2><p style="margin:0 0 14px;color:#616161">${T("Items you've paid for in the last 30 days.")}</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px">${paidCards}</div>`
+    ? `<h2 style="margin:36px 0 6px;font-size:20px">${P("Paid", { es: "Pagadas", fr: "Payées", de: "Bezahlt", pt: "Pagas" })}</h2><p style="margin:0 0 14px;color:#616161">${T("Items you've paid for in the last 30 days.")}</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px">${paidCards}</div>`
     : "";
 
   const sectionGrid = (html) => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px">${html}</div>`;
@@ -285,7 +421,7 @@ export const loader = async ({ request }) => {
   </div>
   <script>
     (function () {
-      var HF = {% if hf_es %}{ ended: "terminada", preparing: "Preparando tu factura...", fail: "No se pudieron combinar tus victorias. Inténtalo de nuevo.", combine: "Pagar todas juntas" }{% else %}{ ended: "ended", preparing: "Preparing your invoice...", fail: "Couldn't combine your wins. Please try again.", combine: "Pay all wins together" }{% endif %};
+      var HF = /*I18N-HF*/{% if hf_lang == 'es' %}{ ended: "terminada", preparing: "Preparando tu factura...", fail: "No se pudieron combinar tus victorias. Inténtalo de nuevo.", combine: "Pagar todas juntas" }{% elsif hf_lang == 'fr' %}{ ended: "terminée", preparing: "Préparation de votre facture...", fail: "Impossible de regrouper vos enchères gagnées. Veuillez réessayer.", combine: "Tout payer ensemble" }{% elsif hf_lang == 'de' %}{ ended: "beendet", preparing: "Ihre Rechnung wird vorbereitet...", fail: "Ihre Gewinne konnten nicht zusammengefasst werden. Bitte versuchen Sie es erneut.", combine: "Alle zusammen bezahlen" }{% elsif hf_lang == 'pt' %}{ ended: "encerrado", preparing: "Preparando sua fatura...", fail: "Não foi possível combinar seus leilões ganhos. Tente novamente.", combine: "Pagar tudo junto" }{% else %}{ ended: "ended", preparing: "Preparing your invoice...", fail: "Couldn't combine your wins. Please try again.", combine: "Pay all wins together" }{% endif %}/*END*/;
       function tick() {
         document.querySelectorAll("[data-hf-ends]").forEach(function (el) {
           var ms = Date.parse(el.getAttribute("data-hf-ends")) - Date.now();

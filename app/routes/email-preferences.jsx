@@ -15,29 +15,84 @@ const S = {
   btn: { background: "#ff3b30", color: "#fff", fontWeight: 800, padding: "12px 22px", borderRadius: 8, border: 0, cursor: "pointer", fontSize: 15 },
 };
 
-const ES = {
-  "Email preferences": "Preferencias de email",
-  "This link isn't valid anymore. Please use the \"Manage the emails you get\" link from one of our emails, or from your My Auctions page.": "Este enlace ya no es válido. Usa el enlace \"Administra los emails que recibes\" de uno de nuestros emails, o desde tu página Mis subastas.",
-  "For auctions at {shop}. Choose which emails you'd like to get.": "Para las subastas de {shop}. Elige qué emails quieres recibir.",
-  "Saved. Your choices are updated.": "Guardado. Tus preferencias están actualizadas.",
-  "Receive only necessary emails": "Recibir solo los emails necesarios",
-  "Necessary emails are the \"1 hour left\" reminder before an auction ends, and emails about auctions you win: your winner notice, your invoice and payment reminders. Turning this on switches off everything else, including outbid alerts, \"starting\" alerts for auctions you're watching, and results emails.": "Los emails necesarios son el recordatorio de \"queda 1 hora\" antes de que termine una subasta y los emails sobre las subastas que ganas: tu aviso de ganador, tu factura y los recordatorios de pago. Al activarlo se desactiva todo lo demás, incluidos los avisos de que te superan, los avisos de inicio de las subastas que sigues y los emails de resultados.",
-  "Or choose exactly what you'd like": "O elige exactamente lo que quieres",
-  "Outbid alerts": "Avisos de puja superada",
-  "Tell me right away when someone outbids me.": "Avísame al instante cuando alguien me supere.",
-  "Reminders": "Recordatorios",
-  "\"1 hour left\" on auctions I bid on, and \"starting\" or \"ending soon\" on auctions I'm watching.": "\"Queda 1 hora\" en las subastas en las que puje, y \"empieza\" o \"termina pronto\" en las que sigo.",
-  "Results": "Resultados",
-  "When an auction ends and I didn't win, or the reserve wasn't met.": "Cuando una subasta termina y no gané, o no se alcanzó la reserva.",
-  "Save my choices": "Guardar mis preferencias",
-  "Emails about an auction you won, your invoice and payment reminders always arrive, because they're about a purchase you've committed to.": "Los emails sobre una subasta que ganaste, tu factura y los recordatorios de pago siempre llegan, porque tratan de una compra a la que te has comprometido."
-};
+/*I18N:prefs*/const DICT = {
+  "es": {
+    "Email preferences": "Preferencias de email",
+    "This link isn't valid anymore. Please use the \"Manage the emails you get\" link from one of our emails, or from your My Auctions page.": "Este enlace ya no es válido. Usa el enlace \"Administra los emails que recibes\" de uno de nuestros emails, o desde tu página Mis subastas.",
+    "For auctions at {shop}. Choose which emails you'd like to get.": "Para las subastas de {shop}. Elige qué emails quieres recibir.",
+    "Saved. Your choices are updated.": "Guardado. Tus preferencias están actualizadas.",
+    "Receive only necessary emails": "Recibir solo los emails necesarios",
+    "Necessary emails are the \"1 hour left\" reminder before an auction ends, and emails about auctions you win: your winner notice, your invoice and payment reminders. Turning this on switches off everything else, including outbid alerts, \"starting\" alerts for auctions you're watching, and results emails.": "Los emails necesarios son el recordatorio de \"queda 1 hora\" antes de que termine una subasta y los emails sobre las subastas que ganas: tu aviso de ganador, tu factura y los recordatorios de pago. Al activarlo se desactiva todo lo demás, incluidos los avisos de que te superan, los avisos de inicio de las subastas que sigues y los emails de resultados.",
+    "Or choose exactly what you'd like": "O elige exactamente lo que quieres",
+    "Outbid alerts": "Avisos de puja superada",
+    "Tell me right away when someone outbids me.": "Avísame al instante cuando alguien me supere.",
+    "Reminders": "Recordatorios",
+    "\"1 hour left\" on auctions I bid on, and \"starting\" or \"ending soon\" on auctions I'm watching.": "\"Queda 1 hora\" en las subastas en las que puje, y \"empieza\" o \"termina pronto\" en las que sigo.",
+    "Results": "Resultados",
+    "When an auction ends and I didn't win, or the reserve wasn't met.": "Cuando una subasta termina y no gané, o no se alcanzó la reserva.",
+    "Save my choices": "Guardar mis preferencias",
+    "Emails about an auction you won, your invoice and payment reminders always arrive, because they're about a purchase you've committed to.": "Los emails sobre una subasta que ganaste, tu factura y los recordatorios de pago siempre llegan, porque tratan de una compra a la que te has comprometido."
+  },
+  "fr": {
+    "Email preferences": "Préférences d’e-mail",
+    "This link isn't valid anymore. Please use the \"Manage the emails you get\" link from one of our emails, or from your My Auctions page.": "Ce lien n’est plus valide. Utilisez le lien « Gérer les e-mails que vous recevez » dans l’un de nos e-mails, ou depuis votre page Mes enchères.",
+    "For auctions at {shop}. Choose which emails you'd like to get.": "Pour les enchères de {shop}. Choisissez les e-mails que vous souhaitez recevoir.",
+    "Saved. Your choices are updated.": "Enregistré. Vos choix sont à jour.",
+    "Receive only necessary emails": "Recevoir uniquement les e-mails nécessaires",
+    "Necessary emails are the \"1 hour left\" reminder before an auction ends, and emails about auctions you win: your winner notice, your invoice and payment reminders. Turning this on switches off everything else, including outbid alerts, \"starting\" alerts for auctions you're watching, and results emails.": "Les e-mails nécessaires sont le rappel « plus qu’1 heure » avant la fin d’une enchère et les e-mails concernant les enchères que vous remportez : votre avis de victoire, votre facture et les rappels de paiement. L’activer désactive tout le reste, y compris les alertes de surenchère, les alertes de début pour les enchères que vous suivez et les e-mails de résultats.",
+    "Or choose exactly what you'd like": "Ou choisissez exactement ce que vous voulez",
+    "Outbid alerts": "Alertes de surenchère",
+    "Tell me right away when someone outbids me.": "Prévenez-moi tout de suite quand quelqu’un surenchérit.",
+    "Reminders": "Rappels",
+    "\"1 hour left\" on auctions I bid on, and \"starting\" or \"ending soon\" on auctions I'm watching.": "« Plus qu’1 heure » pour les enchères auxquelles je participe, et « commence » ou « se termine bientôt » pour celles que je suis.",
+    "Results": "Résultats",
+    "When an auction ends and I didn't win, or the reserve wasn't met.": "Quand une enchère se termine sans que je gagne, ou que le prix de réserve n’est pas atteint.",
+    "Save my choices": "Enregistrer mes choix",
+    "Emails about an auction you won, your invoice and payment reminders always arrive, because they're about a purchase you've committed to.": "Les e-mails concernant une enchère que vous avez remportée, votre facture et les rappels de paiement vous parviennent toujours, car ils concernent un achat auquel vous vous êtes engagé."
+  },
+  "de": {
+    "Email preferences": "E-Mail-Einstellungen",
+    "This link isn't valid anymore. Please use the \"Manage the emails you get\" link from one of our emails, or from your My Auctions page.": "Dieser Link ist nicht mehr gültig. Bitte verwenden Sie den Link „E-Mails verwalten, die Sie erhalten“ in einer unserer E-Mails oder auf Ihrer Seite „Meine Auktionen“.",
+    "For auctions at {shop}. Choose which emails you'd like to get.": "Für Auktionen bei {shop}. Wählen Sie, welche E-Mails Sie erhalten möchten.",
+    "Saved. Your choices are updated.": "Gespeichert. Ihre Auswahl ist aktualisiert.",
+    "Receive only necessary emails": "Nur notwendige E-Mails erhalten",
+    "Necessary emails are the \"1 hour left\" reminder before an auction ends, and emails about auctions you win: your winner notice, your invoice and payment reminders. Turning this on switches off everything else, including outbid alerts, \"starting\" alerts for auctions you're watching, and results emails.": "Notwendige E-Mails sind die Erinnerung „Noch 1 Stunde“ vor dem Ende einer Auktion sowie E-Mails zu Auktionen, die Sie gewinnen: Ihre Gewinnbenachrichtigung, Ihre Rechnung und Zahlungserinnerungen. Wenn Sie dies aktivieren, wird alles andere ausgeschaltet, auch Benachrichtigungen bei Überbietung, Start-Benachrichtigungen für beobachtete Auktionen und Ergebnis-E-Mails.",
+    "Or choose exactly what you'd like": "Oder wählen Sie genau, was Sie möchten",
+    "Outbid alerts": "Benachrichtigungen bei Überbietung",
+    "Tell me right away when someone outbids me.": "Benachrichtigen Sie mich sofort, wenn mich jemand überbietet.",
+    "Reminders": "Erinnerungen",
+    "\"1 hour left\" on auctions I bid on, and \"starting\" or \"ending soon\" on auctions I'm watching.": "„Noch 1 Stunde“ bei Auktionen, auf die ich biete, und „startet“ oder „endet bald“ bei Auktionen, die ich beobachte.",
+    "Results": "Ergebnisse",
+    "When an auction ends and I didn't win, or the reserve wasn't met.": "Wenn eine Auktion endet und ich nicht gewonnen habe oder der Mindestpreis nicht erreicht wurde.",
+    "Save my choices": "Meine Auswahl speichern",
+    "Emails about an auction you won, your invoice and payment reminders always arrive, because they're about a purchase you've committed to.": "E-Mails zu einer gewonnenen Auktion, Ihre Rechnung und Zahlungserinnerungen erhalten Sie immer, weil es um einen Kauf geht, zu dem Sie sich verpflichtet haben."
+  },
+  "pt": {
+    "Email preferences": "Preferências de e-mail",
+    "This link isn't valid anymore. Please use the \"Manage the emails you get\" link from one of our emails, or from your My Auctions page.": "Este link não é mais válido. Use o link “Gerenciar os e-mails que você recebe” em um dos nossos e-mails, ou na sua página Meus leilões.",
+    "For auctions at {shop}. Choose which emails you'd like to get.": "Para os leilões de {shop}. Escolha quais e-mails você quer receber.",
+    "Saved. Your choices are updated.": "Salvo. Suas escolhas foram atualizadas.",
+    "Receive only necessary emails": "Receber apenas os e-mails necessários",
+    "Necessary emails are the \"1 hour left\" reminder before an auction ends, and emails about auctions you win: your winner notice, your invoice and payment reminders. Turning this on switches off everything else, including outbid alerts, \"starting\" alerts for auctions you're watching, and results emails.": "Os e-mails necessários são o lembrete “falta 1 hora” antes do fim de um leilão e os e-mails sobre os leilões que você ganha: seu aviso de vitória, sua fatura e os lembretes de pagamento. Ao ativar, todo o resto é desligado, incluindo alertas de lance superado, alertas de início dos leilões que você acompanha e e-mails de resultados.",
+    "Or choose exactly what you'd like": "Ou escolha exatamente o que você quer",
+    "Outbid alerts": "Alertas de lance superado",
+    "Tell me right away when someone outbids me.": "Avise-me na hora quando alguém superar meu lance.",
+    "Reminders": "Lembretes",
+    "\"1 hour left\" on auctions I bid on, and \"starting\" or \"ending soon\" on auctions I'm watching.": "“Falta 1 hora” nos leilões em que dou lances, e “começando” ou “terminando em breve” nos que acompanho.",
+    "Results": "Resultados",
+    "When an auction ends and I didn't win, or the reserve wasn't met.": "Quando um leilão termina e eu não ganhei, ou o preço de reserva não foi atingido.",
+    "Save my choices": "Salvar minhas escolhas",
+    "Emails about an auction you won, your invoice and payment reminders always arrive, because they're about a purchase you've committed to.": "Os e-mails sobre um leilão que você ganhou, sua fatura e os lembretes de pagamento sempre chegam, porque tratam de uma compra com a qual você se comprometeu."
+  }
+};/*END*/
 
 // The email link says which language it was sent in (&l=es); otherwise follow the browser's language.
 function pickLang(request) {
+  const known = ["en", ...Object.keys(DICT)];
   const asked = (new URL(request.url).searchParams.get("l") || "").slice(0, 2).toLowerCase();
-  if (asked === "es" || asked === "en") return asked;
-  return (request.headers.get("accept-language") || "").toLowerCase().startsWith("es") ? "es" : "en";
+  if (known.includes(asked)) return asked;
+  const first = (request.headers.get("accept-language") || "").toLowerCase().slice(0, 2);
+  return known.includes(first) ? first : "en";
 }
 
 export const loader = async ({ request }) => {
@@ -81,7 +136,8 @@ export default function EmailPreferences() {
   const prefs = data.valid ? result?.prefs || data.prefs : null;
   const [essential, setEssential] = useState(Boolean(prefs?.essentialOnly));
   const t = (en, vars) => {
-    let s = data.lang === "es" && ES[en] ? ES[en] : en;
+    const D = DICT[data.lang];
+    let s = D && D[en] ? D[en] : en;
     if (vars) for (const k of Object.keys(vars)) s = s.split("{" + k + "}").join(vars[k]);
     return s;
   };
@@ -104,7 +160,7 @@ export default function EmailPreferences() {
           {t("Saved. Your choices are updated.")}
         </div>
       )}
-      <Form method="post" action={`/email-preferences?t=${data.token}${data.lang === "es" ? "&l=es" : ""}`} style={S.card}>
+      <Form method="post" action={`/email-preferences?t=${data.token}${data.lang !== "en" ? "&l=" + data.lang : ""}`} style={S.card}>
         <label style={S.master}>
           <input
             type="checkbox"

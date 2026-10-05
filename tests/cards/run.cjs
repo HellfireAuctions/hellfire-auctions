@@ -54,6 +54,12 @@ const pages = {
   "/collections/article": "collection-article.html",
   "/pages/live-block": "live-block.html",
   "/pages/live-empty": "live-empty.html",
+  "/collections/fr": "collection-fr.html",
+  "/products/hf-fr": "product-fr.html",
+  "/collections/de": "collection-de.html",
+  "/products/hf-de": "product-de.html",
+  "/collections/pt": "collection-pt.html",
+  "/products/hf-pt": "product-pt.html",
   "/collections/es": "collection-es.html",
   "/products/hf-ended": "product-ended.html",
   "/products/hf-ended-won": "product-ended-won.html",
@@ -253,6 +259,17 @@ function check(name, condition) {
   check("Ended auction page: a visitor who never bid is sent to the live auctions", leaveHtml.includes("LIVE-AUCTIONS-PAGE"));
   check("Ended auction page: the winner stays on it", !stayHtml.includes("LIVE-AUCTIONS-PAGE") && stayHtml.includes("hellfire-auction-root"));
   check("Ended auction page: ?keep=1 lets anyone look at it", !keepHtml.includes("LIVE-AUCTIONS-PAGE") && keepHtml.includes("hellfire-auction-root"));
+
+  // ----- every extra language: the badges and the real bid panel are in that language, from the catalog -----
+  for (const lang of ["fr","de","pt"]) {
+    const words = new Map(require("../../i18n/" + lang + ".cjs"));
+    const cardsHtml = await dumpDom(`${base}/collections/${lang}`);
+    const panelHtml = await dumpDom(`${base}/products/hf-${lang}`);
+    check(`${lang}: card badge wording and bid count`, cardsHtml.includes(words.get("Current Bid")) && cardsHtml.includes(words.get("{n} bids").replace("{n}", "21")));
+    check(`${lang}: card social proof`, cardsHtml.includes(words.get("{n} bidders").replace("{n}", "7")) && cardsHtml.includes(words.get("{n} watching").replace("{n}", "12")));
+    check(`${lang}: bid panel labels and button`, panelHtml.includes(words.get("Highest Bid")) && panelHtml.includes(words.get("INCREASE BID")) && panelHtml.includes(words.get("Bid history")));
+    check(`${lang}: bid panel is not mixed with English`, !panelHtml.includes("INCREASE BID") && !panelHtml.includes("Highest Bid"));
+  }
 
   if (process.env.SHOT_DIR) {
     await screenshot(`${base}/collections/dawn`, path.join(process.env.SHOT_DIR, "cards-dawn.png"));

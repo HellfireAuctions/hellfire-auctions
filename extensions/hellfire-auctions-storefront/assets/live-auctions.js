@@ -4,8 +4,8 @@
 
   var REFRESH_MS = 20000;
   var LANG = String((window.Shopify && window.Shopify.locale) || document.documentElement.getAttribute("lang") || "en").slice(0, 2).toLowerCase();
-  var ES = {"Test":"Prueba","Ending soon":"Termina pronto","Current bid":"Puja actual","Starting bid":"Puja inicial","1 bid":"1 puja","{n} bids":"{n} pujas","No bids yet":"Aún sin pujas"};
-  function T(s) { return LANG === "es" && Object.prototype.hasOwnProperty.call(ES, s) ? ES[s] : s; }
+  /*I18N:block*/var TR = {"es":{"Test":"Prueba","Ending soon":"Termina pronto","Current bid":"Puja actual","Starting bid":"Puja inicial","1 bid":"1 puja","{n} bids":"{n} pujas","No bids yet":"Aún sin pujas"},"fr":{"Test":"Test","Ending soon":"Se termine bientôt","Current bid":"Enchère actuelle","Starting bid":"Mise de départ","1 bid":"1 enchère","{n} bids":"{n} enchères","No bids yet":"Pas encore d’enchères"},"de":{"Test":"Test","Ending soon":"Endet bald","Current bid":"Aktuelles Gebot","Starting bid":"Startgebot","1 bid":"1 Gebot","{n} bids":"{n} Gebote","No bids yet":"Noch keine Gebote"},"pt":{"Test":"Teste","Ending soon":"Termina em breve","Current bid":"Lance atual","Starting bid":"Lance inicial","1 bid":"1 lance","{n} bids":"{n} lances","No bids yet":"Ainda sem lances"}};/*END*/
+  function T(s) { var D = TR[LANG]; return D && Object.prototype.hasOwnProperty.call(D, s) ? D[s] : s; }
 
   function money(v, cur) {
     try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur || "USD" }).format(Number(v || 0)); }

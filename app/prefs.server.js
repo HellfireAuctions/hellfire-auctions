@@ -23,7 +23,7 @@ export function readPrefsToken(token) {
 
 export function prefsUrl(shop, customerId, lang) {
   const base = (process.env.SHOPIFY_APP_URL || "https://hellfire-auctions.onrender.com").replace(/\/$/, "");
-  return `${base}/email-preferences?t=${signPrefs(shop, customerId)}${lang === "es" ? "&l=es" : ""}`;
+  return `${base}/email-preferences?t=${signPrefs(shop, customerId)}${lang && lang !== "en" ? "&l=" + lang : ""}`;
 }
 
 export async function getPrefs(shop, customerId) {

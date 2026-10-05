@@ -83,6 +83,40 @@ const S = {
     "When an auction ends and I didn't win, or the reserve wasn't met.": "Quando um leilão termina e eu não ganhei, ou o preço de reserva não foi atingido.",
     "Save my choices": "Salvar minhas escolhas",
     "Emails about an auction you won, your invoice and payment reminders always arrive, because they're about a purchase you've committed to.": "Os e-mails sobre um leilão que você ganhou, sua fatura e os lembretes de pagamento sempre chegam, porque tratam de uma compra com a qual você se comprometeu."
+  },
+  "it": {
+    "Email preferences": "Preferenze email",
+    "This link isn't valid anymore. Please use the \"Manage the emails you get\" link from one of our emails, or from your My Auctions page.": "Questo link non è più valido. Usa il link «Gestisci le email che ricevi» in una delle nostre email, oppure dalla tua pagina Le mie aste.",
+    "For auctions at {shop}. Choose which emails you'd like to get.": "Per le aste di {shop}. Scegli quali email vuoi ricevere.",
+    "Saved. Your choices are updated.": "Salvato. Le tue scelte sono aggiornate.",
+    "Receive only necessary emails": "Ricevi solo le email necessarie",
+    "Necessary emails are the \"1 hour left\" reminder before an auction ends, and emails about auctions you win: your winner notice, your invoice and payment reminders. Turning this on switches off everything else, including outbid alerts, \"starting\" alerts for auctions you're watching, and results emails.": "Le email necessarie sono il promemoria «manca 1 ora» prima della fine di un'asta e le email sulle aste che vinci: l'avviso di vincita, la fattura e i solleciti di pagamento. Attivandolo si disattiva tutto il resto, compresi gli avvisi di offerta superata, gli avvisi di inizio per le aste che segui e le email dei risultati.",
+    "Or choose exactly what you'd like": "Oppure scegli esattamente cosa vuoi",
+    "Outbid alerts": "Avvisi di offerta superata",
+    "Tell me right away when someone outbids me.": "Avvisami subito quando qualcuno supera la mia offerta.",
+    "Reminders": "Promemoria",
+    "\"1 hour left\" on auctions I bid on, and \"starting\" or \"ending soon\" on auctions I'm watching.": "«Manca 1 ora» per le aste in cui ho fatto offerte, e «inizia» o «termina presto» per le aste che sto seguendo.",
+    "Results": "Risultati",
+    "When an auction ends and I didn't win, or the reserve wasn't met.": "Quando un'asta termina e non ho vinto, o il prezzo di riserva non è stato raggiunto.",
+    "Save my choices": "Salva le mie scelte",
+    "Emails about an auction you won, your invoice and payment reminders always arrive, because they're about a purchase you've committed to.": "Le email su un'asta che hai vinto, la fattura e i solleciti di pagamento arrivano sempre, perché riguardano un acquisto a cui ti sei impegnato."
+  },
+  "nl": {
+    "Email preferences": "E-mailvoorkeuren",
+    "This link isn't valid anymore. Please use the \"Manage the emails you get\" link from one of our emails, or from your My Auctions page.": "Deze link is niet meer geldig. Gebruik de link “E-mails beheren die je ontvangt” in een van onze e-mails, of op je pagina Mijn veilingen.",
+    "For auctions at {shop}. Choose which emails you'd like to get.": "Voor veilingen bij {shop}. Kies welke e-mails je wilt ontvangen.",
+    "Saved. Your choices are updated.": "Opgeslagen. Je keuzes zijn bijgewerkt.",
+    "Receive only necessary emails": "Alleen noodzakelijke e-mails ontvangen",
+    "Necessary emails are the \"1 hour left\" reminder before an auction ends, and emails about auctions you win: your winner notice, your invoice and payment reminders. Turning this on switches off everything else, including outbid alerts, \"starting\" alerts for auctions you're watching, and results emails.": "Noodzakelijke e-mails zijn de herinnering “nog 1 uur” voordat een veiling afloopt en e-mails over veilingen die je wint: je winnaarsbericht, je factuur en betalingsherinneringen. Als je dit inschakelt, gaat al het andere uit, ook meldingen bij overbieden, startmeldingen voor veilingen die je volgt en resultaat-e-mails.",
+    "Or choose exactly what you'd like": "Of kies precies wat je wilt",
+    "Outbid alerts": "Meldingen bij overbieden",
+    "Tell me right away when someone outbids me.": "Laat het me meteen weten als iemand me overbiedt.",
+    "Reminders": "Herinneringen",
+    "\"1 hour left\" on auctions I bid on, and \"starting\" or \"ending soon\" on auctions I'm watching.": "“Nog 1 uur” bij veilingen waarop ik bied, en “begint” of “eindigt binnenkort” bij veilingen die ik volg.",
+    "Results": "Resultaten",
+    "When an auction ends and I didn't win, or the reserve wasn't met.": "Wanneer een veiling afloopt en ik niet heb gewonnen, of de reserveprijs niet is bereikt.",
+    "Save my choices": "Mijn keuzes opslaan",
+    "Emails about an auction you won, your invoice and payment reminders always arrive, because they're about a purchase you've committed to.": "E-mails over een gewonnen veiling, je factuur en betalingsherinneringen ontvang je altijd, omdat ze gaan over een aankoop waartoe je je hebt verplicht."
   }
 };/*END*/
 

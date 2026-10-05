@@ -50,7 +50,7 @@ const FAQ = [
   ]],
   ["Emails, languages and plans", [
     ["Which emails do shoppers get?", "Winners always get their winner notice and invoice. On Blaze and Inferno, bidders also get outbid alerts, a 1-hour-left reminder, watch alerts and result emails. Every shopper can choose which optional emails they receive from a link in each email."],
-    ["Does it work in other languages?", "English, Spanish, French, German and Portuguese. The bidding panel, product-card badges, Live Auctions section, My Auctions page and buyer emails appear in the shopper's language when they browse your store in one of these (emails follow the buyer's Shopify account language). To offer a language, add and publish it in Settings, then Languages. Other languages show English for now."],
+    ["Does it work in other languages?", "English, Spanish, French, German, Portuguese, Italian and Dutch. The bidding panel, product-card badges, Live Auctions section, My Auctions page and buyer emails appear in the shopper's language when they browse your store in one of these (emails follow the buyer's Shopify account language). To offer a language, add and publish it in Settings, then Languages. Other languages show English for now."],
     ["What counts toward my monthly auction limit?", "Each auction you create, including relisted, repeated and spreadsheet-created auctions. The 5 and 10-minute test auctions never count. Limits reset on the 1st of each month."],
     ["What happens if I uninstall?", "Your open auctions are stopped and the app's access to your store ends right away. Shopify then asks us to erase your store's data about 48 hours later. The products the app created stay in your Shopify product list; you can delete them there."],
   ]],

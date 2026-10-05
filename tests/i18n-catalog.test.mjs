@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
 const require = createRequire(import.meta.url);
-const LANGS = ["es", "fr", "de", "pt"];
+const LANGS = ["es", "fr", "de", "pt", "it", "nl"];
 const catalogs = Object.fromEntries(LANGS.map((l) => [l, new Map(require(`../i18n/${l}.cjs`))]));
 const surfaces = JSON.parse(fs.readFileSync(new URL("../i18n/surfaces.json", import.meta.url), "utf8"));
 const placeholders = (s) => (String(s).match(/\{\w+\}/g) || []).sort().join(",");

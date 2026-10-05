@@ -60,6 +60,10 @@ const pages = {
   "/products/hf-de": "product-de.html",
   "/collections/pt": "collection-pt.html",
   "/products/hf-pt": "product-pt.html",
+  "/collections/it": "collection-it.html",
+  "/products/hf-it": "product-it.html",
+  "/collections/nl": "collection-nl.html",
+  "/products/hf-nl": "product-nl.html",
   "/collections/es": "collection-es.html",
   "/products/hf-ended": "product-ended.html",
   "/products/hf-ended-won": "product-ended-won.html",
@@ -261,7 +265,7 @@ function check(name, condition) {
   check("Ended auction page: ?keep=1 lets anyone look at it", !keepHtml.includes("LIVE-AUCTIONS-PAGE") && keepHtml.includes("hellfire-auction-root"));
 
   // ----- every extra language: the badges and the real bid panel are in that language, from the catalog -----
-  for (const lang of ["fr","de","pt"]) {
+  for (const lang of ["fr","de","pt","it","nl"]) {
     const words = new Map(require("../../i18n/" + lang + ".cjs"));
     const cardsHtml = await dumpDom(`${base}/collections/${lang}`);
     const panelHtml = await dumpDom(`${base}/products/hf-${lang}`);

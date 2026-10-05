@@ -193,6 +193,92 @@ const money = (v) => `$${Number(v || 0).toFixed(2)}`;
     "ended": "encerrado",
     "Preparing your invoice...": "Preparando sua fatura...",
     "Couldn't combine your wins. Please try again.": "Não foi possível combinar seus leilões ganhos. Tente novamente."
+  },
+  "it": {
+    "My Auctions": "Le mie aste",
+    "Sign in to see the auctions you're bidding on.": "Accedi per vedere le aste a cui stai partecipando.",
+    "Sign in": "Accedi",
+    "You haven't bid on any auctions yet.": "Non hai ancora fatto offerte su nessuna asta.",
+    "Browse live auctions": "Vedi le aste in corso",
+    "You have an unpaid win": "Hai una vincita da pagare",
+    "Pay now": "Paga ora",
+    "Your {n} wins are on one invoice": "Le tue {n} vincite sono in un'unica fattura",
+    "{total} in total, one shipping charge": "{total} in totale, una sola spedizione",
+    "You have {n} unpaid wins": "Hai {n} vincite da pagare",
+    "Pay all wins together and pay shipping once.": "Paga tutte le vincite insieme e paga la spedizione una sola volta.",
+    "Pay all wins together": "Paga tutto insieme",
+    "WINNING": "IN TESTA",
+    "OUTBID": "SUPERATO",
+    "WON": "VINTA",
+    "HIGH BIDDER": "OFFERENTE PIÙ ALTO",
+    "HOT": "POPOLARE",
+    "Upcoming auction": "Prossima asta",
+    "Auction ended": "Asta terminata",
+    "Live auction": "Asta in corso",
+    "Winning Bid": "Offerta vincente",
+    "Current Bid": "Offerta attuale",
+    "Starting Bid": "Offerta iniziale",
+    "Reserve met": "Prezzo di riserva raggiunto",
+    "Reserve not met": "Prezzo di riserva non raggiunto",
+    "1 bid": "1 offerta",
+    "{n} bids": "{n} offerte",
+    "Starts in ": "Inizia tra ",
+    "Bid again": "Rilancia",
+    "Items you've paid for in the last 30 days.": "Articoli che hai pagato negli ultimi 30 giorni.",
+    "Live Auctions": "Aste in corso",
+    "Won Auctions": "Aste vinte",
+    "Lost Auctions": "Aste perse",
+    "Auctions you won. Pay for all of them together from the banner above.": "Aste che hai vinto. Pagale tutte insieme dal banner qui sopra.",
+    "Auctions that ended in the last 30 days where another bidder won.": "Aste terminate negli ultimi 30 giorni in cui ha vinto un altro offerente.",
+    "Nothing here right now.": "Per ora non c'è nulla.",
+    "Every auction you've bid on or are watching. This page updates itself.": "Tutte le aste in cui hai fatto offerte o che stai seguendo. Questa pagina si aggiorna da sola.",
+    "Manage my email notifications": "Gestisci le mie notifiche email",
+    "ended": "terminata",
+    "Preparing your invoice...": "Preparazione della fattura...",
+    "Couldn't combine your wins. Please try again.": "Impossibile unire le tue vincite. Riprova."
+  },
+  "nl": {
+    "My Auctions": "Mijn veilingen",
+    "Sign in to see the auctions you're bidding on.": "Log in om de veilingen te zien waarop je biedt.",
+    "Sign in": "Inloggen",
+    "You haven't bid on any auctions yet.": "Je hebt nog op geen enkele veiling geboden.",
+    "Browse live auctions": "Bekijk live veilingen",
+    "You have an unpaid win": "Je hebt een gewonnen veiling die nog niet is betaald",
+    "Pay now": "Nu betalen",
+    "Your {n} wins are on one invoice": "Je {n} gewonnen veilingen staan op één factuur",
+    "{total} in total, one shipping charge": "{total} in totaal, eenmaal verzendkosten",
+    "You have {n} unpaid wins": "Je hebt {n} gewonnen veilingen die nog niet zijn betaald",
+    "Pay all wins together and pay shipping once.": "Betaal al je gewonnen veilingen samen en betaal de verzendkosten maar één keer.",
+    "Pay all wins together": "Alles samen betalen",
+    "WINNING": "KOPLOPER",
+    "OUTBID": "OVERBODEN",
+    "WON": "GEWONNEN",
+    "HIGH BIDDER": "HOOGSTE BIEDER",
+    "HOT": "POPULAIR",
+    "Upcoming auction": "Aankomende veiling",
+    "Auction ended": "Veiling afgelopen",
+    "Live auction": "Live veiling",
+    "Winning Bid": "Winnend bod",
+    "Current Bid": "Huidig bod",
+    "Starting Bid": "Startbod",
+    "Reserve met": "Reserveprijs bereikt",
+    "Reserve not met": "Reserveprijs niet bereikt",
+    "1 bid": "1 bod",
+    "{n} bids": "{n} biedingen",
+    "Starts in ": "Begint over ",
+    "Bid again": "Opnieuw bieden",
+    "Items you've paid for in the last 30 days.": "Artikelen die je de afgelopen 30 dagen hebt betaald.",
+    "Live Auctions": "Live veilingen",
+    "Won Auctions": "Gewonnen veilingen",
+    "Lost Auctions": "Verloren veilingen",
+    "Auctions you won. Pay for all of them together from the banner above.": "Veilingen die je hebt gewonnen. Betaal ze allemaal samen via de banner hierboven.",
+    "Auctions that ended in the last 30 days where another bidder won.": "Veilingen van de afgelopen 30 dagen die door een andere bieder zijn gewonnen.",
+    "Nothing here right now.": "Op dit moment niets.",
+    "Every auction you've bid on or are watching. This page updates itself.": "Alle veilingen waarop je hebt geboden of die je volgt. Deze pagina werkt zichzelf bij.",
+    "Manage my email notifications": "Mijn e-mailmeldingen beheren",
+    "ended": "afgelopen",
+    "Preparing your invoice...": "Je factuur wordt voorbereid...",
+    "Couldn't combine your wins. Please try again.": "Je gewonnen veilingen konden niet worden gecombineerd. Probeer het opnieuw."
   }
 };/*END*/
 const T = makeT(DICT);
@@ -356,7 +442,7 @@ export const loader = async ({ request }) => {
       const bids = a.bidCount === 1 ? T("1 bid") : T("{n} bids", { n: a.bidCount });
       const timing = ended
         ? ""
-        : ` &middot; <span data-hf-ends="${(upcoming ? a.startsAt : a.endsAt).toISOString()}" data-hf-prefix="${upcoming ? T("Starts in ") : P("", { es: "Quedan ", fr: "Il reste ", de: "Noch ", pt: "Faltam " })}" data-hf-suffix="${upcoming ? "" : P(" left", { es: "", fr: "", de: "", pt: "" })}"></span>`;
+        : ` &middot; <span data-hf-ends="${(upcoming ? a.startsAt : a.endsAt).toISOString()}" data-hf-prefix="${upcoming ? T("Starts in ") : P("", { es: "Quedan ", fr: "Il reste ", de: "Noch ", pt: "Faltam ", it: "Mancano ", nl: "Nog " })}" data-hf-suffix="${upcoming ? "" : P(" left", { es: "", fr: "", de: "", pt: "", it: "", nl: "" })}"></span>`;
       const img = a.imageUrl
         ? `<img src="${esc(a.imageUrl)}" alt="${esc(a.title)}" style="width:100%;aspect-ratio:1/1;object-fit:cover;display:block">`
         : `<div style="aspect-ratio:1/1;background:linear-gradient(135deg,#3d0000,#ff3b30)"></div>`;
@@ -392,12 +478,12 @@ export const loader = async ({ request }) => {
         : `<div style="aspect-ratio:1/1;background:linear-gradient(135deg,#3d0000,#ff3b30)"></div>`;
       const paidDate = new Date(paidAt.get(a.id));
       const dayIn = (lang) => paidDate.toLocaleDateString(lang, { month: "short", day: "numeric" });
-      const when = P(dayIn("en-US"), { es: dayIn("es"), fr: dayIn("fr"), de: dayIn("de"), pt: dayIn("pt") });
-      return `<div style="border:1px solid #e3e3e3;border-radius:12px;overflow:hidden;background:#fff">${img}<div style="padding:10px 12px"><div style="font-weight:700">${esc(a.title)}</div><div style="color:#0f6b34;font-weight:700;margin-top:4px">&#10004; ${P("Paid", { es: "Pagado", fr: "Payé", de: "Bezahlt", pt: "Pago" })} &middot; ${money(a.currentBid)}</div><div style="color:#616161;font-size:13px">${when}</div></div></div>`;
+      const when = P(dayIn("en-US"), { es: dayIn("es"), fr: dayIn("fr"), de: dayIn("de"), pt: dayIn("pt"), it: dayIn("it"), nl: dayIn("nl") });
+      return `<div style="border:1px solid #e3e3e3;border-radius:12px;overflow:hidden;background:#fff">${img}<div style="padding:10px 12px"><div style="font-weight:700">${esc(a.title)}</div><div style="color:#0f6b34;font-weight:700;margin-top:4px">&#10004; ${P("Paid", { es: "Pagado", fr: "Payé", de: "Bezahlt", pt: "Pago", it: "Pagato", nl: "Betaald" })} &middot; ${money(a.currentBid)}</div><div style="color:#616161;font-size:13px">${when}</div></div></div>`;
     })
     .join("");
   const paidSection = paidCards
-    ? `<h2 style="margin:36px 0 6px;font-size:20px">${P("Paid", { es: "Pagadas", fr: "Payées", de: "Bezahlt", pt: "Pagas" })}</h2><p style="margin:0 0 14px;color:#616161">${T("Items you've paid for in the last 30 days.")}</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px">${paidCards}</div>`
+    ? `<h2 style="margin:36px 0 6px;font-size:20px">${P("Paid", { es: "Pagadas", fr: "Payées", de: "Bezahlt", pt: "Pagas", it: "Pagate", nl: "Betaald" })}</h2><p style="margin:0 0 14px;color:#616161">${T("Items you've paid for in the last 30 days.")}</p><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px">${paidCards}</div>`
     : "";
 
   const sectionGrid = (html) => `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px">${html}</div>`;
@@ -421,7 +507,7 @@ export const loader = async ({ request }) => {
   </div>
   <script>
     (function () {
-      var HF = /*I18N-HF*/{% if hf_lang == 'es' %}{ ended: "terminada", preparing: "Preparando tu factura...", fail: "No se pudieron combinar tus victorias. Inténtalo de nuevo.", combine: "Pagar todas juntas" }{% elsif hf_lang == 'fr' %}{ ended: "terminée", preparing: "Préparation de votre facture...", fail: "Impossible de regrouper vos enchères gagnées. Veuillez réessayer.", combine: "Tout payer ensemble" }{% elsif hf_lang == 'de' %}{ ended: "beendet", preparing: "Ihre Rechnung wird vorbereitet...", fail: "Ihre Gewinne konnten nicht zusammengefasst werden. Bitte versuchen Sie es erneut.", combine: "Alle zusammen bezahlen" }{% elsif hf_lang == 'pt' %}{ ended: "encerrado", preparing: "Preparando sua fatura...", fail: "Não foi possível combinar seus leilões ganhos. Tente novamente.", combine: "Pagar tudo junto" }{% else %}{ ended: "ended", preparing: "Preparing your invoice...", fail: "Couldn't combine your wins. Please try again.", combine: "Pay all wins together" }{% endif %}/*END*/;
+      var HF = /*I18N-HF*/{% if hf_lang == 'es' %}{ ended: "terminada", preparing: "Preparando tu factura...", fail: "No se pudieron combinar tus victorias. Inténtalo de nuevo.", combine: "Pagar todas juntas" }{% elsif hf_lang == 'fr' %}{ ended: "terminée", preparing: "Préparation de votre facture...", fail: "Impossible de regrouper vos enchères gagnées. Veuillez réessayer.", combine: "Tout payer ensemble" }{% elsif hf_lang == 'de' %}{ ended: "beendet", preparing: "Ihre Rechnung wird vorbereitet...", fail: "Ihre Gewinne konnten nicht zusammengefasst werden. Bitte versuchen Sie es erneut.", combine: "Alle zusammen bezahlen" }{% elsif hf_lang == 'pt' %}{ ended: "encerrado", preparing: "Preparando sua fatura...", fail: "Não foi possível combinar seus leilões ganhos. Tente novamente.", combine: "Pagar tudo junto" }{% elsif hf_lang == 'it' %}{ ended: "terminata", preparing: "Preparazione della fattura...", fail: "Impossibile unire le tue vincite. Riprova.", combine: "Paga tutto insieme" }{% elsif hf_lang == 'nl' %}{ ended: "afgelopen", preparing: "Je factuur wordt voorbereid...", fail: "Je gewonnen veilingen konden niet worden gecombineerd. Probeer het opnieuw.", combine: "Alles samen betalen" }{% else %}{ ended: "ended", preparing: "Preparing your invoice...", fail: "Couldn't combine your wins. Please try again.", combine: "Pay all wins together" }{% endif %}/*END*/;
       function tick() {
         document.querySelectorAll("[data-hf-ends]").forEach(function (el) {
           var ms = Date.parse(el.getAttribute("data-hf-ends")) - Date.now();

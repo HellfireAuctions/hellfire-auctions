@@ -7,7 +7,7 @@ const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.join(__dirname, "..");
-const LANGS = ["es", "fr", "de", "pt"];
+const LANGS = ["es", "fr", "de", "pt", "it", "nl"];
 const A = "extensions/hellfire-auctions-storefront/assets/";
 
 const surfaces = JSON.parse(fs.readFileSync(path.join(ROOT, "i18n", "surfaces.json"), "utf8"));

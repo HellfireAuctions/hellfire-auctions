@@ -2525,7 +2525,7 @@ export default function AuctionsPage() {
             <s-link href={liveBlockUrl} target="_top">Add the Live Auctions block to my home page</s-link>
           </li>
           <li>
-            <strong>Languages and currencies (optional).</strong> The bidding panel, product-card badges, Live Auctions block, My Auctions page and buyer emails appear in the shopper's language (Spanish, French, German or Portuguese) whenever they browse your store in it; other languages show English for now. To offer a language, add and publish it in{" "}
+            <strong>Languages and currencies (optional).</strong> The bidding panel, product-card badges, Live Auctions block, My Auctions page and buyer emails appear in the shopper's language (Spanish, French, German, Portuguese, Italian or Dutch) whenever they browse your store in it; other languages show English for now. To offer a language, add and publish it in{" "}
             <s-link href={`${adminBase}/settings/languages`} target="_top">Settings, Languages</s-link>. If you sell in more than one currency, bids are always placed in your store&rsquo;s currency and shoppers also see an approximate amount in theirs.
           </li>
           <li>

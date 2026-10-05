@@ -2510,7 +2510,7 @@ export default function AuctionsPage() {
             <strong>Add &ldquo;My Auctions&rdquo; to your store menu</strong> using the one-click banner (if shown), so customers can see every auction they&rsquo;re bidding on, have won, lost or paid for.
           </li>
           <li>
-            <strong>Show your live auctions on any page (optional).</strong> Add the <em>Live Auctions</em> block, for example to your home page. It lists only running auctions, soonest-ending first, and matches your theme&rsquo;s fonts and colors.{" "}
+            <strong>Show your live auctions on any page (optional).</strong> Add the <em>Live Auctions</em> block, for example to your home page. It needs a newer (Online Store 2.0) theme; the bidding panel and card badges work on any theme. It lists only running auctions, soonest-ending first, and matches your theme&rsquo;s fonts and colors.{" "}
             <s-link href={liveBlockUrl} target="_top">Add the Live Auctions block to my home page</s-link>
           </li>
           <li>

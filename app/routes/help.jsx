@@ -42,6 +42,11 @@ const FAQ = [
     ["Can I remove a bid or block a bidder?", "Yes. Each auction card lists its bidders. You can remove a bid, which recalculates the price, or block a bidder from your store's auctions. Blocked bidders appear in a list where you can unblock them."],
     ["How do I clear paid auctions from my list?", "Use Remove from list on a paid card, or Clear all paid above your auctions. Nothing is deleted: your records, insights and the buyer's history stay, and Show removed brings them back."],
   ]],
+  ["Themes, currencies and tax", [
+    ["Which themes does it work with?", "The bidding panel and the live bid badges on your product cards are designed to work with any Shopify theme, newer or older. The optional Live Auctions section for your home page needs a newer \u201COnline Store 2.0\u201D theme (nearly every theme released since 2021). On an older theme, link to your Live Auctions collection instead."],
+    ["What if my customers shop in another currency?", "Bids are always placed in your store's currency. A shopper browsing in another currency sees an approximate amount next to each price. Shopify decides the currency on the winner's invoice from your Markets settings, so if you sell internationally, run one test order from another country before your first international sale."],
+    ["Do bids include tax and shipping?", "A bid is the price of the item. Shopify adds tax and shipping at checkout according to your store's tax and shipping settings. If your store shows tax-inclusive prices, test one invoice first to confirm it displays the way you expect."],
+  ]],
   ["Emails, languages and plans", [
     ["Which emails do shoppers get?", "Winners always get their winner notice and invoice. On Blaze and Inferno, bidders also get outbid alerts, a 1-hour-left reminder, watch alerts and result emails. Every shopper can choose which optional emails they receive from a link in each email."],
     ["Does it work in other languages?", "English and Spanish. The bidding panel, product-card badges, My Auctions page and buyer emails appear in Spanish when a shopper browses your store in Spanish (emails follow the buyer's Shopify account language). Add Spanish in Settings, then Languages."],

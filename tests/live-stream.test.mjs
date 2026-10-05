@@ -149,4 +149,16 @@ assert.equal(liveStreamUrl("auction-1", "https://x.test", ""), null, "no secret 
 assert.equal(liveStreamUrl("auction-1", "", S), null, "no origin means no address");
 assert.equal(liveStreamUrl("", "https://x.test", S), null);
 
+// ---------- the emergency off switch ----------
+process.env.HELLFIRE_LIVE = "off";
+assert.equal(liveStreamUrl("auction-1", "https://x.test", S), null, "off: no addresses are handed out");
+const off = liveStreamResponse({ auctionId: "auction-1", token: liveToken("auction-1", S), secret: S });
+assert.equal(off.status, 503, "off: new connections are refused");
+assert.equal(off.headers.get("access-control-allow-origin"), "*");
+assert.equal(connectionCount(), 0);
+process.env.HELLFIRE_LIVE = "on";
+assert.ok(liveStreamUrl("auction-1", "https://x.test", S), "on again: addresses are handed out");
+delete process.env.HELLFIRE_LIVE;
+assert.ok(liveStreamUrl("auction-1", "https://x.test", S), "unset means on");
+
 console.log("Live connection: all checks passed");

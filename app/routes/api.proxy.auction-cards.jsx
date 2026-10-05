@@ -1,5 +1,7 @@
-import { authenticate, unauthenticated } from "../shopify.server";
+import { unauthenticated } from "../shopify.server";
+import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
+import { memo } from "../memo.server";
 import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
 import { shopCurrency } from "../currency.server";
 
@@ -46,7 +48,7 @@ async function handlesFor(shop, productIds) {
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.public.appProxy(request);
+  const { session } = await proxyAuth(request);
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop");
 
@@ -55,7 +57,8 @@ export const loader = async ({ request }) => {
   }
 
   const now = new Date();
-  const auctions = await prisma.auction.findMany({
+  // The list of auctions is the same for every shopper, so concurrent requests share one fetch for 2 seconds.
+  const auctions = await memo("cards:" + shop, 2000, () => prisma.auction.findMany({
     where: { shop, endsAt: { gt: new Date(now.getTime() - ENDED_WINDOW_MS) } },
     select: {
       id: true,
@@ -70,7 +73,7 @@ export const loader = async ({ request }) => {
     },
     orderBy: { createdAt: "asc" }, // newest auction per product wins
     take: 250,
-  });
+  }));
 
   let handles = new Map();
   try {
@@ -79,7 +82,7 @@ export const loader = async ({ request }) => {
     console.error("[auction-cards] handle lookup failed:", error?.message || error);
   }
 
-  const plan = await getShopPlan(shop);
+  const plan = await memo("plan:" + shop, 15_000, () => getShopPlan(shop));
 
   // Social proof: how many people are watching / bidding (counts only, never who).
   const watcherCounts = new Map();
@@ -87,8 +90,8 @@ export const loader = async ({ request }) => {
   if (auctions.length) {
     try {
       const ids = auctions.map((a) => a.id);
-      for (const r of await prisma.watch.groupBy({ by: ["auctionId"], where: { auctionId: { in: ids } }, _count: { _all: true } })) watcherCounts.set(r.auctionId, r._count._all);
-      for (const r of await prisma.bid.groupBy({ by: ["auctionId"], where: { auctionId: { in: ids } }, _count: { _all: true } })) bidderCounts.set(r.auctionId, r._count._all);
+      for (const r of await memo("cards-watch:" + shop, 2000, () => prisma.watch.groupBy({ by: ["auctionId"], where: { auctionId: { in: ids } }, _count: { _all: true } }))) watcherCounts.set(r.auctionId, r._count._all);
+      for (const r of await memo("cards-bidders:" + shop, 2000, () => prisma.bid.groupBy({ by: ["auctionId"], where: { auctionId: { in: ids } }, _count: { _all: true } }))) bidderCounts.set(r.auctionId, r._count._all);
     } catch (error) {
       console.error("[auction-cards] social counts failed:", error?.message || error);
     }

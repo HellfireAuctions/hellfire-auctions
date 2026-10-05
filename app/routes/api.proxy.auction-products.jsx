@@ -1,9 +1,9 @@
-import { authenticate } from "../shopify.server";
+import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
 
 export const loader = async ({ request }) => {
   // Always verify the Shopify app proxy signature (no localhost bypass).
-  const { session } = await authenticate.public.appProxy(request);
+  const { session } = await proxyAuth(request);
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop");
 

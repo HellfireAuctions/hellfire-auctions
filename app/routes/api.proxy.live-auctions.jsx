@@ -1,4 +1,5 @@
-import { authenticate, unauthenticated } from "../shopify.server";
+import { unauthenticated } from "../shopify.server";
+import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
 import { shopCurrency } from "../currency.server";
 
@@ -35,7 +36,7 @@ async function productPaths(shop, productIds) {
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.public.appProxy(request);
+  const { session } = await proxyAuth(request);
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop");
   if (!shop) return Response.json({ error: "Missing shop" }, { status: 400 });

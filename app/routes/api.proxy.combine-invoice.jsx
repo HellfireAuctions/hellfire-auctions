@@ -1,4 +1,4 @@
-import { authenticate } from "../shopify.server";
+import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
 import { combineWinnerInvoices } from "../auction-worker.server";
 
@@ -6,7 +6,7 @@ import { combineWinnerInvoices } from "../auction-worker.server";
 const lastTry = new Map();
 
 export const action = async ({ request }) => {
-  const { session } = await authenticate.public.appProxy(request);
+  const { session } = await proxyAuth(request);
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop");
   const customerId = url.searchParams.get("logged_in_customer_id");

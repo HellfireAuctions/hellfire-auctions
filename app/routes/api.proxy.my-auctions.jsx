@@ -1,4 +1,5 @@
-import { authenticate, unauthenticated } from "../shopify.server";
+import { unauthenticated } from "../shopify.server";
+import { proxyAuth } from "../proxy-auth.server";
 import { prefsUrl } from "../prefs.server";
 import { runPaymentSweep } from "../auction-worker.server";
 import prisma from "../db.server";
@@ -135,7 +136,7 @@ async function combineBanner(shop, auctions, customerId, money) {
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.public.appProxy(request);
+  const { session } = await proxyAuth(request);
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop");
   const currency = await shopCurrency(shop);

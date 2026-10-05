@@ -1,5 +1,6 @@
-import { authenticate } from "../shopify.server";
+import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
+import { memo } from "../memo.server";
 import { shopCurrency } from "../currency.server";
 import { notifyOutbid } from "../notifications.server";
 import { getShopPlan } from "../plans.server";
@@ -11,44 +12,35 @@ import {
 } from "../bidding.server";
 
 // Shared 1-second cache: 100 viewers refreshing every 2s cost about the same as one.
-const auctionCache = new Map(); // "shop|productId" -> { at, auction }
 const CACHE_MS = 1000;
 async function getAuctionCached(shop, productId) {
-  const key = shop + "|" + productId;
-  const hit = auctionCache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.auction;
-  const auction = await prisma.auction.findFirst({
-    where: { shop, productId },
-    orderBy: { createdAt: "desc" },
-    include: {
-      bids: {
-        orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
-        take: 10,
-        select: { amount: true, maxBid: true, bidderId: true, createdAt: true },
+  // Everyone asking at the same moment shares one fetch (see memo.server.js).
+  return memo("auction:" + shop + "|" + productId, CACHE_MS, async () => {
+    const auction = await prisma.auction.findFirst({
+      where: { shop, productId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        bids: {
+          orderBy: [{ maxBid: "desc" }, { createdAt: "asc" }],
+          take: 10,
+          select: { amount: true, maxBid: true, bidderId: true, createdAt: true },
+        },
+        events: {
+          orderBy: { createdAt: "desc" },
+          take: 25,
+          select: { bidderId: true, amount: true, createdAt: true },
+        },
       },
-      events: {
-        orderBy: { createdAt: "desc" },
-        take: 25,
-        select: { bidderId: true, amount: true, createdAt: true },
-      },
-    },
+    });
+    // The watcher count is shared by every shopper, so it is counted once a second here, not once per refresh.
+    if (auction) auction.watchers = await prisma.watch.count({ where: { auctionId: auction.id } }).catch(() => 0);
+    return auction;
   });
-  // The watcher count is shared by every shopper, so it is counted once a second here, not once per refresh.
-  if (auction) auction.watchers = await prisma.watch.count({ where: { auctionId: auction.id } }).catch(() => 0);
-  if (auctionCache.size > 2000) auctionCache.clear();
-  auctionCache.set(key, { at: Date.now(), auction });
-  return auction;
 }
 
 // The store's plan changes rarely, so refreshes read it from memory (a few seconds old at worst).
-const planCache = new Map(); // shop -> { at, plan }
 async function planCached(shop) {
-  const hit = planCache.get(shop);
-  if (hit && Date.now() - hit.at < 15_000) return hit.plan;
-  const plan = await getShopPlan(shop);
-  if (planCache.size > 2000) planCache.clear();
-  planCache.set(shop, { at: Date.now(), plan });
-  return plan;
+  return memo("plan:" + shop, 15_000, () => getShopPlan(shop));
 }
 
 // Bid spam protection: one bid per customer per second.
@@ -78,7 +70,7 @@ function maskedBidder(customerId) {
 }
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.public.appProxy(request);
+  const { session } = await proxyAuth(request);
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop");
   const productId = normalizeProductId(url.searchParams.get("product_id"));
@@ -162,7 +154,7 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { session } = await authenticate.public.appProxy(request);
+  const { session } = await proxyAuth(request);
   const url = new URL(request.url);
   const shop = session?.shop || url.searchParams.get("shop");
   const customerId = url.searchParams.get("logged_in_customer_id");

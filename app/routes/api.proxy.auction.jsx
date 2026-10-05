@@ -33,9 +33,22 @@ async function getAuctionCached(shop, productId) {
       },
     },
   });
+  // The watcher count is shared by every shopper, so it is counted once a second here, not once per refresh.
+  if (auction) auction.watchers = await prisma.watch.count({ where: { auctionId: auction.id } }).catch(() => 0);
   if (auctionCache.size > 2000) auctionCache.clear();
   auctionCache.set(key, { at: Date.now(), auction });
   return auction;
+}
+
+// The store's plan changes rarely, so refreshes read it from memory (a few seconds old at worst).
+const planCache = new Map(); // shop -> { at, plan }
+async function planCached(shop) {
+  const hit = planCache.get(shop);
+  if (hit && Date.now() - hit.at < 15_000) return hit.plan;
+  const plan = await getShopPlan(shop);
+  if (planCache.size > 2000) planCache.clear();
+  planCache.set(shop, { at: Date.now(), plan });
+  return plan;
 }
 
 // Bid spam protection: one bid per customer per second.
@@ -96,13 +109,13 @@ export const loader = async ({ request }) => {
   const hasReserve = auction?.reservePrice != null;
 
 
-  const watchPlan = shop ? await getShopPlan(shop) : null;
+  const watchPlan = shop ? await planCached(shop) : null;
   const watching =
     auction && loggedInCustomerId
       ? Boolean(await prisma.watch.findUnique({ where: { auctionId_customerId: { auctionId: auction.id, customerId: loggedInCustomerId } } }))
       : false;
 
-  const watcherCount = auction ? await prisma.watch.count({ where: { auctionId: auction.id } }).catch(() => 0) : 0;
+  const watcherCount = auction?.watchers ?? 0;
   return Response.json({
     now: new Date().toISOString(),
     currency: await shopCurrency(shop),

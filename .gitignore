@@ -27,3 +27,7 @@ database.sqlite
 .react-router/
 prisma/production-test.sqlite
 .neon
+
+loadtest/.secret
+loadtest/.baseline.json
+loadtest/results-*.json

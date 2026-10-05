@@ -7,6 +7,7 @@ import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction, getShopPlan } from "../plans.server";
 import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep } from "../auction-worker.server";
 import { getShopSettings, saveShopSettings } from "../settings.server";
+import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -1010,6 +1011,44 @@ const actionImpl = async ({ request }) => {
     } catch (error) {
       return { error: "Couldn't update your menu. Please open the app again and approve the new permission, then retry." };
     }
+  }
+
+  if (intent === "schedule-event") {
+    const eventIds = [...new Set(formData.getAll("auctionIds").map((v) => String(v)))].slice(0, 100);
+    const gapMinutes = Math.round(Number(formData.get("eventGap")));
+    const evStartLocal = parseStoreLocal(formData.get("eventStart"));
+    const evEndLocal = parseStoreLocal(formData.get("eventFirstEnd"));
+    const evNow = new Date();
+    const evTz = await shopTimezone(admin);
+    const evStartAt = evStartLocal ? easternLocalToUtc(evStartLocal.date, evStartLocal.hour, evStartLocal.minute, evStartLocal.ampm, evTz) : null;
+    const evFirstEnd = evEndLocal ? easternLocalToUtc(evEndLocal.date, evEndLocal.hour, evEndLocal.minute, evEndLocal.ampm, evTz) : null;
+    const evProblem = validateEvent({
+      count: eventIds.length,
+      gapMinutes,
+      startMs: evStartAt ? evStartAt.getTime() : NaN,
+      firstEndMs: evFirstEnd ? evFirstEnd.getTime() : NaN,
+      nowMs: evNow.getTime(),
+    });
+    if (evProblem) return { error: evProblem };
+    const evStart = evStartAt.getTime() < evNow.getTime() ? evNow : evStartAt; // a start a minute ago means "start now"
+    const evRows = await prisma.auction.findMany({ where: { id: { in: eventIds }, shop: session.shop } });
+    const evById = new Map(evRows.map((r) => [r.id, r]));
+    for (const id of eventIds) {
+      const r = evById.get(id);
+      if (!r) return { error: "One of the selected auctions could not be found." };
+      if (r.startsAt.getTime() <= evNow.getTime() || r.bidCount > 0 || r.status === "ENDED" || r.status === "CANCELLED") {
+        return { error: `"${r.title}" has already started, so it can't be part of an event. Only upcoming auctions can.` };
+      }
+    }
+    const evEnds = staggeredEnds(evFirstEnd.getTime(), gapMinutes, eventIds.length);
+    for (let i = 0; i < eventIds.length; i += 1) {
+      await prisma.auction.update({ where: { id: eventIds[i] }, data: { startsAt: evStart, endsAt: evEnds[i], status: "UPCOMING" } });
+    }
+    wakeWorker();
+    return {
+      success: `Event scheduled: ${eventIds.length} auction${eventIds.length === 1 ? "" : "s"} start ${formatEastern(evStart, evTz)} and end one after another, ${gapMinutes} minute${gapMinutes === 1 ? "" : "s"} apart, from ${formatEastern(evEnds[0], evTz)} to ${formatEastern(evEnds[evEnds.length - 1], evTz)}.`,
+      eventScheduled: true,
+    };
   }
 
   if (intent === "save-settings") {
@@ -2272,6 +2311,10 @@ export default function AuctionsPage() {
     }
   };
   const actionData = useActionData();
+  const [evSel, setEvSel] = useState([]); // auctions picked for an event, in the order they will end
+  useEffect(() => {
+    if (actionData?.eventScheduled) setEvSel([]);
+  }, [actionData]);
 
   const [cloneFrom, setCloneFrom] = useState(null);
   const [editingId, setEditingId] =
@@ -2372,6 +2415,7 @@ export default function AuctionsPage() {
             <li><strong>Unpaid winners</strong> get 4 days to pay, with reminders. After that the app offers the item to the next bidder for you (you can turn this off under <em>Unpaid winners</em>), counts the unpaid sale against that bidder, and blocks anyone who reaches your limit (2 by default). You can still send a reminder, offer the item yourself, or cancel the sale from any auction card.</li>
             <li><strong>Paid items</strong> are archived from your store automatically. Use <em>Clear all paid</em> above your auctions to tidy this list; nothing is deleted.</li>
             <li><strong>Unsold auctions</strong> are taken off your store about 10 minutes after they end. <em>Relist</em> puts them back.</li>
+            <li><strong>Auction events:</strong> create several auctions, tick <em>Add to an auction event</em> on the upcoming ones, then schedule them all to start together and end one after another (for example, every 8 minutes).</li>
           </ul>
         </div>
       </details>
@@ -2436,6 +2480,44 @@ export default function AuctionsPage() {
       </s-section>
 
       <s-section heading="Auctions">
+        {!showRemoved && evSel.length > 0 && (
+          <Form method="post" style={{ background: "#f6f6f7", border: "1px solid #c9cccf", borderRadius: 12, padding: 16, margin: "0 0 16px", display: "grid", gap: 12 }}>
+            <input type="hidden" name="intent" value="schedule-event" />
+            {evSel.map((id) => <input key={id} type="hidden" name="auctionIds" value={id} />)}
+            <strong>Auction event: {evSel.length} auction{evSel.length === 1 ? "" : "s"} selected</strong>
+            <ol style={{ margin: 0, paddingLeft: 22, display: "grid", gap: 6, fontSize: 14 }}>
+              {evSel.map((id, i) => (
+                <li key={id}>
+                  {auctions.find((a) => a.id === id)?.title || id}{" "}
+                  <button type="button" disabled={i === 0} aria-label="Move earlier" onClick={() => setEvSel((s) => { const c = [...s]; [c[i - 1], c[i]] = [c[i], c[i - 1]]; return c; })}>&uarr;</button>{" "}
+                  <button type="button" disabled={i === evSel.length - 1} aria-label="Move later" onClick={() => setEvSel((s) => { const c = [...s]; [c[i + 1], c[i]] = [c[i], c[i + 1]]; return c; })}>&darr;</button>{" "}
+                  <button type="button" aria-label="Remove from the event" onClick={() => setEvSel((s) => s.filter((x) => x !== id))}>&times;</button>
+                </li>
+              ))}
+            </ol>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <label style={{ display: "grid", gap: 4 }}>
+                <strong>All auctions start</strong>
+                <input type="datetime-local" name="eventStart" required style={{ padding: "8px 10px", border: "1px solid #8a8a8a", borderRadius: 8 }} />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <strong>First auction ends</strong>
+                <input type="datetime-local" name="eventFirstEnd" required style={{ padding: "8px 10px", border: "1px solid #8a8a8a", borderRadius: 8 }} />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <strong>Minutes between endings</strong>
+                <input type="number" name="eventGap" min="1" max="1440" defaultValue="8" required style={{ padding: "8px 10px", border: "1px solid #8a8a8a", borderRadius: 8, width: 120 }} />
+              </label>
+            </div>
+            <span style={{ fontSize: 13, color: "#616161" }}>
+              Times are in your store&rsquo;s time zone ({timezone}). Auctions end one after another in the order shown. Only auctions that haven&rsquo;t started can be added.
+            </span>
+            <div style={{ display: "flex", gap: 10 }}>
+              <s-button type="submit" variant="primary">Schedule event</s-button>
+              <s-button type="button" variant="secondary" onClick={() => setEvSel([])}>Clear selection</s-button>
+            </div>
+          </Form>
+        )}
         {(paidCount > 0 || removedCount > 0 || showRemoved) && (
           <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", margin: "0 0 14px" }}>
             {showRemoved && <strong>Removed auctions</strong>}
@@ -2564,6 +2646,16 @@ export default function AuctionsPage() {
                       <div style={{ fontSize: 12, color: "#b98900", fontWeight: 600 }}>
                         Test auction: no order or invoice is created on live stores
                       </div>
+                    )}
+                    {state === "UPCOMING" && !showRemoved && auction.bidCount === 0 && (
+                      <label style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={evSel.includes(auction.id)}
+                          onChange={(e) => setEvSel((s) => (e.target.checked ? [...s, auction.id] : s.filter((x) => x !== auction.id)))}
+                        />
+                        Add to an auction event
+                      </label>
                     )}
                     {state === "ENDED" && !auction.winnerId && auction.status !== "CANCELLED" && (
                       <div style={{ fontSize: 12, color: "#616161" }}>Unsold: taken off your store a few minutes after it ends. Relist to put it back.</div>

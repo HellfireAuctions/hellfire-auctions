@@ -102,6 +102,7 @@ export const loader = async ({ request }) => {
       ? Boolean(await prisma.watch.findUnique({ where: { auctionId_customerId: { auctionId: auction.id, customerId: loggedInCustomerId } } }))
       : false;
 
+  const watcherCount = auction ? await prisma.watch.count({ where: { auctionId: auction.id } }).catch(() => 0) : 0;
   return Response.json({
     now: new Date().toISOString(),
     currency: await shopCurrency(shop),
@@ -133,6 +134,8 @@ export const loader = async ({ request }) => {
           isTest: Boolean(auction.isTest),
           canWatch: Boolean(watchPlan?.emails),
           watching,
+          watchers: watcherCount,
+          bidders: publicBids.length,
           history: (auction.events || []).map((e) => ({
             bidder: maskedBidder(e.bidderId),
             mine: Boolean(loggedInCustomerId) && e.bidderId === loggedInCustomerId,

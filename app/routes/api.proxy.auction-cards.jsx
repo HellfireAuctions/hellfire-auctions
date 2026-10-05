@@ -81,6 +81,19 @@ export const loader = async ({ request }) => {
 
   const plan = await getShopPlan(shop);
 
+  // Social proof: how many people are watching / bidding (counts only, never who).
+  const watcherCounts = new Map();
+  const bidderCounts = new Map();
+  if (auctions.length) {
+    try {
+      const ids = auctions.map((a) => a.id);
+      for (const r of await prisma.watch.groupBy({ by: ["auctionId"], where: { auctionId: { in: ids } }, _count: { _all: true } })) watcherCounts.set(r.auctionId, r._count._all);
+      for (const r of await prisma.bid.groupBy({ by: ["auctionId"], where: { auctionId: { in: ids } }, _count: { _all: true } })) bidderCounts.set(r.auctionId, r._count._all);
+    } catch (error) {
+      console.error("[auction-cards] social counts failed:", error?.message || error);
+    }
+  }
+
   const customerId = url.searchParams.get("logged_in_customer_id");
   const myStatus = new Map();
   if (customerId && auctions.length) {
@@ -111,6 +124,8 @@ export const loader = async ({ request }) => {
       hot: plan.hotBadge && a.bidCount >= HOT_BID_THRESHOLD,
       myStatus: myStatus.get(a.id) || null,
       hasReserve: a.reservePrice != null,
+      watchers: watcherCounts.get(a.id) || 0,
+      bidders: bidderCounts.get(a.id) || 0,
       isTest: Boolean(a.isTest),
       reserveMet: a.reservePrice == null ? null : Number(a.currentBid) >= Number(a.reservePrice),
     }));

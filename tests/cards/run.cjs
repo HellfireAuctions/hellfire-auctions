@@ -25,7 +25,7 @@ function mockData() {
   return {
     now: new Date().toISOString(),
     auctions: [
-      { handle: "test-1", hasBids: true, amount: 325, bidCount: 21, hot: true, myStatus: "WINNING", startsAt: iso(-5 * 24 * H), endsAt: iso(48 * H), status: "LIVE" },
+      { handle: "test-1", hasBids: true, amount: 325, bidCount: 21, watchers: 12, bidders: 7, hot: true, myStatus: "WINNING", startsAt: iso(-5 * 24 * H), endsAt: iso(48 * H), status: "LIVE" },
       { handle: "upcoming-item", hasBids: false, amount: 10, bidCount: 0, startsAt: iso(3 * H), endsAt: iso(5 * 24 * H), status: "UPCOMING" },
       { handle: "ended-item", hasBids: true, amount: 40, bidCount: 3, startsAt: iso(-5 * 24 * H), endsAt: iso(-20 * 1000), status: "ENDED" },
       { handle: "gone-item", hasBids: true, amount: 55, bidCount: 4, startsAt: iso(-5 * 24 * H), endsAt: iso(-2 * H), status: "ENDED" },
@@ -63,7 +63,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({
       now: new Date().toISOString(), currency: "USD", loggedInCustomerId: "1",
-      auction: { status: "LIVE", currentBid: 20, startingBid: 10, minimumBid: 21, bidCount: 3, highestBidder: "b***r", startsAt: iso(-H), endsAt: iso(5 * H), history: [{ bidder: "b***r", amount: 20, at: iso(-60000), mine: true }], canWatch: true, watching: false, hasReserve: true, reserveMet: false, myStatus: "WINNING", myMaximumBid: 25 },
+      auction: { status: "LIVE", currentBid: 20, startingBid: 10, minimumBid: 21, bidCount: 3, watchers: 12, bidders: 7, highestBidder: "b***r", startsAt: iso(-H), endsAt: iso(5 * H), history: [{ bidder: "b***r", amount: 20, at: iso(-60000), mine: true }], canWatch: true, watching: false, hasReserve: true, reserveMet: false, myStatus: "WINNING", myMaximumBid: 25 },
     }));
   }
   if (url.pathname === "/apps/hellfire-auctions/live-auctions") {
@@ -201,6 +201,13 @@ function check(name, condition) {
   check("Spanish store: signed-in bidder is not treated as logged out", !panelEs.includes('data-hf-login="1"') && panelEs.includes("Seguir esta subasta"));
   const panelEn = await dumpDom(`${base}/products/hf-en`);
   check("English store: bid panel unchanged", panelEn.includes("Highest Bid") && panelEn.includes("INCREASE BID") && panelEn.includes("Watch this auction") && !panelEn.includes("Puja"));
+
+  const socialDawn = await dumpDom(`${base}/collections/dawn`);
+  check("Social proof on the card: 7 bidders and 12 watching", socialDawn.includes("7 bidders") && socialDawn.includes("12 watching"));
+  check("Social proof stays off cards with too little to show", !segment(socialDawn, "card-upcoming").includes("watching"));
+  check("Spanish card: 7 postores y 12 siguiendo", esCards.includes("7 postores") && esCards.includes("12 siguiendo"));
+  check("Bid panel (English): 7 bidders and 12 watching", panelEn.includes("7 bidders") && panelEn.includes("12 watching"));
+  check("Bid panel (Spanish): 7 postores y 12 siguiendo", panelEs.includes("7 postores") && panelEs.includes("12 siguiendo"));
 
   if (process.env.SHOT_DIR) {
     await screenshot(`${base}/collections/dawn`, path.join(process.env.SHOT_DIR, "cards-dawn.png"));

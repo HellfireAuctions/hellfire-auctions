@@ -36,7 +36,7 @@
 
   // Wording follows the language the shopper is browsing the store in (any theme).
   const LANG = String(config.locale || (window.Shopify && window.Shopify.locale) || document.documentElement.getAttribute("lang") || "en").slice(0, 2).toLowerCase();
-  const ES = {"Test auction":"Subasta de prueba","Test auction ended":"Subasta de prueba terminada","Live auction":"Subasta en vivo","Upcoming auction":"Próxima subasta","Auction ended":"Subasta terminada","Winning Bid":"Puja ganadora","Current Bid":"Puja actual","Starting Bid":"Puja inicial","{time} left":"Quedan {time}","Starts in {time}":"Empieza en {time}","1 bid":"1 puja","{n} bids":"{n} pujas","WINNING":"GANANDO","OUTBID":"SUPERADO","WON":"GANADA","HIGH BIDDER":"MEJOR POSTOR","Reserve met":"Reserva alcanzada","Reserve not met":"Reserva no alcanzada","HOT":"POPULAR"};
+  const ES = {"Test auction":"Subasta de prueba","Test auction ended":"Subasta de prueba terminada","Live auction":"Subasta en vivo","Upcoming auction":"Próxima subasta","Auction ended":"Subasta terminada","Winning Bid":"Puja ganadora","Current Bid":"Puja actual","Starting Bid":"Puja inicial","{time} left":"Quedan {time}","Starts in {time}":"Empieza en {time}","1 bid":"1 puja","{n} bids":"{n} pujas","WINNING":"GANANDO","OUTBID":"SUPERADO","WON":"GANADA","HIGH BIDDER":"MEJOR POSTOR","Reserve met":"Reserva alcanzada","Reserve not met":"Reserva no alcanzada","HOT":"POPULAR","{n} bidders":"{n} postores","{n} watching":"{n} siguiendo"};
   function T(s, vars) {
     let out = LANG === "es" && Object.prototype.hasOwnProperty.call(ES, s) ? ES[s] : s;
     if (vars) for (const k of Object.keys(vars)) out = out.split("{" + k + "}").join(String(vars[k]));
@@ -155,6 +155,13 @@
     setText(badge.querySelector(".hellfire-card-badge__amount-label"), amountLabel);
     setText(badge.querySelector(".hellfire-card-badge__amount"), money(auction.amount));
     setText(badge.querySelector(".hellfire-card-badge__meta"), timing ? `${bids} \u00b7 ${timing}` : bids);
+    const socialEl = badge.querySelector(".hellfire-card-badge__social");
+    if (socialEl) {
+      const parts = [];
+      if (state === "LIVE" && Number(auction.bidders) >= 2) parts.push(T("{n} bidders", { n: auction.bidders }));
+      if (state === "LIVE" && Number(auction.watchers) >= 2) parts.push(T("{n} watching", { n: auction.watchers }));
+      setText(socialEl, parts.join(" \u00b7 "));
+    }
   }
 
   function createBadge(handle, href) {
@@ -168,7 +175,7 @@
       '<span class="hellfire-card-badge__line"><span class="hellfire-card-badge__amount-label"></span> ' +
       '<strong class="hellfire-card-badge__amount"></strong></span>' +
       '<span class="hellfire-card-badge__reserve"></span>' +
-      '<span class="hellfire-card-badge__meta"></span>' +
+      '<span class="hellfire-card-badge__meta"></span>' + '<span class="hellfire-card-badge__social"></span>' +
       '<span class="hellfire-card-badge__brand"></span>';
     badges.set(badge, handle);
     return badge;

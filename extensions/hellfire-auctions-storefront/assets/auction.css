@@ -112,3 +112,5 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
 .hellfire-auction-extend-note { font-size: 13px; opacity: 0.8; margin: -4px 0 10px; }
 
 .hellfire-auction-test-note { font-size: 13px; font-weight: 800; color: #ffb347; letter-spacing: 0.04em; margin: 0 0 8px; }
+
+.hellfire-auction-social{margin:6px 0;font-size:13px;font-weight:600;opacity:.85}

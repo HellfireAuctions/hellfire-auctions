@@ -817,6 +817,41 @@ export async function emailDataRequest({ shop, customerId, report }) {
   });
 }
 
+// The 4-day window passed with no payment: tell the store what the app did automatically.
+export async function notifyMerchantAutoOffer({ auction, price, strikes, blocked }) {
+  if (!notificationsEnabled()) return;
+  if (!(await getShopPlan(auction.shop)).emails) return;
+  const notice = { auctionId: auction.id, customerId: "merchant", type: "MERCHANT_AUTO_OFFER", key: "1" };
+  try {
+    if (!(await claimNotice(notice))) return;
+    const data = await lookup(auction.shop, "0", auction.productId);
+    useCurrency(data);
+    const to = data?.shop?.email || data?.shop?.contactEmail;
+    if (!to) {
+      await releaseNotice(notice);
+      return;
+    }
+    const title = data?.product?.title || auction.title;
+    const plural = (n) => `${n} unpaid sale${n === 1 ? "" : "s"}`;
+    const lines = [`The winner of "${title}" didn't pay within 4 days, so the item was offered to the next bidder automatically at ${money(price)}.`];
+    if (blocked) lines.push(`The first winner has ${plural(strikes)} on record and was blocked from bidding automatically. You can unblock them in Hellfire Auctions.`);
+    else if (strikes > 0) lines.push(`The first winner now has ${plural(strikes)} on record.`);
+    lines.push("You can change this under Unpaid winners in Hellfire Auctions.");
+    await sendEmail({
+      to,
+      subject: `Offered to the next bidder: ${title}`,
+      heading: "Second-chance offer sent",
+      lines,
+      buttonLabel: "Open Hellfire Auctions",
+      buttonUrl: `https://admin.shopify.com/store/${auction.shop.replace(".myshopify.com", "")}/apps/${process.env.SHOPIFY_API_KEY}`,
+      shopName: data?.shop?.name || "your store",
+    });
+  } catch (error) {
+    await releaseNotice(notice);
+    console.error("[notify] automatic second-chance email failed:", error?.message || error);
+  }
+}
+
 // The buyer's wins were merged into one invoice (seller pressed "Combine").
 export async function notifyCombinedInvoice({ shop, customerId, count, total, url }) {
   if (!notificationsEnabled()) return;

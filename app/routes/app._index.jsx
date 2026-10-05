@@ -6,6 +6,7 @@ import prisma from "../db.server";
 import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction, getShopPlan } from "../plans.server";
 import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep } from "../auction-worker.server";
+import { getShopSettings, saveShopSettings } from "../settings.server";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -885,6 +886,18 @@ export const loader = async ({ request }) => {
     console.error("[admin] weights lookup failed:", error?.message || error);
   }
 
+  const settings = await getShopSettings(session.shop);
+  const strikeMap = new Map(); // customerId -> unpaid sales on record
+  try {
+    const strikeRows = await prisma.$queryRaw`
+      SELECT n."customerId" AS id, COUNT(*)::int AS n FROM "AuctionNotification" n
+      JOIN "Auction" a ON a."id" = n."auctionId"
+      WHERE a."shop" = ${session.shop} AND n."type" = 'STRIKE' GROUP BY n."customerId"`;
+    for (const r of strikeRows) strikeMap.set(String(r.id), Number(r.n));
+  } catch (error) {
+    console.error("[admin] unpaid-sale counts failed:", error?.message || error);
+  }
+
   const unpaidByWinner = new Map();
   for (const a of auctions) {
     if (!a.winnerId || !a.winnerDraftOrderId) continue;
@@ -924,6 +937,7 @@ export const loader = async ({ request }) => {
       bidders,
       paymentStatus: auction.winnerDraftOrderId ? draftStatuses.get(auction.winnerDraftOrderId) || null : null,
       weight: weights.get(auction.productId) || null,
+      winnerStrikes: auction.winnerId ? strikeMap.get(String(auction.winnerId)) || 0 : 0,
       winnerUnpaidCount: unpaidByWinner.get(auction.winnerId)?.n || 0,
       winnerDraftCount: unpaidByWinner.get(auction.winnerId)?.drafts.size || 0,
       payDeadline: auction.winnerId
@@ -979,7 +993,7 @@ export const loader = async ({ request }) => {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, removedCount: hiddenIds.length, showRemoved, adminBase: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}`, liveBlockUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/themes/current/editor?template=index&addAppBlockId=${process.env.SHOPIFY_API_KEY}/live-auctions&target=newAppsSection`, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
+  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, settings, removedCount: hiddenIds.length, showRemoved, adminBase: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}`, liveBlockUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/themes/current/editor?template=index&addAppBlockId=${process.env.SHOPIFY_API_KEY}/live-auctions&target=newAppsSection`, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -996,6 +1010,14 @@ const actionImpl = async ({ request }) => {
     } catch (error) {
       return { error: "Couldn't update your menu. Please open the app again and approve the new permission, then retry." };
     }
+  }
+
+  if (intent === "save-settings") {
+    await saveShopSettings(session.shop, {
+      autoOfferNext: formData.get("autoOfferNext") === "on",
+      strikeLimit: Number(formData.get("strikeLimit")),
+    });
+    return { success: "Unpaid winner settings saved." };
   }
 
   if (intent === "set-weight") {
@@ -2216,7 +2238,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, liveBlockUrl, adminBase, removedCount = 0, showRemoved = false } = useLoaderData();
+  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, liveBlockUrl, adminBase, settings, removedCount = 0, showRemoved = false } = useLoaderData();
   const paidCount = auctions.filter((a) => a.paymentStatus === "COMPLETED").length;
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
@@ -2347,7 +2369,7 @@ export default function AuctionsPage() {
           <strong>Good to know</strong>
           <ul style={{ margin: "6px 0 0", paddingLeft: 20, display: "grid", gap: 6 }}>
             <li><strong>The $99,999 price in your product list</strong> is a placeholder so nobody can buy an auction item outside the auction. Shoppers never see it, and the winner always pays exactly their winning bid.</li>
-            <li><strong>Unpaid winners</strong> get 4 days to pay, with reminders. After that you can send a reminder, offer the item to the next bidder, or cancel the sale from the auction card.</li>
+            <li><strong>Unpaid winners</strong> get 4 days to pay, with reminders. After that the app offers the item to the next bidder for you (you can turn this off under <em>Unpaid winners</em>), counts the unpaid sale against that bidder, and blocks anyone who reaches your limit (2 by default). You can still send a reminder, offer the item yourself, or cancel the sale from any auction card.</li>
             <li><strong>Paid items</strong> are archived from your store automatically. Use <em>Clear all paid</em> above your auctions to tidy this list; nothing is deleted.</li>
             <li><strong>Unsold auctions</strong> are taken off your store about 10 minutes after they end. <em>Relist</em> puts them back.</li>
           </ul>
@@ -2381,6 +2403,36 @@ export default function AuctionsPage() {
             <AuctionForm key={`${cloneFrom?.id || "new"}-${formNonce}`} timezone={timezone} prefill={cloneFrom} allowAutoExtend={Boolean(planFlags?.autoExtend)} />
           </>
         )}
+      </s-section>
+
+      <s-section heading="Unpaid winners">
+        <Form method="post" style={{ display: "grid", gap: 14, maxWidth: 680 }}>
+          <input type="hidden" name="intent" value="save-settings" />
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <input type="checkbox" name="autoOfferNext" defaultChecked={settings?.autoOfferNext !== false} style={{ marginTop: 4, width: 18, height: 18 }} />
+            <span>
+              <strong>Offer the item to the next bidder automatically</strong>
+              <br />
+              <span style={{ fontSize: 13, color: "#616161" }}>
+                If a winner hasn&rsquo;t paid after 4 days (and two reminders), the item is offered to the next-highest bidder at their own maximum bid. This happens once per auction, and you get an email when it does.
+              </span>
+            </span>
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <strong>Block bidders after unpaid sales</strong>
+            <select name="strikeLimit" defaultValue={String(settings?.strikeLimit ?? 2)} style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, maxWidth: 320 }}>
+              <option value="0">Never block automatically</option>
+              <option value="1">After 1 unpaid sale</option>
+              <option value="2">After 2 unpaid sales (recommended)</option>
+              <option value="3">After 3 unpaid sales</option>
+              <option value="5">After 5 unpaid sales</option>
+            </select>
+            <span style={{ fontSize: 13, color: "#616161" }}>
+              A sale counts as unpaid when a winner doesn&rsquo;t pay within 4 days, or when you offer the item to the next bidder yourself. Blocked bidders can&rsquo;t place bids on your auctions; you can unblock anyone in the Blocked bidders list.
+            </span>
+          </label>
+          <div><s-button type="submit" variant="primary">Save</s-button></div>
+        </Form>
       </s-section>
 
       <s-section heading="Auctions">
@@ -2534,6 +2586,9 @@ export default function AuctionsPage() {
                           <s-button type="submit" variant="secondary">Save</s-button>
                         </Form>
                       </details>
+                    )}
+                    {state === "ENDED" && auction.winnerId && auction.winnerStrikes > 0 && auction.paymentStatus !== "COMPLETED" && (
+                      <div style={{ fontSize: 12, color: "#b42318", fontWeight: 600 }}>This winner has {auction.winnerStrikes} earlier unpaid sale{auction.winnerStrikes === 1 ? "" : "s"} on record.</div>
                     )}
                     {auction.autoExtend && (
                       <div style={{ fontSize: 12, color: "#616161" }}>Anti-sniping on</div>

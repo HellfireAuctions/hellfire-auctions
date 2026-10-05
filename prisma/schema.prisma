@@ -136,3 +136,10 @@ model NotificationPref {
 
   @@unique([shop, customerId])
 }
+
+model ShopSettings {
+  shop          String   @id
+  autoOfferNext Boolean  @default(true)
+  strikeLimit   Int      @default(2)
+  updatedAt     DateTime @updatedAt
+}

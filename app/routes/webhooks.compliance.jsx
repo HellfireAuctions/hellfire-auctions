@@ -57,6 +57,7 @@ export const action = async ({ request }) => {
       await db.auction.deleteMany({ where: { shop } }); // bids cascade
       await db.session.deleteMany({ where: { shop } });
       await db.shopPlan.deleteMany({ where: { shop } });
+  await db.shopSettings.deleteMany({ where: { shop } });
       await db.blockedBidder.deleteMany({ where: { shop } });
       await db.watch.deleteMany({ where: { shop } });
       await db.notificationPref.deleteMany({ where: { shop } });

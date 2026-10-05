@@ -3,7 +3,8 @@ import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { isDevelopmentStore } from "./plans.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice, notifyMerchantAutoOffer } from "./notifications.server.js";
+import { getShopSettings, recordStrike } from "./settings.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -560,13 +561,41 @@ async function paymentFollowUps() {
       const st = await draftStatus(a.shop, a.winnerDraftOrderId);
       if (st !== "OPEN" && st !== "INVOICE_SENT") continue;
       const hours = (Date.now() - new Date(a.winnerNotifiedAt).getTime()) / 3600_000;
-      if (hours >= 96) await notifyMerchantUnpaid({ auction: a });
+      if (hours >= 96) {
+        const handled = await autoSecondChance(a).catch((error) => {
+          console.error("[hellfire-auctions] automatic second chance failed:", a.id, error?.message || error);
+          return false;
+        });
+        if (!handled) await notifyMerchantUnpaid({ auction: a });
+      }
       else if (hours >= 72) await sendPaymentReminder({ auction: a, key: "d3" });
       else if (hours >= 24) await sendPaymentReminder({ auction: a, key: "d1" });
     } catch (error) {
       console.error("[hellfire-auctions] payment follow-up failed:", a.id, error?.message || error);
     }
   }
+}
+
+// After 4 unpaid days: the unpaid sale is counted, and (if the store allows it, once per auction)
+// the item is offered to the next bidder. Returns true when the store was already told by email.
+async function autoSecondChance(a) {
+  const settings = await getShopSettings(a.shop);
+  const alreadyOffered = await prisma.auctionNotification.findFirst({ where: { auctionId: a.id, type: "AUTO_OFFERED" }, select: { id: true } });
+  if (!settings.autoOfferNext || alreadyOffered || a.isTest) {
+    await recordStrike(a.shop, a, a.winnerId, a.winnerDraftOrderId);
+    return false; // the store gets the usual "winner hasn't paid" email
+  }
+  const result = await offerToNextBidder(a.shop, a.id); // counts the unpaid sale itself
+  if (result.error) {
+    await recordStrike(a.shop, a, a.winnerId, a.winnerDraftOrderId); // nobody to offer it to, but the non-payment still counts
+    return false;
+  }
+  await prisma.auctionNotification.create({ data: { auctionId: a.id, customerId: "__admin__", type: "AUTO_OFFERED", key: "1" } }).catch(() => {});
+  const strike = await recordStrike(a.shop, a, a.winnerId, a.winnerDraftOrderId); // unchanged counts (already recorded), for the email
+  const after = await prisma.auction.findUnique({ where: { id: a.id }, select: { currentBid: true } });
+  await notifyMerchantAutoOffer({ auction: a, price: after?.currentBid ?? a.currentBid, strikes: strike.strikes, blocked: strike.blocked });
+  console.log("[hellfire-auctions] unpaid winner: offered to the next bidder automatically", a.id);
+  return true;
 }
 
 // ----- merchant actions on an unpaid winner -----
@@ -610,6 +639,7 @@ export async function offerToNextBidder(shop, auctionId) {
   const next = bids.find((b) => b.bidderId !== a.winnerId && !blocked.has(b.bidderId));
   if (!next) return { error: "There's no other bidder to offer this item to." };
   const price = Number(next.maxBid);
+  const strike = await recordStrike(shop, a, a.winnerId, a.winnerDraftOrderId).catch(() => null); // the first winner didn't pay
   await releaseDraftFor(shop, a);
   const updated = await prisma.auction.update({
     where: { id: a.id },
@@ -617,7 +647,8 @@ export async function offerToNextBidder(shop, auctionId) {
   });
   const { draftOrderId, checkoutUrl } = await createAndSendWinnerInvoice(updated, next.bidderId, { secondChance: true });
   await prisma.auction.update({ where: { id: a.id }, data: { winnerDraftOrderId: draftOrderId, winnerCheckoutUrl: checkoutUrl } });
-  return { success: `Second-chance offer sent to the next bidder at ${formatMoney(price, await shopCurrencyCode(shop))}.` };
+  const strikeNote = strike?.blocked ? ` The first winner has ${strike.strikes} unpaid sale${strike.strikes === 1 ? "" : "s"} and was blocked from bidding.` : strike?.strikes ? ` The first winner now has ${strike.strikes} unpaid sale${strike.strikes === 1 ? "" : "s"} on record.` : "";
+  return { success: `Second-chance offer sent to the next bidder at ${formatMoney(price, await shopCurrencyCode(shop))}.${strikeNote}` };
 }
 
 async function shopCurrencyCode(shop) {
@@ -692,8 +723,8 @@ async function ownerWatchdog() {
   const dayAgo = new Date(Date.now() - 24 * 3600_000);
   const monthAgo = new Date(Date.now() - 30 * 24 * 3600_000);
   const [emails24h, emails30d, dbRows, storeRows] = await Promise.all([
-    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED"] } } }),
-    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED"] } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED", "STRIKE", "AUTO_OFFERED"] } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED", "STRIKE", "AUTO_OFFERED"] } } }),
     prisma.$queryRaw`SELECT pg_database_size(current_database())::bigint AS bytes`,
     prisma.auction.groupBy({ by: ["shop"], where: { createdAt: { gte: monthAgo } } }),
   ]);

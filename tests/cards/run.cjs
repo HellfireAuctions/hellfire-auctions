@@ -21,6 +21,14 @@ const now = Date.now();
 const iso = (ms) => new Date(now + ms).toISOString();
 const H = 3600_000;
 
+// The real head script, taken straight from the theme block, so the test runs exactly what stores run.
+const EARLY_SCRIPT = (() => {
+  const liquid = fs.readFileSync(path.join(ROOT, "extensions", "hellfire-auctions-storefront", "blocks", "auction-runtime.liquid"), "utf8");
+  const m = /<script id="hellfire-early">[\s\S]*?<\/script>/.exec(liquid);
+  if (!m) throw new Error("head script not found in the theme block");
+  return m[0];
+})();
+
 function mockData() {
   return {
     now: new Date().toISOString(),
@@ -29,6 +37,7 @@ function mockData() {
       { handle: "upcoming-item", hasBids: false, amount: 10, bidCount: 0, startsAt: iso(3 * H), endsAt: iso(5 * 24 * H), status: "UPCOMING" },
       { handle: "ended-item", hasBids: true, amount: 40, bidCount: 3, startsAt: iso(-5 * 24 * H), endsAt: iso(-20 * 1000), status: "ENDED" },
       { handle: "gone-item", hasBids: true, amount: 55, bidCount: 4, startsAt: iso(-5 * 24 * H), endsAt: iso(-2 * H), status: "ENDED" },
+      { handle: "late-ended", hasBids: true, amount: 12, bidCount: 2, startsAt: iso(-5 * 24 * H), endsAt: iso(-2 * H), status: "ENDED" },
       { handle: "table-gone", hasBids: true, amount: 30, bidCount: 2, startsAt: iso(-5 * 24 * H), endsAt: iso(-3 * H), status: "ENDED" },
       { handle: "table-live", hasBids: true, amount: 45, bidCount: 5, startsAt: iso(-2 * H), endsAt: iso(5 * H), status: "LIVE" },
       { handle: "art-gone", hasBids: true, amount: 25, bidCount: 1, startsAt: iso(-5 * 24 * H), endsAt: iso(-4 * H), status: "ENDED" },
@@ -46,6 +55,12 @@ const pages = {
   "/pages/live-block": "live-block.html",
   "/pages/live-empty": "live-empty.html",
   "/collections/es": "collection-es.html",
+  "/products/hf-ended": "product-ended.html",
+  "/products/hf-ended-won": "product-ended-won.html",
+  "/collections/live-auctions": "live-collection.html",
+  "/collections/early": "early-hide.html",
+  "/products/ended-one": "early-own.html",
+  "/collections/late": "early-late.html",
   "/pages/live-es": "live-es.html",
   "/products/hf-es": "product-es.html",
   "/products/hf-en": "product-en.html",
@@ -58,6 +73,14 @@ const server = http.createServer((req, res) => {
     if (mode === "error") { res.writeHead(500); return res.end("boom"); }
     res.writeHead(200, { "Content-Type": "application/json" });
     return res.end(mode === "garbage" ? "{not json" : JSON.stringify(mockData()));
+  }
+  if (url.pathname === "/apps/hellfire-auctions/auction" && /\/(998|999)$/.test(url.searchParams.get("product_id") || "")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    const won = /\/998$/.test(url.searchParams.get("product_id"));
+    return res.end(JSON.stringify({
+      now: new Date().toISOString(), currency: "USD", loggedInCustomerId: "1",
+      auction: { status: "ENDED", currentBid: 40, startingBid: 10, minimumBid: 41, bidCount: 3, watchers: 0, bidders: 3, highestBidder: "b***r", startsAt: iso(-5 * 24 * H), endsAt: iso(-2 * H), history: [], canWatch: false, watching: false, hasReserve: false, reserveMet: null, myStatus: won ? "WON" : null, myMaximumBid: null },
+    }));
   }
   if (url.pathname === "/apps/hellfire-auctions/auction") {
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -84,7 +107,7 @@ const server = http.createServer((req, res) => {
   const page = pages[url.pathname];
   if (page) {
     res.writeHead(200, { "Content-Type": "text/html" });
-    return res.end(fs.readFileSync(path.join(FIXTURES, page)));
+    return res.end(fs.readFileSync(path.join(FIXTURES, page), "utf8").replace("<!--HF-EARLY-->", EARLY_SCRIPT));
   }
   res.writeHead(404);
   res.end();
@@ -208,6 +231,28 @@ function check(name, condition) {
   check("Spanish card: 7 postores y 12 siguiendo", esCards.includes("7 postores") && esCards.includes("12 siguiendo"));
   check("Bid panel (English): 7 bidders and 12 watching", panelEn.includes("7 bidders") && panelEn.includes("12 watching"));
   check("Bid panel (Spanish): 7 postores y 12 siguiendo", panelEs.includes("7 postores") && panelEs.includes("12 siguiendo"));
+
+  // ----- no flash: ended auctions are hidden before the page paints, even if the server never answers -----
+  mode = "error";
+  const earlyHtml = await dumpDom(`${base}/collections/early`);
+  const ownHtml = await dumpDom(`${base}/products/ended-one`);
+  mode = "ok";
+  check("No flash: an ended auction's card is hidden by the page's own first rules", /id="probe-ended"[^>]*data-display="none"/.test(earlyHtml));
+  check("No flash: a live auction's placeholder price and quick-add are hidden before paint", /id="probe-live-price"[^>]*data-display="none"/.test(earlyHtml) && /id="probe-live-add"[^>]*data-display="none"/.test(earlyHtml));
+  check("No flash: the live auction's card itself stays visible", !/id="probe-live"[^>]*data-display="none"/.test(earlyHtml));
+  check("No flash: a normal product is never touched", !/id="probe-normal"[^>]*data-display="none"/.test(earlyHtml) && /id="probe-normal-price"[^>]*data-display="block"/.test(earlyHtml));
+  check("No flash: a similar handle (coral-2) is not caught by the rule for coral", !/id="probe-similar"[^>]*data-display="none"/.test(earlyHtml));
+  check("No flash: a block that mentions several products is never hidden", !/id="probe-blog"[^>]*data-display="none"/.test(earlyHtml));
+  check("No flash: an auction's own page is never hidden by its own rule", !/id="probe-self"[^>]*data-display="none"/.test(ownHtml) && ownHtml.includes('id="probe-self"'));
+  const lateHtml = await dumpDom(`${base}/collections/late`);
+  check("No flash: a card the theme adds late is hidden right away, not 300 ms later", /id="probe-late"[^>]*data-display="none"/.test(lateHtml));
+
+  const leaveHtml = await dumpDom(`${base}/products/hf-ended`);
+  const stayHtml = await dumpDom(`${base}/products/hf-ended-won`);
+  const keepHtml = await dumpDom(`${base}/products/hf-ended?keep=1`);
+  check("Ended auction page: a visitor who never bid is sent to the live auctions", leaveHtml.includes("LIVE-AUCTIONS-PAGE"));
+  check("Ended auction page: the winner stays on it", !stayHtml.includes("LIVE-AUCTIONS-PAGE") && stayHtml.includes("hellfire-auction-root"));
+  check("Ended auction page: ?keep=1 lets anyone look at it", !keepHtml.includes("LIVE-AUCTIONS-PAGE") && keepHtml.includes("hellfire-auction-root"));
 
   if (process.env.SHOT_DIR) {
     await screenshot(`${base}/collections/dawn`, path.join(process.env.SHOT_DIR, "cards-dawn.png"));

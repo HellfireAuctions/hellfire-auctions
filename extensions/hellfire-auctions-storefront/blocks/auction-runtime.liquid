@@ -81,6 +81,54 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) product-price {
   data-auction-handles="{{ hellfire_auction_handles }}"
   data-experience-src="{{ 'auction.js' | asset_url }}">
 
+<script id="hellfire-early">
+(function () {
+  try {
+    if (window.__hellfireEarly || location.pathname.indexOf("/apps/hellfire-auctions/") !== -1) return;
+    var KEY = "hf_cards_v1", TTL = 5 * 60 * 1000;
+    var CONT = "li,article,product-card,.product-card,.product-item,.card,.card-wrapper,.grid__item,.grid-product,[data-product-id],[data-product-handle]";
+    var PRICE = ".price,product-price,[data-product-price],[data-price],form[action*='/cart/add'],[data-quick-add],quick-add-component,add-to-cart-component";
+    var m = location.pathname.match(/\/products\/([^\/?#]+)/);
+    var here = m ? decodeURIComponent(m[1]).toLowerCase() : "";
+    function ok(h) { return /^[a-z0-9_%\-]+$/i.test(h) && h.toLowerCase() !== here; }
+    function link(h) { return 'a:is([href$="/products/' + h + '"],[href*="/products/' + h + '?"],[href*="/products/' + h + '#"])'; }
+    function other(h) { return 'a[href*="/products/"]:not(:is([href$="/products/' + h + '"],[href*="/products/' + h + '?"],[href*="/products/' + h + '#"]))'; }
+    // a card = a container holding links to this one product only (never a block that mentions several products)
+    function card(h) { return ":is(" + CONT + "):has(" + link(h) + "):not(:has(" + other(h) + "))"; }
+    function css(d) {
+      var out = [], i, h, ended = d.ended || [], live = d.live || [];
+      for (i = 0; i < ended.length && i < 150; i++) { h = String(ended[i]); if (ok(h)) out.push(card(h) + "{display:none!important}"); }
+      for (i = 0; i < live.length && i < 150; i++) { h = String(live[i]); if (ok(h)) out.push(card(h) + " :is(" + PRICE + "){display:none!important}"); }
+      return out.join("\n");
+    }
+    var style = document.createElement("style");
+    style.id = "hellfire-early-hide";
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(KEY) || "null"); } catch (e) {}
+    if (saved && Date.now() - saved.t < TTL) style.textContent = css(saved);
+    (document.head || document.documentElement).appendChild(style);
+    window.__hellfireEarly = {
+      update: function (list, serverNow) {
+        var byHandle = {}, ended = [], live = [], i, a, h;
+        for (i = 0; i < list.length; i++) { a = list[i]; if (a && a.handle) byHandle[String(a.handle).toLowerCase()] = a; }
+        for (h in byHandle) {
+          a = byHandle[h];
+          if (a.status === "LIVE") live.push(h);
+          else if (a.status === "ENDED" && serverNow - Date.parse(a.endsAt) > 60000) ended.push(h);
+        }
+        var d = { t: Date.now(), ended: ended, live: live };
+        try { sessionStorage.setItem(KEY, JSON.stringify(d)); } catch (e) {}
+        style.textContent = css(d);
+      }
+    };
+    // Ask the server right now, not after the page has loaded.
+    window.__hellfireCardsPrefetch = fetch("/apps/hellfire-auctions/auction-cards", { credentials: "same-origin", headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; });
+  } catch (e) {}
+})();
+</script>
+
 {%- comment -%} Product-card auction badges: separate script, always on with this embed. {%- endcomment -%}
 <script type="application/json" id="hellfire-auction-cards-config">
   {"endpoint": "/apps/hellfire-auctions/auction-cards", "currency": {{ shop.currency | json }}, "locale": {{ request.locale.iso_code | json }}}

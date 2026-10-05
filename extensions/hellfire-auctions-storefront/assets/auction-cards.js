@@ -252,12 +252,21 @@
 
   async function load() {
     try {
-      const response = await fetch(ENDPOINT, {
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      });
-      if (!response.ok) return;
-      const data = await response.json();
+      // The head script already asked the server at the start of the page load; use that answer if there is one.
+      let data = null;
+      const early = window.__hellfireCardsPrefetch;
+      if (early) {
+        window.__hellfireCardsPrefetch = null;
+        data = await early;
+      }
+      if (!data) {
+        const response = await fetch(ENDPOINT, {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) return;
+        data = await response.json();
+      }
       if (data.now) clockOffset = Date.parse(data.now) - Date.now();
       if (data.currency) currencyOverride = data.currency;
       showBranding = Boolean(data.branding);
@@ -267,20 +276,28 @@
       }
       scan();
       tick();
+      // Keep the pre-paint rules fresh, so the next page of this visit hides ended auctions before it paints.
+      try { if (window.__hellfireEarly) window.__hellfireEarly.update(data.auctions || [], Date.now() + clockOffset); } catch (_) {}
     } catch (_) {
       // Network or proxy problem: leave the page exactly as the theme rendered it.
     }
   }
 
   let scanTimer = null;
+  let scanQueued = false;
   const observer = new MutationObserver((mutations) => {
     const fromTheme = mutations.some((m) => {
       const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
       return !(el && el.closest(`[${BADGE_ATTR}]`));
     });
     if (!fromTheme) return;
-    clearTimeout(scanTimer);
-    scanTimer = setTimeout(scan, 300);
+    // Scan before the browser paints: cards the theme adds late (such as "You may also like") must not flash.
+    if (scanQueued) return;
+    scanQueued = true;
+    queueMicrotask(() => {
+      scanQueued = false;
+      try { scan(); } catch (_) {}
+    });
   });
 
   function start() {

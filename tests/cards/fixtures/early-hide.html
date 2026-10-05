@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Fixture</title>
+<script>sessionStorage.setItem("hf_cards_v1", JSON.stringify({ t: Date.now(), ended: ["coral"], live: ["coral-2"] }));</script>
+<!--HF-EARLY-->
+<link rel="stylesheet" href="/assets/auction-cards.css"></head>
+<body><main><section><ul class="grid">
+  <li id="probe-ended"><div class="card"><a href="/products/coral"><h3>Coral (ended)</h3></a><div class="price">$99,999.00</div></div></li>
+  <li id="probe-live"><div class="card"><a href="/products/coral-2"><h3>Coral two (live)</h3></a><div class="price" id="probe-live-price">$99,999.00</div><button data-quick-add id="probe-live-add">Quick add</button></div></li>
+  <li id="probe-normal"><div class="card"><a href="/products/normal-thing"><h3>Normal</h3></a><div class="price" id="probe-normal-price">$5.00</div></div></li>
+  <li id="probe-similar"><div class="card"><a href="/products/coral-3"><h3>Coral three</h3></a></div></li>
+  <li id="probe-blog"><article><p>A post about <a href="/products/coral">an ended coral</a> and <a href="/products/normal-thing">a normal one</a>.</p></article></li>
+</ul></section></main><script>window.addEventListener("load", function () { document.querySelectorAll("[id^=probe]").forEach(function (el) { el.setAttribute("data-display", getComputedStyle(el).display); }); });</script>
+<script type="application/json" id="hellfire-auction-cards-config">{"endpoint":"/apps/hellfire-auctions/auction-cards","currency":"USD","locale":"en"}</script>
+<script src="/assets/auction-cards.js" defer></script>
+</body></html>

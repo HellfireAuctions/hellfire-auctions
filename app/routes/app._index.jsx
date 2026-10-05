@@ -2530,6 +2530,7 @@ export default function AuctionsPage() {
             <li><strong>Unsold auctions</strong> are taken off your store about 10 minutes after they end. <em>Relist</em> puts them back.</li>
             <li><strong>Auction events:</strong> create several auctions, tick <em>Add to an auction event</em> on the upcoming ones, then schedule them all to start together and end one after another (for example, every 8 minutes).</li>
             <li><strong>Bulk creation:</strong> open <em>Create many auctions from a spreadsheet (CSV)</em> to upload a list, schedule the whole batch as an event, repeat it every week, and relist unsold items automatically.</li>
+            <li><strong>Need help?</strong> The <s-link href="https://hellfire-auctions.onrender.com/help" target="_blank">Help center</s-link> has setup steps and troubleshooting, or email support@hellfireauctions.com.</li>
           </ul>
         </div>
       </details>

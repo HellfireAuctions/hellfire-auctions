@@ -106,7 +106,7 @@ const FAQ = [
   ],
   [
     "Where can I learn more or get help?",
-    "Email support@hellfireauctions.com. You can also read our Privacy Policy, Terms of Service and Security Policy (linked below).",
+    "Email support@hellfireauctions.com. Our Help center answers the most common questions, and you can also read our Privacy Policy, Terms of Service and Security Policy (all linked below).",
   ],
 ];
 
@@ -148,6 +148,7 @@ export default function Pricing() {
 
       <h2 style={S.h2}>More information</h2>
       <p>
+        <a href="/help" style={{ color: "#c2410c" }}>Help center</a>{" \u00B7 "}
         <a href="/privacy" style={{ color: "#c2410c" }}>Privacy Policy</a>{" \u00B7 "}
         <a href="/terms" style={{ color: "#c2410c" }}>Terms of Service</a>{" \u00B7 "}
         <a href="/security" style={{ color: "#c2410c" }}>Security Policy</a>{" \u00B7 "}

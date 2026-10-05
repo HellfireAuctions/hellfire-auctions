@@ -5,6 +5,8 @@ import { unauthenticated } from "./shopify.server.js";
 import { isDevelopmentStore, canCreateAuction } from "./plans.server.js";
 import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice, notifyMerchantAutoOffer, notifyMerchantSettleFailed } from "./notifications.server.js";
 import { getShopSettings, recordStrike } from "./settings.server.js";
+import { publish } from "./live-hub.server.js";
+import { memoDelete } from "./memo.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
 const RETRY_AFTER_MS = 2 * 60_000; // wait before retrying a failed settlement
@@ -288,6 +290,9 @@ async function settleAuction(auction) {
         winnerDraftOrderId: draftOrderId,
       },
     });
+    // Everyone watching sees the final result (winner, "you won", "reserve not met") straight away.
+    memoDelete("auction:" + auction.shop + "|" + auction.productId);
+    publish(auction.id, "update");
   } catch (error) {
     const tooOld = Date.now() - new Date(auction.endsAt).getTime() > GIVE_UP_AFTER_MS;
     await prisma.auction.update({

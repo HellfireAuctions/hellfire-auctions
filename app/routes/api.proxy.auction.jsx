@@ -7,6 +7,8 @@ import { getShopPlan } from "../plans.server";
 import { getShopSettings } from "../settings.server";
 import { checkBidder } from "../bidder-rules.server";
 import { buyNowOffer } from "../buy-now";
+import { publish } from "../live-hub.server";
+import { liveStreamUrl } from "../live-stream.server";
 import {
   MAX_ALLOWED_BID,
   bidIncrement,
@@ -152,6 +154,8 @@ export const loader = async ({ request }) => {
           autoExtend: Boolean(auction.autoExtend) && Boolean(watchPlan?.autoExtend),
           isTest: Boolean(auction.isTest),
           buyNowPrice: offer.available ? offer.price : null,
+          // The address (with a signed pass) of the live connection; nothing personal travels on it.
+          live: auctionState(auction) !== "ENDED" ? liveStreamUrl(auction.id, process.env.SHOPIFY_APP_URL || url.origin) : null,
           canWatch: Boolean(watchPlan?.emails),
           watching,
           watchers: watcherCount,
@@ -214,6 +218,8 @@ async function handleBuyNow({ shop, productId, customerId }) {
 
   if (result.error) return Response.json(result, { status: 409 });
   memoDelete("auction:" + shop + "|" + productId); // everyone sees the auction as ended on their next refresh
+  const told = publish(found.id, "update");
+  if (told) console.log("[HELLFIRE LIVE]", JSON.stringify({ auctionId: found.id, kind: "buy-now", told }));
   return Response.json(result);
 }
 
@@ -387,8 +393,10 @@ export const action = async ({ request }) => {
     return Response.json(result, { status: 409 });
   }
 
-  // New bid: everyone sees it on their very next refresh.
+  // New bid: everyone sees it on their very next refresh, and everyone watching live is told right now.
   memoDelete("auction:" + shop + "|" + productId);
+  const told = publish(auction.id, "update");
+  if (told) console.log("[HELLFIRE LIVE]", JSON.stringify({ auctionId: auction.id, kind: "bid", told }));
 
   // Outbid notice for whoever just lost the lead (runs after the bid is saved; never blocks it).
   if (result.leaderChanged && result.previousLeaderId && result.previousLeaderId !== customerId) {

@@ -174,7 +174,7 @@ async function main() {
   const first = await request("GET", signedUrl("/api/proxy/auction", { product_id: productId }));
   const a0 = JSON.parse(first.body).auction;
   if (!a0 || a0.status !== "LIVE") throw new Error(`The test auction is not live (status: ${a0 ? a0.status : "missing"}).`);
-  const needSec = STAGES.reduce((s, x) => s + x.seconds + 5, 0) + 90;
+  const needSec = STAGES.reduce((s, x) => s + x.seconds + 5, 0) + (Number(process.env.LOADTEST_MARGIN) || 90);
   const leftSec = (Date.parse(a0.endsAt) - Date.now()) / 1000;
   if (leftSec < needSec) throw new Error(`Only ${round(leftSec)}s left on the test auction; the test needs ${needSec}s. Create a fresh 10-minute test auction and run again.`);
   ctx.minBid = Number(a0.minimumBid) || 1;

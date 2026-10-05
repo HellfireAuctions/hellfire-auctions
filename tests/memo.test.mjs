@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { memo, memoReset } from "../app/memo.server.js";
+import { memo, memoReset, memoDelete } from "../app/memo.server.js";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -64,3 +64,14 @@ await sleep(5);
 assert.equal(await memo("f", 1000, async () => "recovered"), "recovered");
 
 console.log("Shared answers (memo): all checks passed");
+
+// 8. forgetting an answer makes the next request fetch fresh data (this is what a new bid does)
+memoReset();
+let version = 0;
+const versioned = async () => { version += 1; return version; };
+assert.equal(await memo("g", 60000, versioned), 1);
+assert.equal(await memo("g", 60000, versioned), 1, "still shared");
+memoDelete("g");
+assert.equal(await memo("g", 60000, versioned), 2, "fresh after being forgotten");
+memoDelete("never-existed"); // forgetting something unknown is harmless
+console.log("Shared answers: forgetting works");

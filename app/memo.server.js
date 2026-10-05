@@ -24,6 +24,11 @@ export function memo(key, ms, fn) {
   return entry.promise;
 }
 
+// Forget one shared answer (used right after a bid, so everyone sees the new price straight away).
+export function memoDelete(key) {
+  store.delete(key);
+}
+
 export function memoReset() {
   store.clear();
 }

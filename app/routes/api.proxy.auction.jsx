@@ -1,6 +1,6 @@
 import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
-import { memo } from "../memo.server";
+import { memo, memoDelete } from "../memo.server";
 import { shopCurrency } from "../currency.server";
 import { notifyOutbid } from "../notifications.server";
 import { getShopPlan } from "../plans.server";
@@ -314,7 +314,7 @@ export const action = async ({ request }) => {
   }
 
   // New bid: everyone sees it on their very next refresh.
-  auctionCache.delete(shop + "|" + productId);
+  memoDelete("auction:" + shop + "|" + productId);
 
   // Outbid notice for whoever just lost the lead (runs after the bid is saved; never blocks it).
   if (result.leaderChanged && result.previousLeaderId && result.previousLeaderId !== customerId) {

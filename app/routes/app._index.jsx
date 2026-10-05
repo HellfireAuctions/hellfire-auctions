@@ -2536,7 +2536,7 @@ export default function AuctionsPage() {
           <strong>Good to know</strong>
           <ul style={{ margin: "6px 0 0", paddingLeft: 20, display: "grid", gap: 6 }}>
             <li><strong>The $99,999 price in your product list</strong> is a placeholder so nobody can buy an auction item outside the auction. Shoppers never see it, and the winner always pays exactly their winning bid.</li>
-            <li><strong>Unpaid winners</strong> get 4 days to pay, with reminders. After that the app offers the item to the next bidder for you (you can turn this off under <em>Unpaid winners</em>), counts the unpaid sale against that bidder, and blocks anyone who reaches your limit (2 by default). You can still send a reminder, offer the item yourself, or cancel the sale from any auction card.</li>
+            <li><strong>Unpaid winners</strong> get 4 days to pay, with reminders. After that the app offers the item to the next bidder for you (you can turn this off under <em>Unpaid winners</em>), counts the unpaid sale against that bidder, and, only if you set a limit under <em>Unpaid winners</em>, blocks anyone who reaches it. Nobody is blocked automatically unless you turn that on. You can still send a reminder, offer the item yourself, or cancel the sale from any auction card.</li>
             <li><strong>Paid items</strong> are archived from your store automatically. Use <em>Clear all paid</em> above your auctions to tidy this list; nothing is deleted.</li>
             <li><strong>Unsold auctions</strong> are taken off your store about 10 minutes after they end. <em>Relist</em> puts them back.</li>
             <li><strong>Auction events:</strong> create several auctions, tick <em>Add to an auction event</em> on the upcoming ones, then schedule them all to start together and end one after another (for example, every 8 minutes).</li>
@@ -2580,7 +2580,7 @@ export default function AuctionsPage() {
         <Form method="post" style={{ display: "grid", gap: 12, maxWidth: 680 }}>
           <input type="hidden" name="intent" value="save-bidder-rule" />
           <span style={{ fontSize: 14 }}>
-            Choose who is allowed to place bids on your auctions. A shopper who isn&rsquo;t eligible sees a clear message when they try to bid, and can contact you to be approved. Bidders you have already blocked stay blocked.
+            Everyone who is signed in can bid unless you choose otherwise. To stop one specific person instead, open an auction, find them in its bidders list and click Block. Or limit bidding to a group below; a shopper who isn&rsquo;t eligible sees a clear message and can contact you to be approved. Bidders you have blocked stay blocked.
           </span>
           <select name="bidderRule" defaultValue={settings?.bidderRule || "ANYONE"} aria-label="Who can bid" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, maxWidth: 420 }}>
             {Object.entries(BIDDER_RULES).map(([value, label]) => (
@@ -2636,10 +2636,10 @@ export default function AuctionsPage() {
           </label>
           <label style={{ display: "grid", gap: 6 }}>
             <strong>Block bidders after unpaid sales</strong>
-            <select name="strikeLimit" defaultValue={String(settings?.strikeLimit ?? 2)} style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, maxWidth: 320 }}>
-              <option value="0">Never block automatically</option>
+            <select name="strikeLimit" defaultValue={String(settings?.strikeLimit ?? 0)} style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, maxWidth: 320 }}>
+              <option value="0">Never block automatically (default)</option>
               <option value="1">After 1 unpaid sale</option>
-              <option value="2">After 2 unpaid sales (recommended)</option>
+              <option value="2">After 2 unpaid sales</option>
               <option value="3">After 3 unpaid sales</option>
               <option value="5">After 5 unpaid sales</option>
             </select>

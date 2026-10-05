@@ -5,7 +5,7 @@
 //   PAST_BUYER     only customers with at least one earlier order in this store
 //   APPROVED_TAG   only customers the merchant has tagged as approved
 export const BIDDER_RULES = {
-  ANYONE: "Anyone who is signed in",
+  ANYONE: "Everyone who is signed in (default)",
   VERIFIED_EMAIL: "Only customers with a verified email address",
   PAST_BUYER: "Only customers who have bought from my store before",
   APPROVED_TAG: "Only customers I've approved with a tag",

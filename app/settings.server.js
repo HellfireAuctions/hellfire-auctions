@@ -2,7 +2,7 @@ import prisma from "./db.server.js";
 import { BIDDER_RULE_VALUES, DEFAULT_APPROVED_TAG, cleanTag } from "./bidder-rules.js";
 
 // Per-store choices: unpaid winners and the default shipping weight. If the table can't be read, safe defaults apply.
-export const SETTING_DEFAULTS = { autoOfferNext: true, strikeLimit: 0, defaultWeight: null, defaultWeightUnit: "OUNCES", bidderRule: "ANYONE", approvedTag: DEFAULT_APPROVED_TAG };
+export const SETTING_DEFAULTS = { autoOfferNext: true, strikeLimit: 2, defaultWeight: null, defaultWeightUnit: "OUNCES", bidderRule: "ANYONE", approvedTag: DEFAULT_APPROVED_TAG };
 export const STRIKE_LIMIT_CHOICES = [0, 1, 2, 3, 5]; // 0 = never block automatically
 export const WEIGHT_UNITS = ["OUNCES", "POUNDS", "GRAMS", "KILOGRAMS"];
 

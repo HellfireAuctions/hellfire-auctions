@@ -32,7 +32,7 @@ const FAQ = [
   ]],
   ["Winners and payment", [
     ["How does the winner pay?", "When an auction ends, the winner gets an email with a secure Shopify checkout link and 4 days to pay. They choose from your store's real shipping options at checkout. If a buyer wins several items, their wins are combined on one invoice so they pay shipping once."],
-    ["What if the winner doesn't pay?", "Blaze and Inferno send reminders at 1 and 3 days. After 4 days the app offers the item to the next bidder automatically, counts the unpaid sale against the first winner, and, only if you choose a limit under Unpaid winners, blocks bidders who reach it. Nobody is blocked automatically unless you turn that on. You can change or switch off all of this under Unpaid winners in the app."],
+    ["What if the winner doesn't pay?", "Blaze and Inferno send reminders at 1 and 3 days. After 4 days the app offers the item to the next bidder automatically, counts the unpaid sale against the first winner, and blocks bidders who reach your limit (2 unpaid sales by default). You can change or switch off all of this under Unpaid winners in the app."],
     ["Why does the winner's shipping show $0?", "Weight-based shipping rates need a weight. Add a Shipping weight to the auction (on the create form or on the auction's card), or set a Default shipping weight in the app. Then check your rates in Settings, then Shipping and delivery."],
     ["Why does my Shopify product list show a price of $99,999?", "Auction items are saved with a placeholder price so nobody can buy them outside the auction. Shoppers never see it, and the winner always pays exactly their winning bid."],
   ]],

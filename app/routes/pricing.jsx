@@ -102,7 +102,7 @@ const FAQ = [
   ],
   [
     "What happens when a winner doesn't pay?",
-    "Winners have 4 days to pay, with automatic reminders on Blaze and Inferno. After that the item is offered to the next bidder automatically, the unpaid sale is counted against the first winner, and, if you set a limit, bidders who reach it are blocked from bidding (nobody is blocked automatically unless you turn that on). You can change or switch off all of this in the app.",
+    "Winners have 4 days to pay, with automatic reminders on Blaze and Inferno. After that the item is offered to the next bidder automatically, the unpaid sale is counted against the first winner, and bidders who reach your limit (2 by default) are blocked from bidding. You can change or switch off all of this in the app.",
   ],
   [
     "Where can I learn more or get help?",

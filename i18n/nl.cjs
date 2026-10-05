@@ -192,4 +192,15 @@ module.exports = [
   [`Another win added to your invoice`, `Nog een gewonnen veiling toegevoegd aan je factuur`],
   [`You won "{title}". We added it to your open invoice, so you pay shipping only once.`, `Je hebt “{title}” gewonnen. We hebben het toegevoegd aan je openstaande factuur, zodat je de verzendkosten maar één keer betaalt.`],
   [`Your invoice now has {n} items ({money} before shipping and tax). Your 4-day payment window restarted today.`, `Je factuur bevat nu {n} artikelen ({money} vóór verzending en belasting). Je betaaltermijn van 4 dagen is vandaag opnieuw begonnen.`],
+  // ---- Buy It Now ----
+  ["Buy it now for", "Direct kopen voor"],
+  ["Buy It Now ends when the first bid is placed.", "Direct kopen eindigt zodra het eerste bod wordt geplaatst."],
+  ["Buy this item now for", "Dit artikel nu direct kopen voor"],
+  ["This ends the auction right away and you are committing to buy it.", "Hiermee eindigt de veiling meteen en verplicht je je om het te kopen."],
+  ["Yes, buy it now", "Ja, nu kopen"],
+  ["Cancel", "Annuleren"],
+  ["Buying…", "Bezig met kopen…"],
+  ["It's yours! We're preparing your invoice. You'll get an email shortly, and it will also appear in My Auctions.", "Het is van jou! We bereiden je factuur voor. Je ontvangt zo een e-mail, en hij verschijnt ook onder Mijn veilingen."],
+  ["Buy It Now is no longer available for this auction.", "Direct kopen is niet meer beschikbaar voor deze veiling."],
+  ["This auction doesn't have a Buy It Now price.", "Deze veiling heeft geen direct-kopenprijs."],
 ];

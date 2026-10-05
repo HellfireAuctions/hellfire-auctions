@@ -6,6 +6,7 @@ import { notifyOutbid } from "../notifications.server";
 import { getShopPlan } from "../plans.server";
 import { getShopSettings } from "../settings.server";
 import { checkBidder } from "../bidder-rules.server";
+import { buyNowOffer } from "../buy-now";
 import {
   MAX_ALLOWED_BID,
   bidIncrement,
@@ -110,6 +111,17 @@ export const loader = async ({ request }) => {
       : false;
 
   const watcherCount = auction?.watchers ?? 0;
+  const offer = auction
+    ? buyNowOffer({
+        buyNowPrice: auction.buyNowPrice,
+        reservePrice: auction.reservePrice,
+        startingBid: auction.startingBid,
+        bidCount: Math.max(Number(auction.bidCount || 0), publicBids.length),
+        startsAt: auction.startsAt,
+        endsAt: auction.endsAt,
+        now: new Date(),
+      })
+    : { available: false };
   return Response.json({
     now: new Date().toISOString(),
     currency: await shopCurrency(shop),
@@ -139,6 +151,7 @@ export const loader = async ({ request }) => {
           status: auctionState(auction),
           autoExtend: Boolean(auction.autoExtend) && Boolean(watchPlan?.autoExtend),
           isTest: Boolean(auction.isTest),
+          buyNowPrice: offer.available ? offer.price : null,
           canWatch: Boolean(watchPlan?.emails),
           watching,
           watchers: watcherCount,
@@ -154,6 +167,55 @@ export const loader = async ({ request }) => {
       : null,
   });
 };
+
+// Buy It Now: the shopper buys at the posted price. Inside one transaction (with the same row lock a bid uses, so a bid
+// and a purchase can never both succeed) this records an instant winning bid at that price and ends the auction. The
+// normal settlement then sends the winner invoice within moments.
+async function handleBuyNow({ shop, productId, customerId }) {
+  if (!shop || !productId) return Response.json({ error: "Missing shop or product." }, { status: 400 });
+  const found = await prisma.auction.findFirst({ where: { shop, productId }, orderBy: { createdAt: "desc" } });
+  if (!found) return Response.json({ error: "Auction not found." }, { status: 404 });
+
+  const result = await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Auction" WHERE "id" = ${found.id} FOR UPDATE`;
+      const current = await tx.auction.findUnique({ where: { id: found.id } });
+      if (!current) return { error: "Auction not found." };
+
+      const bidCount = await tx.bid.count({ where: { auctionId: current.id } });
+      const offer = buyNowOffer({
+        buyNowPrice: current.buyNowPrice,
+        reservePrice: current.reservePrice,
+        startingBid: current.startingBid,
+        bidCount: Math.max(bidCount, current.bidCount || 0),
+        startsAt: current.startsAt,
+        endsAt: current.endsAt,
+        now: new Date(),
+      });
+      if (!offer.available) return { error: offer.reason };
+
+      await tx.bid.create({
+        data: { auctionId: current.id, bidderId: customerId, bidderEmail: null, amount: offer.price, maxBid: offer.price },
+      });
+      await tx.bidEvent.create({ data: { auctionId: current.id, bidderId: customerId, amount: offer.price } });
+      await tx.auction.update({
+        where: { id: current.id },
+        data: { currentBid: offer.price, bidCount: { increment: 1 }, endsAt: new Date() },
+      });
+      return { success: true, bought: true, price: offer.price };
+    },
+    { timeout: 10000 },
+  );
+
+  console.log(
+    "[HELLFIRE BUYNOW]",
+    JSON.stringify({ auctionId: found.id, productId, customerId, accepted: !result.error, reason: result.error || null, price: result.price ?? null }),
+  );
+
+  if (result.error) return Response.json(result, { status: 409 });
+  memoDelete("auction:" + shop + "|" + productId); // everyone sees the auction as ended on their next refresh
+  return Response.json(result);
+}
 
 export const action = async ({ request }) => {
   const { session } = await proxyAuth(request);
@@ -193,6 +255,9 @@ export const action = async ({ request }) => {
   const productId = normalizeProductId(
     formData.get("product_id")?.toString() || url.searchParams.get("product_id"),
   );
+  if (formData.get("intent") === "buy-now") {
+    return handleBuyNow({ shop, productId, customerId });
+  }
   const amount = Math.round(Number(formData.get("amount")) * 100) / 100;
 
   if (!shop || !productId || !Number.isFinite(amount) || amount <= 0) {

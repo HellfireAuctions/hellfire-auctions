@@ -114,3 +114,12 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) form[action*="/
 .hellfire-auction-test-note { font-size: 13px; font-weight: 800; color: #ffb347; letter-spacing: 0.04em; margin: 0 0 8px; }
 
 .hellfire-auction-social{margin:6px 0;font-size:13px;font-weight:600;opacity:.85}
+
+/* Buy It Now: a second, quieter button under the bid form. Uses the theme's own text colour and font. */
+.hellfire-auction-buynow{margin-top:12px;display:grid;gap:6px}
+.hellfire-auction-buynow-btn{width:100%;min-height:44px;padding:12px 16px;border:2px solid currentColor;border-radius:8px;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer}
+.hellfire-auction-buynow-btn:hover:not(:disabled){opacity:.8}
+.hellfire-auction-buynow-btn:focus-visible{outline:3px solid currentColor;outline-offset:2px}
+.hellfire-auction-buynow-btn:disabled{opacity:.6;cursor:default}
+.hellfire-auction-buynow-note{font-size:12px;opacity:.75}
+.hellfire-auction-buynow-done{font-size:14px;font-weight:600;opacity:1}

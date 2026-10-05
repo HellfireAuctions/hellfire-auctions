@@ -186,4 +186,15 @@ module.exports = [
   ["Another win added to your invoice", "Otra victoria añadida a tu factura"],
   ["You won \"{title}\". We added it to your open invoice, so you pay shipping only once.", "Ganaste \"{title}\". Lo añadimos a tu factura abierta, así pagas el envío solo una vez."],
   ["Your invoice now has {n} items ({money} before shipping and tax). Your 4-day payment window restarted today.", "Tu factura ahora tiene {n} artículos ({money} antes de envío e impuestos). Tu plazo de pago de 4 días se reinició hoy."],
+  // ---- Buy It Now ----
+  ["Buy it now for", "Cómpralo ya por"],
+  ["Buy It Now ends when the first bid is placed.", "«Cómpralo ya» termina cuando se hace la primera puja."],
+  ["Buy this item now for", "Comprar este artículo ahora por"],
+  ["This ends the auction right away and you are committing to buy it.", "Esto termina la subasta de inmediato y te comprometes a comprarlo."],
+  ["Yes, buy it now", "Sí, comprar ahora"],
+  ["Cancel", "Cancelar"],
+  ["Buying…", "Comprando…"],
+  ["It's yours! We're preparing your invoice. You'll get an email shortly, and it will also appear in My Auctions.", "¡Es tuyo! Estamos preparando tu factura. Recibirás un email en breve y también aparecerá en Mis subastas."],
+  ["Buy It Now is no longer available for this auction.", "«Cómpralo ya» ya no está disponible para esta subasta."],
+  ["This auction doesn't have a Buy It Now price.", "Esta subasta no tiene precio de «Cómpralo ya»."],
 ];

@@ -1263,6 +1263,7 @@ async function autoRelistSweep(minGapMs = 30_000) {
           startingBid: a.startingBid,
           currentBid: a.startingBid,
           reservePrice: a.reservePrice,
+        buyNowPrice: a.buyNowPrice,
           autoExtend: a.autoExtend,
           isTest: false,
           startsAt: start,

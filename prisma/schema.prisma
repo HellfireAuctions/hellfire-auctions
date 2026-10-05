@@ -38,6 +38,7 @@ model Auction {
   currentBid    Float    @default(0)
   bidCount      Int      @default(0)
   reservePrice  Float?
+  buyNowPrice   Float?
   autoExtend    Boolean  @default(false)
   isTest        Boolean  @default(false)
   startsAt      DateTime

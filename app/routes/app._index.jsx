@@ -8,6 +8,7 @@ import { canCreateAuction, getShopPlan } from "../plans.server";
 import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep } from "../auction-worker.server";
 import { getShopSettings, saveShopSettings } from "../settings.server";
 import { BIDDER_RULES } from "../bidder-rules";
+import { parseBuyNowPrice } from "../buy-now";
 import { memoDelete } from "../memo.server";
 import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
 import BulkImport from "../bulk-import";
@@ -756,6 +757,7 @@ export const loader = async ({ request }) => {
       endsAt: true,
       status: true,
       reservePrice: true,
+      buyNowPrice: true,
       productId: true,
       winnerId: true,
       winnerDraftOrderId: true,
@@ -1329,6 +1331,7 @@ const actionImpl = async ({ request }) => {
           startingBid: target.startingBid,
           currentBid: target.startingBid,
           reservePrice: target.reservePrice,
+          buyNowPrice: target.buyNowPrice,
           autoExtend: target.autoExtend,
           isTest: durationValue.startsWith("m"),
           startsAt: now,
@@ -1477,6 +1480,11 @@ const actionImpl = async ({ request }) => {
   if (intent === "create" && reservePrice !== null && !(Number.isFinite(reservePrice) && reservePrice > startingBid)) {
     return { error: "The reserve price must be higher than the starting bid. Leave it empty if you don't want a reserve." };
   }
+
+  // Optional Buy It Now price: shoppers can buy at this price until the first bid is placed.
+  const buyNow = parseBuyNowPrice(formData.get("buyNowPrice"), { startingBid, reservePrice });
+  if (intent === "create" && !buyNow.ok) return { error: buyNow.error };
+  const buyNowPrice = buyNow.ok ? buyNow.value : null;
 
   const cleanDescription = description
     ? `<p>${description
@@ -1828,6 +1836,7 @@ const actionImpl = async ({ request }) => {
           Number.isFinite(reservePrice)
             ? reservePrice
             : null,
+        buyNowPrice,
         autoExtend: formData.get("autoExtend") === "1" && Boolean((await getShopPlan(session.shop)).autoExtend),
         isTest: durationValue.startsWith("m"),
         startsAt,
@@ -2094,6 +2103,9 @@ function AuctionForm({
                   ? `$${Number(auction.reservePrice).toFixed(2)}`
                   : "None"}
               </s-text>
+              <s-text>
+                Buy It Now Price: {auction.buyNowPrice != null ? `$${Number(auction.buyNowPrice).toFixed(2)}` : "None"}
+              </s-text>
               <s-text>Starts: {formatEastern(new Date(auction.startsAt), timezone)}</s-text>
               <s-text>Ends: {formatEastern(new Date(auction.endsAt), timezone)}</s-text>
               <s-text>
@@ -2136,6 +2148,22 @@ function AuctionForm({
               : undefined
           }
         />
+
+        <s-number-field
+          label="Buy It Now Price"
+          name="buyNowPrice"
+          min="0"
+          step="0.01"
+          placeholder="Optional"
+          value={
+            source?.buyNowPrice != null
+              ? String(source.buyNowPrice)
+              : undefined
+          }
+        />
+        <span style={{ fontSize: 13, color: "#616161" }}>
+          Optional. Shoppers can buy at this price until the first bid is placed, which ends the auction. It must be higher than the starting bid and at least the reserve.
+        </span>
 
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 14, opacity: allowAutoExtend ? 1 : 0.6 }}>
           <input
@@ -2765,6 +2793,11 @@ export default function AuctionsPage() {
                     {auction.reservePrice != null && (
                       <div style={{ fontSize: 12, color: reserveMet ? "#008060" : "#b98900" }}>
                         Reserve ${Number(auction.reservePrice).toFixed(2)} {reserveMet ? "met" : "not met"}
+                      </div>
+                    )}
+                    {auction.buyNowPrice != null && state !== "ENDED" && Number(auction.bidCount) === 0 && (
+                      <div style={{ fontSize: 12, color: "#616161" }}>
+                        Buy It Now ${Number(auction.buyNowPrice).toFixed(2)} (until the first bid)
                       </div>
                     )}
                     <div style={{ fontSize: 12, color: "#616161" }}>

@@ -74,7 +74,17 @@
     "This auction has not started yet.",
     "This auction has ended.",
     "Your maximum bid must be at least the minimum bid.",
-    "Your maximum bid is already at or above that amount."
+    "Your maximum bid is already at or above that amount.",
+    "Buy it now for",
+    "Buy It Now ends when the first bid is placed.",
+    "Buy this item now for",
+    "This ends the auction right away and you are committing to buy it.",
+    "Yes, buy it now",
+    "Cancel",
+    "Buying…",
+    "It's yours! We're preparing your invoice. You'll get an email shortly, and it will also appear in My Auctions.",
+    "Buy It Now is no longer available for this auction.",
+    "This auction doesn't have a Buy It Now price."
   ],
   "cards": [
     "Test auction",

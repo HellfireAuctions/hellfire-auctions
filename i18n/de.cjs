@@ -192,4 +192,15 @@ module.exports = [
   [`Another win added to your invoice`, `Ein weiterer Gewinn wurde Ihrer Rechnung hinzugefügt`],
   [`You won "{title}". We added it to your open invoice, so you pay shipping only once.`, `Sie haben „{title}“ gewonnen. Wir haben es Ihrer offenen Rechnung hinzugefügt, sodass Sie den Versand nur einmal zahlen.`],
   [`Your invoice now has {n} items ({money} before shipping and tax). Your 4-day payment window restarted today.`, `Ihre Rechnung enthält jetzt {n} Artikel ({money} vor Versand und Steuern). Ihre 4-tägige Zahlungsfrist hat heute neu begonnen.`],
+  // ---- Buy It Now ----
+  ["Buy it now for", "Sofort kaufen für"],
+  ["Buy It Now ends when the first bid is placed.", "Sofort-Kaufen endet, sobald das erste Gebot abgegeben wird."],
+  ["Buy this item now for", "Diesen Artikel jetzt kaufen für"],
+  ["This ends the auction right away and you are committing to buy it.", "Damit endet die Auktion sofort, und Sie verpflichten sich zum Kauf."],
+  ["Yes, buy it now", "Ja, jetzt kaufen"],
+  ["Cancel", "Abbrechen"],
+  ["Buying…", "Kauf läuft…"],
+  ["It's yours! We're preparing your invoice. You'll get an email shortly, and it will also appear in My Auctions.", "Er gehört Ihnen! Wir bereiten Ihre Rechnung vor. Sie erhalten in Kürze eine E-Mail, und sie erscheint auch unter „Meine Auktionen“."],
+  ["Buy It Now is no longer available for this auction.", "Sofort-Kaufen ist für diese Auktion nicht mehr verfügbar."],
+  ["This auction doesn't have a Buy It Now price.", "Diese Auktion hat keinen Sofort-Kaufen-Preis."],
 ];

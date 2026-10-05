@@ -31,8 +31,8 @@ function harness(options = {}) {
       this.closed = true;
       this.readyState = 2;
     }
-    emit(type) {
-      for (const fn of this.listeners[type] || []) fn({ type });
+    emit(type, data) {
+      for (const fn of this.listeners[type] || []) fn({ type, data: data === undefined ? undefined : JSON.stringify(data) });
     }
     fail(readyState) {
       this.readyState = readyState;
@@ -53,7 +53,7 @@ function harness(options = {}) {
         }
       : FakeEventSource,
     Date: { now: () => now },
-    Math: { max: Math.max, random: () => 0.5 },
+    Math: { max: Math.max, min: Math.min, random: () => 0.5 },
     setTimeout: (fn, ms) => {
       timers.push({ id: nextId++, at: now + ms, fn, every: 0 });
       return nextId;
@@ -202,6 +202,47 @@ function harness(options = {}) {
   h.instances[0].emit("update");
   h.advance(3_000);
   assert.equal(h.refreshes.length, before, "an update from a closed connection is ignored");
+}
+
+// ---------- big crowds spread their refreshes out ----------
+{
+  const small = harness();
+  small.window.__hfLiveUrl = "u1";
+  small.advance(3_100);
+  small.instances[0].emit("hello", { n: 3 });
+  const s0 = small.refreshes.length;
+  small.instances[0].emit("update", { n: 3 });
+  small.advance(500);
+  assert.equal(small.refreshes.length, s0 + 1, "a handful of viewers: refreshes within a fraction of a second");
+
+  const big = harness();
+  big.window.__hfLiveUrl = "u1";
+  big.advance(3_100);
+  big.instances[0].emit("hello", { n: 600 });
+  const b0 = big.refreshes.length;
+  big.instances[0].emit("update", { n: 600 });
+  big.advance(2_000);
+  assert.equal(big.refreshes.length, b0, "600 watching: not all at once");
+  big.advance(500);
+  assert.equal(big.refreshes.length, b0 + 1, "600 watching: refreshes spread over several seconds (about 2.4s at the middle of the window)");
+
+  // the window never grows past 5 seconds, however big the crowd
+  const huge = harness();
+  huge.window.__hfLiveUrl = "u1";
+  huge.advance(3_100);
+  huge.instances[0].emit("hello", { n: 100000 });
+  const h0 = huge.refreshes.length;
+  huge.instances[0].emit("update", { n: 100000 });
+  huge.advance(2_600);
+  assert.equal(huge.refreshes.length, h0 + 1, "capped: never waits more than the cap");
+
+  // the crowd size updates as people come and go
+  big.instances[0].emit("ping", { n: 2 });
+  const b1 = big.refreshes.length;
+  big.advance(3_000);
+  big.instances[0].emit("update");
+  big.advance(1_000);
+  assert.ok(big.refreshes.length >= b1, "a smaller crowd is handled without trouble");
 }
 
 // ---------- an ended auction closes the connection and never reopens it ----------

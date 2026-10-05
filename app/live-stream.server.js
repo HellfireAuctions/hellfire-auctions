@@ -1,4 +1,4 @@
-import { subscribe, connectionCount } from "./live-hub.server.js";
+import { subscribe, connectionCount, roomSize } from "./live-hub.server.js";
 import { liveToken, validLiveToken } from "./live-token.js";
 
 // The live connection itself (Server-Sent Events). Shopify's app proxy can't carry a stream, so the shopper's browser
@@ -51,9 +51,9 @@ export function liveStreamResponse({ auctionId, token, signal, secret = process.
       const send = (event, data) => write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
       write("retry: 3000\n\n");
-      send("hello", { at: Date.now() }); // tells the page the connection really works end to end
       unsubscribe = subscribe(auctionId, send);
-      beat = setInterval(() => send("ping", { at: Date.now() }), heartbeatMs); // keeps the connection from going quiet
+      send("hello", { at: Date.now(), n: roomSize(auctionId) }); // tells the page the connection really works end to end
+      beat = setInterval(() => send("ping", { at: Date.now(), n: roomSize(auctionId) }), heartbeatMs); // keeps the connection from going quiet
       if (signal) {
         if (signal.aborted) cleanup();
         else signal.addEventListener("abort", cleanup, { once: true });

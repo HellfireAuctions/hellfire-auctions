@@ -29,7 +29,7 @@ export function publish(auctionId, kind = "update") {
   const room = h.rooms.get(auctionId);
   if (!room || room.size === 0) return 0;
   h.seq += 1;
-  const payload = { id: auctionId, seq: h.seq, at: Date.now() };
+  const payload = { id: auctionId, seq: h.seq, at: Date.now(), n: room.size }; // n: how many are watching, so big crowds spread out
   let told = 0;
   for (const send of [...room]) {
     try {
@@ -40,6 +40,11 @@ export function publish(auctionId, kind = "update") {
     }
   }
   return told;
+}
+
+// How many are watching this auction right now.
+export function roomSize(auctionId) {
+  return hub().rooms.get(auctionId)?.size || 0;
 }
 
 export function connectionCount() {

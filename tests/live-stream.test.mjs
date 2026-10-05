@@ -57,6 +57,7 @@ assert.equal(a.res.headers.get("access-control-allow-origin"), "*");
 const first = await readUntil(a.reader, (t) => t.includes("event: hello"));
 assert.ok(first.includes("retry: 3000"), "tells the browser how fast to reconnect");
 assert.ok(first.includes("event: hello"), "says hello straight away, so the page knows the connection works end to end");
+assert.equal(JSON.parse(/event: hello\ndata: (\{.*\})/.exec(first)[1]).n, 1, "hello says how many are watching");
 assert.equal(connectionCount(), 1);
 assert.equal(roomCount(), 1);
 
@@ -78,8 +79,10 @@ const b = open();
 await readUntil(b.reader, (t) => t.includes("event: hello"));
 assert.equal(connectionCount(), 2);
 assert.equal(publish("auction-1"), 2, "both were told");
-assert.ok((await readUntil(a.reader, (t) => t.includes("event: update"))).includes("event: update"));
-assert.ok((await readUntil(b.reader, (t) => t.includes("event: update"))).includes("event: update"));
+const ua = await readUntil(a.reader, (t) => t.includes("event: update"));
+const ub = await readUntil(b.reader, (t) => t.includes("event: update"));
+assert.ok(ua.includes("event: update") && ub.includes("event: update"));
+assert.equal(JSON.parse(/event: update\ndata: (\{.*\})/.exec(ua)[1]).n, 2, "an update says how many are watching, so big crowds can spread out");
 
 // ---------- leaving cleans up ----------
 a.ac.abort();

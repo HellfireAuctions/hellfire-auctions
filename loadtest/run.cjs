@@ -124,8 +124,12 @@ function openStream(streamUrl, onEvent, S) {
       while ((i = buf.indexOf("\n\n")) >= 0) {
         const block = buf.slice(0, i);
         buf = buf.slice(i + 2);
-        const m = /event: (\w+)/.exec(block);
-        if (m) onEvent(m[1]);
+        const m = /event: (\w+)\ndata: (.*)/.exec(block);
+        if (m) {
+          let d = null;
+          try { d = JSON.parse(m[2]); } catch { /* no details */ }
+          onEvent(m[1], d);
+        }
       }
     });
   });
@@ -140,6 +144,7 @@ async function liveViewer(i, stopAt, S, ctx) {
   let lastRefresh = 0;
   let timer = null;
   let closeStream = null;
+  let crowd = 1;
 
   async function refresh() {
     const r = await request("GET", signedUrl("/api/proxy/auction", { product_id: ctx.productId, ...(id ? { logged_in_customer_id: id } : {}) }));
@@ -165,7 +170,8 @@ async function liveViewer(i, stopAt, S, ctx) {
   // the same rule the real panel follows: at most one refresh per 2 seconds, spread out at random
   function schedule() {
     if (timer || Date.now() >= stopAt || ctx.abort) return;
-    const wait = Math.max(0, 2000 - (Date.now() - lastRefresh)) + Math.random() * 350;
+    const spread = Math.min(5000, Math.max(350, crowd * 8)); // the real panel spreads big crowds out
+    const wait = Math.max(0, 2000 - (Date.now() - lastRefresh)) + Math.random() * spread;
     timer = setTimeout(async () => {
       timer = null;
       lastRefresh = Date.now();
@@ -175,7 +181,8 @@ async function liveViewer(i, stopAt, S, ctx) {
 
   const first = await refresh();
   if (first && first.live) {
-    closeStream = openStream(first.live, (name) => {
+    closeStream = openStream(first.live, (name, d) => {
+      if (d && d.n > 0) crowd = d.n;
       if (name === "update") {
         S.events += 1;
         schedule();

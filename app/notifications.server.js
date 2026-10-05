@@ -6,6 +6,7 @@ import { unauthenticated } from "./shopify.server.js";
 import { getShopPlan } from "./plans.server.js";
 
 import { prefsUrl, prefsAllow } from "./prefs.server.js";
+import { translateEmailParts, footerWords, normalizeLang } from "./email-i18n.server.js";
 
 const RESEND_URL = "https://api.resend.com/emails";
 const OUTBID_WINDOW_MS = 10 * 60_000; // at most one outbid email per bidder per auction per 10 minutes
@@ -50,6 +51,29 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
+// The buyer's own language, from their Shopify customer account. Any problem means English.
+const langCache = new Map();
+async function customerLanguage(shop, customerId) {
+  const key = `${shop}|${customerId}`;
+  const hit = langCache.get(key);
+  if (hit && Date.now() - hit.at < 6 * 3600_000) return hit.lang;
+  let lang = "en";
+  try {
+    const { admin } = await unauthenticated.admin(shop);
+    const response = await admin.graphql(
+      `#graphql
+        query CustomerLocale($id: ID!) { customer(id: $id) { locale } }`,
+      { variables: { id: String(customerId).startsWith("gid://") ? String(customerId) : `gid://shopify/Customer/${customerId}` } },
+    );
+    lang = normalizeLang((await response.json())?.data?.customer?.locale);
+  } catch {
+    // keep English
+  }
+  if (langCache.size > 2000) langCache.clear();
+  langCache.set(key, { lang, at: Date.now() });
+  return lang;
+}
+
 async function lookupRaw(shop, customerId, productId) {
   const { admin } = await unauthenticated.admin(shop);
   const response = await admin.graphql(
@@ -77,7 +101,10 @@ async function lookupRaw(shop, customerId, productId) {
 async function lookup(shop, customerId, productId) {
   const data = await lookupRaw(shop, customerId, productId);
   try {
-    if (data && typeof data === "object" && customerId && String(customerId) !== "0") data.prefsUrl = prefsUrl(shop, customerId);
+    if (data && typeof data === "object" && customerId && String(customerId) !== "0") {
+      data.lang = await customerLanguage(shop, customerId);
+      data.prefsUrl = prefsUrl(shop, customerId, data.lang);
+    }
   } catch {
     // no link: the email just won't carry one
   }
@@ -127,16 +154,19 @@ async function sendEmail(args) {
   }
 }
 
-async function sendEmailRaw({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo, imageUrl, prefsUrl: manageUrl }) {
+async function sendEmailRaw({ to, subject, heading, lines, buttonLabel, buttonUrl, shopName, replyTo, imageUrl, prefsUrl: manageUrl, lang }) {
+  // Buyer emails are written in English and translated here for buyers whose account language is Spanish.
+  if (lang && lang !== "en") ({ subject, heading, lines, buttonLabel } = translateEmailParts(lang, { subject, heading, lines, buttonLabel }));
+  const words = footerWords(lang);
   const htmlLines = lines.map((line) => `<p style="margin:0 0 12px">${escapeHtml(line)}</p>`).join("");
   const button = buttonUrl
     ? `<p style="margin:20px 0"><a href="${escapeHtml(buttonUrl)}" style="background:#ff3b30;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">${escapeHtml(buttonLabel)}</a></p>`
     : "";
   const html = `<div style="font-family:Arial,sans-serif;max-width:520px;margin:auto;color:#151515">
     ${imageUrl && /^https:\/\//.test(imageUrl) ? `<p style="margin:0 0 16px"><img src="${escapeHtml(imageUrl)}" alt="" style="max-width:100%;max-height:320px;border-radius:10px;display:block"></p>` : ""}<h2 style="margin:0 0 16px">${escapeHtml(heading)}</h2>${htmlLines}${button}
-    <p style="margin:24px 0 0;font-size:12px;color:#777">Sent by ${escapeHtml(shopName)} via Hellfire Auctions because you bid on this auction.${manageUrl ? ` <a href="${escapeHtml(manageUrl)}" style="color:#777">Manage the emails you get</a>.` : ""}</p>
+    <p style="margin:24px 0 0;font-size:12px;color:#777">${escapeHtml(words.sent(shopName))}${manageUrl ? ` <a href="${escapeHtml(manageUrl)}" style="color:#777">${escapeHtml(words.manage)}</a>.` : ""}</p>
   </div>`;
-  const text = [heading, "", ...lines, buttonUrl ? `\n${buttonLabel}: ${buttonUrl}` : "", manageUrl ? `\nManage the emails you get: ${manageUrl}` : ""].join("\n");
+  const text = [heading, "", ...lines, buttonUrl ? `\n${buttonLabel}: ${buttonUrl}` : "", manageUrl ? `\n${words.manage}: ${manageUrl}` : ""].join("\n");
 
   const response = await fetch(RESEND_URL, {
     method: "POST",
@@ -187,6 +217,7 @@ export async function notifyOutbid({ shop, auction, outbidCustomerId, currentBid
       buttonUrl: auctionLink(data),
       shopName: data?.shop?.name || "the store",
       replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
         prefsUrl: data?.prefsUrl,
     });
     console.log("[notify] outbid email sent", JSON.stringify({ auctionId: auction.id, customerId: outbidCustomerId }));
@@ -237,6 +268,7 @@ export async function sendEndingSoonReminders() {
           buttonUrl: auctionLink(data),
           shopName: data?.shop?.name || "the store",
           replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
         prefsUrl: data?.prefsUrl,
         });
         console.log("[notify] 1-hour reminder sent", JSON.stringify({ auctionId: auction.id, customerId: bid.bidderId }));
@@ -361,6 +393,7 @@ export async function notifyReserveNotMet({ auction, customerId }) {
         buttonUrl: auctionLink(data),
         shopName: data?.shop?.name || "the store",
         replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
         prefsUrl: data?.prefsUrl,
       });
       console.log("[notify] reserve-not-met email sent", JSON.stringify({ auctionId: auction.id, customerId }));
@@ -413,6 +446,7 @@ export async function sendWinnerInvoiceFallback({ auction, customerId, checkoutU
       imageUrl: auction.imageUrl,
       shopName: data?.shop?.name || "the store",
       replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
     });
     console.log("[notify] winner checkout link sent by email", JSON.stringify({ auctionId: auction.id, customerId }));
     return true;
@@ -479,6 +513,7 @@ export async function sendPaymentReminder({ auction, key }) {
       buttonUrl: auction.winnerCheckoutUrl,
       shopName: data?.shop?.name || "the store",
       replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
     });
     console.log("[notify] payment reminder sent", JSON.stringify({ auctionId: auction.id, key }));
     return { sent: true };
@@ -559,6 +594,7 @@ export async function notifyLosers({ auction }) {
         imageUrl: auction.imageUrl,
         shopName: data?.shop?.name || "the store",
         replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
         prefsUrl: data?.prefsUrl,
       });
       console.log("[notify] did-not-win email sent", JSON.stringify({ auctionId: auction.id, customerId: b.bidderId }));
@@ -599,6 +635,7 @@ export async function notifyWatchersStarted({ auction }) {
         imageUrl: auction.imageUrl,
         shopName: data?.shop?.name || "the store",
         replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
         prefsUrl: data?.prefsUrl,
       });
       console.log("[notify] watcher start email sent", JSON.stringify({ auctionId: auction.id, customerId: w.customerId }));
@@ -646,6 +683,7 @@ export async function sendWatcherReminders() {
           imageUrl: auction.imageUrl,
           shopName: data?.shop?.name || "the store",
           replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
         prefsUrl: data?.prefsUrl,
         });
         console.log("[notify] watcher reminder sent", JSON.stringify({ auctionId: auction.id, customerId: w.customerId }));
@@ -799,6 +837,7 @@ export async function notifyCombinedInvoice({ shop, customerId, count, total, ur
     buttonUrl: url,
     shopName: data?.shop?.name || "the store",
     replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
   });
 }
 
@@ -822,5 +861,6 @@ export async function notifyJoinedInvoice({ shop, customerId, title, count, tota
     buttonUrl: url,
     shopName: data?.shop?.name || "the store",
     replyTo: data?.shop?.contactEmail,
+        lang: data?.lang,
   });
 }

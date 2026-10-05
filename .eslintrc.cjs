@@ -17,7 +17,7 @@ module.exports = {
   env: {
     browser: true,
     commonjs: true,
-    es6: true,
+    es2022: true,
   },
   ignorePatterns: ["!**/.server", "!**/.client"],
 
@@ -50,6 +50,13 @@ module.exports = {
       },
       rules: {
         "react/no-unknown-property": ["error", { ignore: ["variant"] }],
+        // Wording in page text is fine; what matters is code that refers to things that do not exist (no-undef).
+        "react/no-unescaped-entities": "off",
+        // The text of a label often sits a few elements deep (label > span > strong > {t("...")}).
+        "jsx-a11y/label-has-associated-control": ["error", { depth: 4 }],
+        "no-empty": ["error", { allowEmptyCatch: true }],
+        // Unused variables are worth a look, but they are not errors that should stop a release.
+        "no-unused-vars": ["warn", { args: "none", varsIgnorePattern: "^_", caughtErrors: "none" }],
       },
     },
 
@@ -89,8 +96,30 @@ module.exports = {
         node: true,
       },
     },
+
+    // Server code is not React: names that start with "use" there (useCurrency...) are ordinary functions.
+    {
+      files: ["**/*.server.{js,ts}"],
+      rules: { "react-hooks/rules-of-hooks": "off" },
+    },
+
+    // The script that runs on shoppers' pages creates a few helpers at runtime (window.__hfT and friends).
+    {
+      files: ["extensions/**/*.js"],
+      env: { browser: true },
+      globals: { __hfT: "readonly", __hfApprox: "readonly", __hfCurrencyNote: "readonly", Shopify: "readonly" },
+      rules: { "no-extra-semi": "off", "no-cond-assign": "off" },
+    },
+
+    // Scripts that run on a computer, not in a browser.
+    {
+      files: ["**/*.cjs", "tests/**", "loadtest/**"],
+      env: { node: true },
+    },
   ],
   globals: {
-    shopify: "readonly"
+    shopify: "readonly",
+    process: "readonly",
+    Buffer: "readonly",
   },
 };

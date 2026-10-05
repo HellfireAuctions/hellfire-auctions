@@ -2050,7 +2050,7 @@ function AuctionForm({
                 </div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {thumbs.map((src, i) => (
-                    <img key={src} src={src} alt={`Photo ${i + 1}`} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: i === 0 ? "3px solid #008060" : "1px solid #ccc" }} />
+                    <img key={src} src={src} alt={`Preview ${i + 1}`} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: i === 0 ? "3px solid #008060" : "1px solid #ccc" }} />
                   ))}
                 </div>
               </div>

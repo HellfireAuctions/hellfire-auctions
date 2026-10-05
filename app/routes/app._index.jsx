@@ -2378,7 +2378,7 @@ export default function AuctionsPage() {
     const hasActive = auctions.some((a) => new Date(a.endsAt).getTime() > Date.now() - 5 * 60_000);
     if (!hasActive) return undefined;
     const id = setInterval(() => {
-      if (document.visibilityState === "visible" && revalidator.state === "idle") revalidator.revalidate();
+      if (document.visibilityState === "visible" && navigator.onLine !== false && revalidator.state === "idle") revalidator.revalidate();
     }, 10000);
     return () => clearInterval(id);
   }, [revalidator, auctions]);

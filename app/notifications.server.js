@@ -817,6 +817,52 @@ export async function emailDataRequest({ shop, customerId, report }) {
   });
 }
 
+// The winner could not be invoiced automatically: tell the store owner, once when it first fails and once if the
+// app finally gives up. This is an important operational email, so it is not limited by plan.
+export async function notifyMerchantSettleFailed({ auction, error, final }) {
+  if (!notificationsEnabled()) return;
+  if (auction.isTest) return; // tests are the owner's own experiments, not a sale waiting on an invoice
+  const notice = { auctionId: auction.id, customerId: "merchant", type: "MERCHANT_SETTLE_FAIL", key: final ? "final" : "first" };
+  try {
+    if (!(await claimNotice(notice))) return;
+    const data = await lookup(auction.shop, "0", auction.productId);
+    useCurrency(data);
+    const to = data?.shop?.email || data?.shop?.contactEmail;
+    if (!to) {
+      await releaseNotice(notice);
+      return;
+    }
+    const title = data?.product?.title || auction.title;
+    const text = String(error || "");
+    const reason = /invalid id|not found|does not exist/i.test(text)
+      ? "Shopify could not find the winning customer's account (it may have been deleted or merged)."
+      : `Shopify returned an error: ${text.slice(0, 160)}`;
+    const lines = final
+      ? [
+          `"${title}" ended with a winning bid of ${money(auction.currentBid)}, but after 24 hours of trying the app could not create the winner's invoice.`,
+          reason,
+          "What you can do: open the auction in Hellfire Auctions and use Offer to next bidder, or create a draft order for the winner in Shopify yourself. Contact support@hellfireauctions.com if you'd like help.",
+        ]
+      : [
+          `"${title}" has ended with a winning bid of ${money(auction.currentBid)}, but the app could not create the winner's invoice yet.`,
+          reason,
+          "The app will keep trying automatically every 2 minutes for 24 hours, and will email you again if it cannot finish. You don't need to do anything right now.",
+        ];
+    await sendEmail({
+      to,
+      subject: final ? `Action needed: no invoice for "${title}"` : `Invoice delayed for "${title}"`,
+      heading: final ? "We couldn't invoice the winner" : "The winner's invoice is delayed",
+      lines,
+      buttonLabel: "Open Hellfire Auctions",
+      buttonUrl: `https://admin.shopify.com/store/${auction.shop.replace(".myshopify.com", "")}/apps/${process.env.SHOPIFY_API_KEY}`,
+      shopName: data?.shop?.name || "your store",
+    });
+  } catch (err) {
+    await releaseNotice(notice);
+    console.error("[notify] settlement-failure email failed:", err?.message || err);
+  }
+}
+
 // The 4-day window passed with no payment: tell the store what the app did automatically.
 export async function notifyMerchantAutoOffer({ auction, price, strikes, blocked }) {
   if (!notificationsEnabled()) return;

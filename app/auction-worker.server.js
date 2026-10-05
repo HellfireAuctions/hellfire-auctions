@@ -3,7 +3,7 @@ import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { isDevelopmentStore, canCreateAuction } from "./plans.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice, notifyMerchantAutoOffer } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice, notifyMerchantAutoOffer, notifyMerchantSettleFailed } from "./notifications.server.js";
 import { getShopSettings, recordStrike } from "./settings.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
@@ -1366,6 +1366,9 @@ async function tick() {
         `Error: ${String(error?.message || error).slice(0, 300)}`,
         "The app retries automatically every 2 minutes for 24 hours.",
       ]);
+      // The store owner is told too: once now, and once more if the app finally gives up.
+      const gaveUp = Date.now() - new Date(auction.endsAt).getTime() > GIVE_UP_AFTER_MS;
+      notifyMerchantSettleFailed({ auction, error: String(error?.message || error), final: gaveUp }).catch(() => {});
     }
   }
 }

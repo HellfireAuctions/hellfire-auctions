@@ -247,7 +247,7 @@
   function live(on){window.__hfLiveOn=!!on}
   function refreshSoon(){
     if(timer)return;
-    var wait=Math.max(0,1500-(Date.now()-lastRefresh))+Math.random()*350; /* spread viewers out, at most one refresh per 1.5s */
+    var wait=Math.max(0,2000-(Date.now()-lastRefresh))+Math.random()*350; /* spread viewers out, at most one refresh per 2s: never costlier than the old polling */
     timer=setTimeout(function(){timer=null;lastRefresh=Date.now();if(!document.hidden&&window.__hfRefreshNow)window.__hfRefreshNow()},wait);
   }
   function close(){if(es){try{es.close()}catch(e){}es=null}live(false)}

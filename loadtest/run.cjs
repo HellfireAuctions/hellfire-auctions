@@ -2,7 +2,8 @@
 // Requests are signed the way Shopify's app proxy signs them, using the secret from .env (never printed).
 //
 //   node loadtest/run.cjs baseline     remembers which auction products exist (run BEFORE creating the test auction)
-//   node loadtest/run.cjs run          finds the new test auction and runs the staged test
+//   node loadtest/run.cjs run          finds the new test auction and runs the staged test (shoppers poll every few seconds)
+//   node loadtest/run.cjs run live    the same test, but shoppers use the real-time connection like the real panel does
 //
 // Safety: it only ever targets the DEV store, uses made-up customer ids ("lt-v-*", "lt-b-*"),
 // refuses to run unless the auction has enough time left, and stops itself if errors pile up.
@@ -27,6 +28,7 @@ const SECRET = fs.existsSync(SECRET_FILE) ? fs.readFileSync(SECRET_FILE, "utf8")
 if (!SECRET) throw new Error("No app secret found (loadtest/.secret)");
 
 const agent = new https.Agent({ keepAlive: true, maxSockets: 800 });
+const sseAgent = new https.Agent({ keepAlive: true, maxSockets: 2000 }); // one long-lived connection per live shopper
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function sign(params) {
@@ -104,6 +106,102 @@ async function viewer(i, stopAt, S, ctx) {
   }
 }
 
+// ---- live mode: shoppers hold the real-time connection and refresh only when told (like the real panel) ----
+function openStream(streamUrl, onEvent, S) {
+  const u = new URL(streamUrl);
+  const req = https.get({ hostname: u.hostname, path: u.pathname + u.search, agent: sseAgent, headers: { Accept: "text/event-stream" } }, (res) => {
+    if (res.statusCode !== 200) {
+      S.liveRefused += 1;
+      res.resume();
+      return;
+    }
+    S.liveOpen += 1;
+    res.setEncoding("utf8");
+    let buf = "";
+    res.on("data", (c) => {
+      buf += c;
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const m = /event: (\w+)/.exec(block);
+        if (m) onEvent(m[1]);
+      }
+    });
+  });
+  req.on("error", () => { S.liveErrors += 1; });
+  return () => req.destroy();
+}
+
+async function liveViewer(i, stopAt, S, ctx) {
+  await sleep(Math.random() * 3000);
+  const id = i % 2 === 0 ? "lt-v-" + i : null; // half are signed in
+  let last = 0;
+  let lastRefresh = 0;
+  let timer = null;
+  let closeStream = null;
+
+  async function refresh() {
+    const r = await request("GET", signedUrl("/api/proxy/auction", { product_id: ctx.productId, ...(id ? { logged_in_customer_id: id } : {}) }));
+    S.poll.push(r.ms);
+    S.codes[r.status] = (S.codes[r.status] || 0) + 1;
+    let a = null;
+    if (r.status === 200) {
+      try {
+        a = JSON.parse(r.body).auction || {};
+        const cb = Number(a.currentBid);
+        if (Number.isFinite(cb)) {
+          if (cb + 0.001 < last) S.regressions += 1;
+          last = Math.max(last, cb);
+        }
+        if (Number.isFinite(Number(a.minimumBid))) ctx.minBid = Number(a.minimumBid);
+        ctx.latest = a;
+      } catch {
+        S.badJson += 1;
+      }
+    }
+    return a;
+  }
+  // the same rule the real panel follows: at most one refresh per 2 seconds, spread out at random
+  function schedule() {
+    if (timer || Date.now() >= stopAt || ctx.abort) return;
+    const wait = Math.max(0, 2000 - (Date.now() - lastRefresh)) + Math.random() * 350;
+    timer = setTimeout(async () => {
+      timer = null;
+      lastRefresh = Date.now();
+      if (Date.now() < stopAt && !ctx.abort) await refresh();
+    }, wait);
+  }
+
+  const first = await refresh();
+  if (first && first.live) {
+    closeStream = openStream(first.live, (name) => {
+      if (name === "update") {
+        S.events += 1;
+        schedule();
+      }
+    }, S);
+  }
+  const safety = (async () => {
+    while (Date.now() < stopAt && !ctx.abort) {
+      await sleep(15000 * (0.9 + Math.random() * 0.2)); // slow safety-net poll while the connection is healthy
+      if (Date.now() < stopAt && !ctx.abort) await refresh();
+    }
+  })();
+  const cards = (async () => {
+    while (Date.now() < stopAt && !ctx.abort) {
+      await sleep(9000 + Math.random() * 1000 - 500); // same cadence as the polling test, so the comparison is fair
+      if (Date.now() >= stopAt || ctx.abort) break;
+      const c = await request("GET", signedUrl("/api/proxy/auction-cards", {}));
+      S.cards.push(c.ms);
+      S.codes[c.status] = (S.codes[c.status] || 0) + 1;
+    }
+  })();
+  await Promise.all([safety, cards]);
+  if (timer) clearTimeout(timer);
+  if (closeStream) closeStream();
+}
+
 async function bidder(i, stopAt, S, ctx) {
   const id = "lt-b-" + i;
   await sleep(Math.random() * 2000);
@@ -127,7 +225,7 @@ async function bidder(i, stopAt, S, ctx) {
 }
 
 async function runStage(stage, ctx) {
-  const S = { poll: [], cards: [], bid: [], codes: {}, regressions: 0, badJson: 0, accepted: 0, refused: 0 };
+  const S = { poll: [], cards: [], bid: [], codes: {}, regressions: 0, badJson: 0, accepted: 0, refused: 0, events: 0, liveOpen: 0, liveRefused: 0, liveErrors: 0 };
   const stopAt = Date.now() + stage.seconds * 1000;
   const watchdog = setInterval(() => {
     const total = Object.values(S.codes).reduce((a, b) => a + b, 0);
@@ -138,7 +236,7 @@ async function runStage(stage, ctx) {
     }
   }, 2000);
   const tasks = [];
-  for (let i = 0; i < stage.viewers; i += 1) tasks.push(viewer(i, stopAt, S, ctx));
+  for (let i = 0; i < stage.viewers; i += 1) tasks.push((ctx.live ? liveViewer : viewer)(i, stopAt, S, ctx));
   for (let i = 0; i < stage.bidders; i += 1) tasks.push(bidder(i, stopAt, S, ctx));
   await Promise.all(tasks);
   clearInterval(watchdog);
@@ -151,6 +249,8 @@ async function runStage(stage, ctx) {
     cardsMs: { p50: round(pct(S.cards, 50)), p95: round(pct(S.cards, 95)) },
     bidMs: { p50: round(pct(S.bid, 50)), p95: round(pct(S.bid, 95)), p99: round(pct(S.bid, 99)) },
     bidsAccepted: S.accepted, bidsRefused: S.refused, priceWentBackwards: S.regressions, unreadableAnswers: S.badJson,
+    auctionFetches: S.poll.length, auctionPerSecond: round(S.poll.length / stage.seconds),
+    live: { opened: S.liveOpen, refused: S.liveRefused, errors: S.liveErrors, events: S.events },
   };
 }
 
@@ -170,7 +270,8 @@ async function main() {
   if (fresh.length !== 1) throw new Error(`Expected exactly 1 new auction since the baseline, found ${fresh.length}. Create just one test auction.`);
   const productId = fresh[0];
 
-  const ctx = { productId, minBid: 1, latest: null, maxAccepted: {}, accepted: 0, abort: false };
+  const ctx = { productId, minBid: 1, latest: null, maxAccepted: {}, accepted: 0, abort: false, live: process.argv[3] === "live" };
+  console.log(`Mode: ${ctx.live ? "LIVE connection (shoppers refresh only when told)" : "polling (shoppers refresh every few seconds)"}`);
   const first = await request("GET", signedUrl("/api/proxy/auction", { product_id: productId }));
   const a0 = JSON.parse(first.body).auction;
   if (!a0 || a0.status !== "LIVE") throw new Error(`The test auction is not live (status: ${a0 ? a0.status : "missing"}).`);
@@ -189,6 +290,8 @@ async function main() {
     console.log(`  ${r.requests} requests (${r.perSecond}/s), failed: ${r.failed}, codes: ${JSON.stringify(r.codes)}`);
     console.log(`  refresh time  p50 ${r.pollMs.p50} ms  p95 ${r.pollMs.p95} ms  p99 ${r.pollMs.p99} ms  worst ${r.pollMs.max} ms`);
     console.log(`  bid time      p50 ${r.bidMs.p50} ms  p95 ${r.bidMs.p95} ms  p99 ${r.bidMs.p99} ms`);
+    console.log(`  auction refreshes ${r.auctionFetches} (${r.auctionPerSecond}/s)`);
+    if (ctx.live) console.log(`  live connections ${r.live.opened}/${r.viewers} opened, ${r.live.refused} refused, ${r.live.errors} errors, ${r.live.events} updates received`);
     console.log(`  bids accepted ${r.bidsAccepted}, refused (normal) ${r.bidsRefused}, price went backwards: ${r.priceWentBackwards}`);
     if (ctx.abort) break;
     await sleep(5000);
@@ -217,6 +320,7 @@ async function main() {
     const expected = Math.min(ctx.maxAccepted[bidders[0]], Math.round((max2 + bidIncrement(max2)) * 100) / 100);
     checks.push(["The final price is exactly what proxy bidding says it should be", Math.abs(Number(final.currentBid) - expected) < 0.005, `server says ${final.currentBid}, expected ${expected}`]);
   }
+  if (ctx.live) checks.push(["Every stage: at least 95% of watchers got their live connection", results.every((r) => r.live.opened >= 0.95 * r.viewers), results.map((r) => `${r.stage} ${r.live.opened}/${r.viewers}`).join(", ")]);
   checks.push(["No shopper ever saw the price go backwards", results.every((r) => r.priceWentBackwards === 0), `${results.reduce((s, r) => s + r.priceWentBackwards, 0)} backwards moves`]);
   checks.push(["No request failed outright (no server errors, no timeouts)", results.every((r) => r.failed === 0), `${results.reduce((s, r) => s + r.failed, 0)} failed`]);
 

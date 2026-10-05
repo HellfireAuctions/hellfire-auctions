@@ -111,7 +111,7 @@ function harness(options = {}) {
   h.advance(400);
   assert.equal(h.refreshes.length, before + 1, "one refresh for the whole burst");
 
-  // refreshes are spaced at least 1.5 seconds apart
+  // refreshes are spaced at least 2 seconds apart
   h.instances[0].emit("update");
   h.advance(1_000);
   assert.equal(h.refreshes.length, before + 1, "too soon after the last one");

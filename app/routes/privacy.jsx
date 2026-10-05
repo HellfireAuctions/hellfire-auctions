@@ -13,7 +13,7 @@ export default function Privacy() {
       <div style={S.hero}>
         <div style={{ fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: "#ffd60a", fontWeight: 700 }}>Hellfire Auctions</div>
         <h1 style={{ margin: "6px 0 4px", fontSize: 32 }}>Privacy Policy</h1>
-        <div>Effective October 2, 2026</div>
+        <div>Effective October 5, 2026</div>
       </div>
 
       <p>
@@ -40,6 +40,9 @@ export default function Privacy() {
           (an &ldquo;outbid&rdquo; notice or a &ldquo;1 hour left&rdquo; reminder). We do not store email addresses in our database.
         </li>
         <li>A record that a notice was sent (customer ID, auction, notice type and time), so nobody receives the same notice twice.</li>
+        <li>The bidder&rsquo;s preferred language (for example Spanish), read from their Shopify customer account when we send an email so the email is in their language. We do not store it.</li>
+        <li>A record of each unpaid sale (customer ID and auction). If a winner does not pay within the payment window, the merchant can see how many unpaid sales that bidder has, and can choose to have the App block bidders who reach a limit the merchant sets. These records are deleted with the customer&rsquo;s other data.</li>
+        <li>Totals only, such as &ldquo;7 bidders&rdquo; and &ldquo;12 watching&rdquo;, are shown to shoppers on an auction. Names are never shown.</li>
         <li>When an auction ends, the winner&rsquo;s Shopify customer ID is used to create a Shopify draft order and invoice in the merchant&rsquo;s store.</li>
       </ul>
       <p>Bidders must be signed in to the merchant&rsquo;s store to bid. Other shoppers only ever see bidders as an anonymous label such as &ldquo;Bidder #1234&rdquo;.</p>
@@ -48,7 +51,8 @@ export default function Privacy() {
       <ul>
         <li>To run auctions: accept and validate bids, calculate prices, show live bids and countdowns, and end auctions on time.</li>
         <li>To invoice auction winners through Shopify.</li>
-        <li>To email bidders about auctions they bid on (outbid notices and ending-soon reminders).</li>
+        <li>To email bidders about auctions they bid on or watch (outbid notices, reminders, results, and winner and payment notices).</li>
+        <li>To record unpaid sales, so merchants can offer an item to the next bidder or block repeat non-payers.</li>
         <li>To enforce plan limits and keep the service secure and working.</li>
       </ul>
       <p>We do not sell personal information, use it for advertising, or build profiles of shoppers. The App&rsquo;s storefront code sets no tracking cookies.</p>
@@ -65,8 +69,8 @@ export default function Privacy() {
 
       <h2 style={S.h2}>5. Retention and deletion</h2>
       <ul>
-        <li>When a merchant uninstalls the App, their store&rsquo;s access credentials are removed right away.</li>
-        <li>When Shopify sends the store data-erasure request (about 48 hours after uninstall), we delete that store&rsquo;s auctions, bids, notice records and plan record.</li>
+        <li>When a merchant uninstalls the App, their store&rsquo;s access credentials are removed right away and their open auctions are stopped.</li>
+        <li>When Shopify sends the store data-erasure request (about 48 hours after uninstall), we delete that store&rsquo;s auctions, bids, notice records, settings and plan record.</li>
         <li>When Shopify sends a customer data-erasure request, we delete that customer&rsquo;s bids and notice records and remove them as a recorded winner.</li>
         <li>Auction records, including bids and notice records, are also deleted automatically 24 months after the auction ends.</li>
         <li>Encrypted weekly backups are kept for up to 30 days, so a record erased on request can remain in a backup for that long.</li>

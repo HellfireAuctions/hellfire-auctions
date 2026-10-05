@@ -25,8 +25,13 @@ const PLANS = [
       "10 auctions per month",
       "Live bidding with automatic proxy bids",
       "Reserve prices, scheduling and test auctions",
+      "Bulk creation from a spreadsheet, weekly repeats and staggered auction events",
+      "Automatic relisting of unsold items",
       "Bid history, bidder blocking and a My Auctions page",
-      "Winner invoiced automatically",
+      "Winner invoiced automatically, with an automatic second chance and blocking for non-payers",
+      "A Live Auctions section for your home page (Online Store 2.0 themes)",
+      "Spanish storefront and buyer emails",
+      "Sales report (CSV) and a full data backup",
       "Works with any Shopify theme",
     ],
   },
@@ -77,7 +82,7 @@ const FAQ = [
   ],
   [
     "What counts toward my monthly auction limit?",
-    "Each auction you create counts toward the month it was created in, including a relisted auction. The 5 and 10-minute test auctions don't count, and on a live store they never create a winner or an invoice. Limits reset on the 1st of each month.",
+    "Each auction you create counts toward the month it was created in, including a relisted auction. Automatic relists, and every auction created from a spreadsheet or a weekly repeat, count too. The 5 and 10-minute test auctions don't count, and on a live store they never create a winner or an invoice. Limits reset on the 1st of each month.",
   ],
   [
     "What happens if I reach my limit?",
@@ -90,6 +95,14 @@ const FAQ = [
   [
     "Do I need to set up email or DNS?",
     "No. Auction emails are sent for you, with your store's name, and replies go to your store's contact email. There is nothing to configure.",
+  ],
+  [
+    "Does it work in other languages?",
+    "Yes, in English and Spanish. The bidding panel, product-card badges, My Auctions page and buyer emails appear in Spanish when a shopper browses your store in Spanish (emails follow the buyer's own Shopify account language). Other languages show English for now.",
+  ],
+  [
+    "What happens when a winner doesn't pay?",
+    "Winners have 4 days to pay, with automatic reminders on Blaze and Inferno. After that the item is offered to the next bidder automatically, the unpaid sale is counted against the first winner, and bidders who reach your limit (2 by default) are blocked from bidding. You can change or switch off all of this in the app.",
   ],
   [
     "Where can I learn more or get help?",

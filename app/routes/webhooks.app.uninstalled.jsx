@@ -12,5 +12,17 @@ export const action = async ({ request }) => {
     await db.session.deleteMany({ where: { shop } });
   }
 
+  // The app can no longer reach this store, so stop its open auctions. Otherwise the worker would keep
+  // trying to start and settle them (and a reinstall would find them half-finished).
+  try {
+    const stopped = await db.auction.updateMany({
+      where: { shop, status: { in: ["DRAFT", "UPCOMING", "LIVE"] } },
+      data: { status: "CANCELLED" },
+    });
+    if (stopped.count) console.log(`[uninstall] stopped ${stopped.count} open auction(s) for ${shop}`);
+  } catch (error) {
+    console.error("[uninstall] could not stop open auctions:", error?.message || error);
+  }
+
   return new Response();
 };

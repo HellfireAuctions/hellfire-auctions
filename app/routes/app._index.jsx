@@ -1065,6 +1065,49 @@ const actionImpl = async ({ request }) => {
     };
   }
 
+  if (intent === "save-default-weight") {
+    const raw = String(formData.get("defaultWeight") || "").trim();
+    const saved = await saveShopSettings(session.shop, {
+      defaultWeight: raw === "" ? null : Number(raw),
+      defaultWeightUnit: String(formData.get("defaultWeightUnit") || "OUNCES"),
+    });
+    return { success: saved.defaultWeight ? "Default shipping weight saved. New auctions without a weight will use it." : "Default shipping weight cleared." };
+  }
+
+  if (intent === "apply-default-weight") {
+    const defaults = await getShopSettings(session.shop);
+    if (!(defaults.defaultWeight > 0)) return { error: "Save a default weight first." };
+    const recent = await prisma.auction.findMany({ where: { shop: session.shop }, select: { productId: true }, orderBy: { createdAt: "desc" }, take: 400 });
+    const productIds = [...new Set(recent.map((r) => r.productId))].slice(0, 100);
+    if (!productIds.length) return { success: "There are no auctions yet." };
+    let missing = [];
+    try {
+      const response = await admin.graphql(
+        `#graphql
+          query DefaultWeightCheck($ids: [ID!]!) {
+            nodes(ids: $ids) { ... on Product { id variants(first: 1) { nodes { inventoryItem { measurement { weight { value } } } } } } }
+          }`,
+        { variables: { ids: productIds } },
+      );
+      for (const node of (await response.json())?.data?.nodes || []) {
+        const current = node?.variants?.nodes?.[0]?.inventoryItem?.measurement?.weight?.value;
+        if (node?.id && !(Number(current) > 0)) missing.push(node.id);
+      }
+    } catch (error) {
+      return { error: "Couldn't read your products from Shopify: " + (error?.message || error) };
+    }
+    let applied = 0;
+    for (const id of missing) {
+      try {
+        await setAuctionWeight(admin, id, defaults.defaultWeight, defaults.defaultWeightUnit);
+        applied += 1;
+      } catch (error) {
+        console.error("[admin] could not apply the default weight:", error?.message || error);
+      }
+    }
+    return { success: applied ? `Added the default weight to ${applied} auction product${applied === 1 ? "" : "s"} that had none.` : "Every recent auction product already has a weight." };
+  }
+
   if (intent === "save-settings") {
     await saveShopSettings(session.shop, {
       autoOfferNext: formData.get("autoOfferNext") === "on",
@@ -1733,9 +1776,17 @@ const actionImpl = async ({ request }) => {
 
   try {
     await ensureAuctionVariantAvailable(admin, productId);
-    const weightValue = Number(formData.get("weightValue"));
+    let weightValue = Number(formData.get("weightValue"));
     const weightUnitRaw = String(formData.get("weightUnit") || "");
-    const weightUnit = ["OUNCES", "POUNDS", "GRAMS", "KILOGRAMS"].includes(weightUnitRaw) ? weightUnitRaw : "OUNCES";
+    let weightUnit = ["OUNCES", "POUNDS", "GRAMS", "KILOGRAMS"].includes(weightUnitRaw) ? weightUnitRaw : "OUNCES";
+    if (!(Number.isFinite(weightValue) && weightValue > 0)) {
+      // no weight entered: use the store's default, so weight-based shipping rates always have something to work with
+      const shopDefaults = await getShopSettings(session.shop);
+      if (shopDefaults.defaultWeight > 0) {
+        weightValue = shopDefaults.defaultWeight;
+        weightUnit = shopDefaults.defaultWeightUnit;
+      }
+    }
     if (Number.isFinite(weightValue) && weightValue > 0) {
       try {
         await setAuctionWeight(admin, productId, weightValue, weightUnit);
@@ -2331,6 +2382,27 @@ export default function AuctionsPage() {
     }, 10000);
     return () => clearInterval(id);
   }, [revalidator, auctions]);
+  const [salesBusy, setSalesBusy] = useState(false);
+  const downloadSales = async () => {
+    setSalesBusy(true);
+    try {
+      const res = await fetch("/app/export-sales");
+      if (!res.ok) throw new Error("failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hellfire-auctions-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.alert("Sorry, the sales report couldn't be downloaded. Please try again.");
+    } finally {
+      setSalesBusy(false);
+    }
+  };
   const [backupBusy, setBackupBusy] = useState(false);
   const downloadBackup = async () => {
     setBackupBusy(true);
@@ -2429,7 +2501,7 @@ export default function AuctionsPage() {
           </li>
           <li>
             <strong>Check your shipping rates.</strong> At checkout, winners pick from your store&rsquo;s own shipping options in{" "}
-            <s-link href={shippingSettingsUrl} target="_top">Settings, Shipping and delivery</s-link>. If your rates depend on weight, give each auction a weight: there&rsquo;s a field on the create form and a <em>Shipping weight</em> line on every auction card, and you can add or change it at any time. Optional: add a $0.00 rate named <em>Add to my existing order (free)</em>; when a winner picks it, add the item to their earlier order before shipping.
+            <s-link href={shippingSettingsUrl} target="_top">Settings, Shipping and delivery</s-link>. If your rates depend on weight, give each auction a weight: there&rsquo;s a field on the create form and a <em>Shipping weight</em> line on every auction card, and you can add or change it at any time. You can also set a <em>Default shipping weight</em> in the app, used whenever you don&rsquo;t enter one. Optional: add a $0.00 rate named <em>Add to my existing order (free)</em>; when a winner picks it, add the item to their earlier order before shipping.
           </li>
           <li>
             <strong>Create your first auction</strong> with the form below: title, description, photos, starting bid, optional reserve price, start time and length. The app creates the product, adds it to a <em>Live Auctions</em> collection, and starts and ends the auction automatically. The winner is invoiced through Shopify when it ends. Tip: a test auction (under 1 hour) never counts toward your monthly limit.
@@ -2490,6 +2562,29 @@ export default function AuctionsPage() {
         <BulkImport timezone={timezone} />
           </>
         )}
+      </s-section>
+
+      <s-section heading="Default shipping weight">
+        <div style={{ display: "grid", gap: 12, maxWidth: 680 }}>
+          <span style={{ fontSize: 14 }}>
+            Used for any new auction where you don&rsquo;t enter a weight, so your store&rsquo;s weight-based shipping rates always have something to work with. You can still set a different weight on any auction.
+          </span>
+          <Form method="post" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input type="hidden" name="intent" value="save-default-weight" />
+            <input name="defaultWeight" type="number" min="0" step="0.01" defaultValue={settings?.defaultWeight ?? ""} placeholder="e.g. 8" aria-label="Default shipping weight" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, width: 120 }} />
+            <select name="defaultWeightUnit" defaultValue={settings?.defaultWeightUnit || "OUNCES"} aria-label="Weight unit" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8 }}>
+              <option value="OUNCES">oz</option>
+              <option value="POUNDS">lb</option>
+              <option value="GRAMS">g</option>
+              <option value="KILOGRAMS">kg</option>
+            </select>
+            <s-button type="submit" variant="primary">Save</s-button>
+          </Form>
+          <Form method="post">
+            <input type="hidden" name="intent" value="apply-default-weight" />
+            <s-button type="submit" variant="secondary">Apply it to my existing auctions that have no weight</s-button>
+          </Form>
+        </div>
       </s-section>
 
       <s-section heading="Unpaid winners">
@@ -2916,6 +3011,9 @@ export default function AuctionsPage() {
           <s-text>Download a copy of every auction and bid in your store, any time.</s-text>
           <s-button type="button" onClick={downloadBackup} disabled={backupBusy}>
             {backupBusy ? "Preparing backup..." : "Download backup"}
+          </s-button>
+          <s-button type="button" variant="secondary" onClick={downloadSales} disabled={salesBusy}>
+            {salesBusy ? "Preparing report..." : "Download sales report (CSV)"}
           </s-button>
         </s-stack>
       </s-section>

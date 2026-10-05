@@ -141,5 +141,7 @@ model ShopSettings {
   shop          String   @id
   autoOfferNext Boolean  @default(true)
   strikeLimit   Int      @default(2)
+  defaultWeight Float?
+  defaultWeightUnit String @default("OUNCES")
   updatedAt     DateTime @updatedAt
 }

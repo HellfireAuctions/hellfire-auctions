@@ -1,8 +1,9 @@
 import prisma from "./db.server.js";
 
-// Per-store choices about unpaid winners. If the table can't be read, the safe defaults apply.
-export const SETTING_DEFAULTS = { autoOfferNext: true, strikeLimit: 2 };
+// Per-store choices: unpaid winners and the default shipping weight. If the table can't be read, safe defaults apply.
+export const SETTING_DEFAULTS = { autoOfferNext: true, strikeLimit: 2, defaultWeight: null, defaultWeightUnit: "OUNCES" };
 export const STRIKE_LIMIT_CHOICES = [0, 1, 2, 3, 5]; // 0 = never block automatically
+export const WEIGHT_UNITS = ["OUNCES", "POUNDS", "GRAMS", "KILOGRAMS"];
 
 export async function getShopSettings(shop) {
   try {
@@ -10,6 +11,8 @@ export async function getShopSettings(shop) {
     return {
       autoOfferNext: row?.autoOfferNext ?? SETTING_DEFAULTS.autoOfferNext,
       strikeLimit: row?.strikeLimit ?? SETTING_DEFAULTS.strikeLimit,
+      defaultWeight: row?.defaultWeight > 0 ? Number(row.defaultWeight) : null,
+      defaultWeightUnit: WEIGHT_UNITS.includes(row?.defaultWeightUnit) ? row.defaultWeightUnit : SETTING_DEFAULTS.defaultWeightUnit,
     };
   } catch (error) {
     console.error("[settings] could not read settings, using defaults:", error?.message || error);
@@ -17,13 +20,19 @@ export async function getShopSettings(shop) {
   }
 }
 
-export async function saveShopSettings(shop, { autoOfferNext, strikeLimit }) {
-  const data = {
-    autoOfferNext: Boolean(autoOfferNext),
-    strikeLimit: STRIKE_LIMIT_CHOICES.includes(Number(strikeLimit)) ? Number(strikeLimit) : SETTING_DEFAULTS.strikeLimit,
-  };
-  await prisma.shopSettings.upsert({ where: { shop }, create: { shop, ...data }, update: data });
-  return data;
+// Saves only what is passed; everything else keeps its current value.
+export async function saveShopSettings(shop, changes) {
+  const current = await getShopSettings(shop);
+  const next = { ...current };
+  if ("autoOfferNext" in changes) next.autoOfferNext = Boolean(changes.autoOfferNext);
+  if ("strikeLimit" in changes) next.strikeLimit = STRIKE_LIMIT_CHOICES.includes(Number(changes.strikeLimit)) ? Number(changes.strikeLimit) : SETTING_DEFAULTS.strikeLimit;
+  if ("defaultWeight" in changes) {
+    const w = Number(changes.defaultWeight);
+    next.defaultWeight = Number.isFinite(w) && w > 0 && w <= 100000 ? Math.round(w * 100) / 100 : null;
+  }
+  if ("defaultWeightUnit" in changes) next.defaultWeightUnit = WEIGHT_UNITS.includes(changes.defaultWeightUnit) ? changes.defaultWeightUnit : SETTING_DEFAULTS.defaultWeightUnit;
+  await prisma.shopSettings.upsert({ where: { shop }, create: { shop, ...next }, update: next });
+  return next;
 }
 
 // A bidder reaching the limit is blocked. 0 means never.

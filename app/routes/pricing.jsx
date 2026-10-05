@@ -27,7 +27,7 @@ const PLANS = [
       "Reserve prices, scheduling and test auctions",
       "Bulk creation from a spreadsheet, weekly repeats and staggered auction events",
       "Automatic relisting of unsold items",
-      "Bid history, bidder blocking and a My Auctions page",
+      "Bid history, bidder blocking, optional bidder rules and a My Auctions page",
       "Winner invoiced automatically, with an automatic second chance and blocking for non-payers",
       "A Live Auctions section for your home page (Online Store 2.0 themes)",
       "Spanish storefront and buyer emails",

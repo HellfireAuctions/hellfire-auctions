@@ -4,6 +4,8 @@ import { memo, memoDelete } from "../memo.server";
 import { shopCurrency } from "../currency.server";
 import { notifyOutbid } from "../notifications.server";
 import { getShopPlan } from "../plans.server";
+import { getShopSettings } from "../settings.server";
+import { checkBidder } from "../bidder-rules.server";
 import {
   MAX_ALLOWED_BID,
   bidIncrement,
@@ -168,6 +170,13 @@ export const action = async ({ request }) => {
     : null;
   if (blockedBidder) {
     return Response.json({ error: "You can't place bids on this store's auctions." }, { status: 403 });
+  }
+
+  // The store's "who can bid" rule. With the default (anyone signed in) nothing is looked up.
+  if (shop) {
+    const rules = await memo("settings:" + shop, 10_000, () => getShopSettings(shop));
+    const verdict = await checkBidder(shop, customerId, rules.bidderRule, rules.approvedTag);
+    if (!verdict.ok) return Response.json({ error: verdict.message }, { status: 403 });
   }
 
   // Anti-sniping is an Inferno-only option: it only applies while the store is on that plan.

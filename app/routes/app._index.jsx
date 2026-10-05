@@ -7,6 +7,8 @@ import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction, getShopPlan } from "../plans.server";
 import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep } from "../auction-worker.server";
 import { getShopSettings, saveShopSettings } from "../settings.server";
+import { BIDDER_RULES } from "../bidder-rules";
+import { memoDelete } from "../memo.server";
 import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
 import BulkImport from "../bulk-import";
 
@@ -1063,6 +1065,15 @@ const actionImpl = async ({ request }) => {
       success: `Event scheduled: ${eventIds.length} auction${eventIds.length === 1 ? "" : "s"} start ${formatEastern(evStart, evTz)} and end one after another, ${gapMinutes} minute${gapMinutes === 1 ? "" : "s"} apart, from ${formatEastern(evEnds[0], evTz)} to ${formatEastern(evEnds[evEnds.length - 1], evTz)}.`,
       eventScheduled: true,
     };
+  }
+
+  if (intent === "save-bidder-rule") {
+    const saved = await saveShopSettings(session.shop, {
+      bidderRule: String(formData.get("bidderRule") || "ANYONE"),
+      approvedTag: String(formData.get("approvedTag") || ""),
+    });
+    memoDelete("settings:" + session.shop); // the new rule applies to the very next bid
+    return { success: saved.bidderRule === "ANYONE" ? "Anyone who is signed in can bid." : "Bidder rule saved. It applies to every new bid." };
   }
 
   if (intent === "save-default-weight") {
@@ -2563,6 +2574,28 @@ export default function AuctionsPage() {
         <BulkImport timezone={timezone} />
           </>
         )}
+      </s-section>
+
+      <s-section heading="Who can bid">
+        <Form method="post" style={{ display: "grid", gap: 12, maxWidth: 680 }}>
+          <input type="hidden" name="intent" value="save-bidder-rule" />
+          <span style={{ fontSize: 14 }}>
+            Choose who is allowed to place bids on your auctions. A shopper who isn&rsquo;t eligible sees a clear message when they try to bid, and can contact you to be approved. Bidders you have already blocked stay blocked.
+          </span>
+          <select name="bidderRule" defaultValue={settings?.bidderRule || "ANYONE"} aria-label="Who can bid" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, maxWidth: 420 }}>
+            {Object.entries(BIDDER_RULES).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <label style={{ display: "grid", gap: 4, maxWidth: 420 }}>
+            <strong>Approval tag (used with &ldquo;approved with a tag&rdquo;)</strong>
+            <input name="approvedTag" defaultValue={settings?.approvedTag || "bidder-approved"} maxLength={40} style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8 }} />
+          </label>
+          <span style={{ fontSize: 13, color: "#616161" }}>
+            To approve someone: open the customer in Shopify (Customers), add this tag to them and save. Changes can take up to a minute to reach a shopper who has already tried to bid.
+          </span>
+          <div><s-button type="submit" variant="primary">Save</s-button></div>
+        </Form>
       </s-section>
 
       <s-section heading="Default shipping weight">

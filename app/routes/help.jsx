@@ -25,6 +25,7 @@ const START = [
 const FAQ = [
   ["Bidding", [
     ["How does proxy bidding work?", "A bidder enters the most they are willing to pay. The app bids only as much as needed to stay in front, up to that maximum, the same way eBay does. Maximum bids are never shown to other shoppers or to you."],
+    ["Can I limit who bids?", "Yes. Under Who can bid in the app, choose anyone who is signed in (the default), only customers with a verified email address, only customers who have bought from you before, or only customers you have approved by adding a tag to them in Shopify. A shopper who isn\u2019t eligible sees a clear message when they try to bid and can contact you to be approved."],
     ["What are the bid steps?", "Bid increments grow with the price, in tiers like eBay's, so a bid on a $200 item moves in bigger steps than one on a $20 item. Bidders see the minimum next bid before they place one, and a confirm step catches typing mistakes such as an extra zero."],
     ["What does the reserve price do?", "A reserve is the lowest price you will sell for. Shoppers see whether the reserve has been met but never the amount. If the auction ends below it, there is no sale and no one is charged."],
     ["What is anti-sniping?", "On the Inferno plan you can switch on anti-sniping for an auction: a bid in the last 2 minutes adds 2 minutes, so nobody wins by bidding at the last second. It is off unless you turn it on."],

@@ -143,5 +143,7 @@ model ShopSettings {
   strikeLimit   Int      @default(2)
   defaultWeight Float?
   defaultWeightUnit String @default("OUNCES")
+  bidderRule    String   @default("ANYONE")
+  approvedTag   String   @default("bidder-approved")
   updatedAt     DateTime @updatedAt
 }

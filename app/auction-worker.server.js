@@ -2,7 +2,7 @@ import { randomUUID as hfUuid } from "node:crypto";
 import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
-import { isDevelopmentStore } from "./plans.server.js";
+import { isDevelopmentStore, canCreateAuction } from "./plans.server.js";
 import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice, notifyMerchantAutoOffer } from "./notifications.server.js";
 import { getShopSettings, recordStrike } from "./settings.server.js";
 
@@ -723,8 +723,8 @@ async function ownerWatchdog() {
   const dayAgo = new Date(Date.now() - 24 * 3600_000);
   const monthAgo = new Date(Date.now() - 30 * 24 * 3600_000);
   const [emails24h, emails30d, dbRows, storeRows] = await Promise.all([
-    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED", "STRIKE", "AUTO_OFFERED"] } } }),
-    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED", "STRIKE", "AUTO_OFFERED"] } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: dayAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED", "STRIKE", "AUTO_OFFERED", "AUTO_RELIST", "AUTO_RELISTED"] } } }),
+    prisma.auctionNotification.count({ where: { sentAt: { gte: monthAgo }, auctionId: { not: "__system__" }, type: { notIn: ["PAID", "ARCHIVED", "ADMIN_HIDDEN", "EMBED_OFF", "UNPUBLISHED", "STRIKE", "AUTO_OFFERED", "AUTO_RELIST", "AUTO_RELISTED"] } } }),
     prisma.$queryRaw`SELECT pg_database_size(current_database())::bigint AS bytes`,
     prisma.auction.groupBy({ by: ["shop"], where: { createdAt: { gte: monthAgo } } }),
   ]);
@@ -1185,6 +1185,102 @@ async function unsoldSweep(minGapMs = 9 * 60_000) {
   }
 }
 
+// ---------- automatic relist: an unsold item goes live again for the same length ----------
+async function putProductBackOnSale(shop, productId) {
+  const data = await adminGraphql(shop, `#graphql
+    query LiveAuctionsAgain { collections(first: 100, query: "title:'Live Auctions'") { nodes { id title } } }`);
+  const collection = data?.collections?.nodes?.find((c) => c.title === "Live Auctions");
+  if (collection) {
+    const added = await adminGraphql(shop, `#graphql
+      mutation AddBackToLive($id: ID!, $productIds: [ID!]!) { collectionAddProducts(id: $id, productIds: $productIds) { userErrors { message } } }`,
+    { id: collection.id, productIds: [productId] });
+    const addErrors = added?.collectionAddProducts?.userErrors || [];
+    if (addErrors.length) console.error("[hellfire-auctions] relist: collection note:", addErrors.map((e) => e.message).join(", "));
+  }
+  const active = await adminGraphql(shop, `#graphql
+    mutation ReactivateProduct($product: ProductUpdateInput!) { productUpdate(product: $product) { userErrors { message } } }`,
+  { product: { id: productId, status: "ACTIVE" } });
+  throwUserErrors(active?.productUpdate?.userErrors);
+  const pubs = await adminGraphql(shop, `#graphql
+    query OnlineStoreAgain { publications(first: 50) { nodes { id name } } }`);
+  const publicationId = pubs?.publications?.nodes?.find((p) => p.name === "Online Store")?.id;
+  if (publicationId) {
+    const published = await adminGraphql(shop, `#graphql
+      mutation RepublishProduct($id: ID!, $input: [PublicationInput!]!) { publishablePublish(id: $id, input: $input) { userErrors { message } } }`,
+    { id: productId, input: [{ publicationId }] });
+    const pubErrors = published?.publishablePublish?.userErrors || [];
+    if (pubErrors.length) console.error("[hellfire-auctions] relist: publish note:", pubErrors.map((e) => e.message).join(", "));
+  }
+}
+
+let lastAutoRelist = 0;
+async function autoRelistSweep(minGapMs = 30_000) {
+  if (Date.now() - lastAutoRelist < minGapMs) return;
+  lastAutoRelist = Date.now();
+  const nowMs = Date.now();
+  const rows = await prisma.auction.findMany({
+    where: { status: "ENDED", winnerId: null, isTest: false, endsAt: { lt: new Date(nowMs - 60_000), gt: new Date(nowMs - 24 * 3600_000) } },
+    orderBy: { endsAt: "asc" },
+    take: 50,
+  });
+  if (!rows.length) return;
+  const marks = await prisma.auctionNotification.findMany({
+    where: { auctionId: { in: rows.map((r) => r.id) }, type: { in: ["AUTO_RELIST", "AUTO_RELISTED"] } },
+    select: { auctionId: true, type: true, key: true },
+  });
+  const wanted = new Map();
+  const finished = new Set();
+  for (const m of marks) {
+    if (m.type === "AUTO_RELIST") wanted.set(m.auctionId, Number(m.key) || 0);
+    else finished.add(m.auctionId);
+  }
+  for (const a of rows) {
+    const left = wanted.get(a.id) || 0;
+    if (left <= 0 || finished.has(a.id)) continue;
+    const settle = (key) => prisma.auctionNotification.create({ data: { auctionId: a.id, customerId: "__admin__", type: "AUTO_RELISTED", key } }).catch(() => {});
+    try {
+      const newer = await prisma.auction.count({ where: { shop: a.shop, productId: a.productId, createdAt: { gt: a.createdAt } } });
+      if (newer) {
+        await settle("already"); // relisted by hand in the meantime
+        continue;
+      }
+      const quota = await canCreateAuction(a.shop);
+      if (!quota.allowed) {
+        await settle("limit");
+        console.log("[hellfire-auctions] automatic relist skipped: monthly limit reached", a.id);
+        continue;
+      }
+      await putProductBackOnSale(a.shop, a.productId);
+      const length = Math.max(60 * 60_000, a.endsAt.getTime() - a.startsAt.getTime());
+      const start = new Date();
+      const created = await prisma.auction.create({
+        data: {
+          shop: a.shop,
+          productId: a.productId,
+          title: a.title,
+          description: a.description,
+          imageUrl: a.imageUrl,
+          startingBid: a.startingBid,
+          currentBid: a.startingBid,
+          reservePrice: a.reservePrice,
+          autoExtend: a.autoExtend,
+          isTest: false,
+          startsAt: start,
+          endsAt: new Date(start.getTime() + length),
+          status: "LIVE",
+        },
+      });
+      await settle("1");
+      if (left - 1 > 0) {
+        await prisma.auctionNotification.create({ data: { auctionId: created.id, customerId: "__admin__", type: "AUTO_RELIST", key: String(left - 1) } }).catch(() => {});
+      }
+      console.log("[hellfire-auctions] unsold auction relisted automatically", a.id, "->", created.id);
+    } catch (error) {
+      console.error("[hellfire-auctions] automatic relist failed:", a.id, error?.message || error);
+    }
+  }
+}
+
 async function tick() {
   await winnerCatchUpOnce().catch((error) => console.error("[hellfire-auctions] winner catch-up error:", error?.message || error));
   await backfillBidHistoryOnce().catch((error) => console.error("[hellfire-auctions] history backfill error:", error?.message || error));
@@ -1196,6 +1292,7 @@ async function tick() {
   await restoreVariantDrafts().catch((error) => console.error("[hellfire-auctions] draft restore error:", error?.message || error));
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));
   await paymentSweep().catch((error) => console.error("[hellfire-auctions] payment sweep error:", error?.message || error));
+  await autoRelistSweep().catch((error) => console.error("[hellfire-auctions] auto-relist error:", error?.message || error));
   await unsoldSweep().catch((error) => console.error("[hellfire-auctions] unsold sweep error:", error?.message || error));
   await sendWatcherReminders().catch((error) => console.error("[hellfire-auctions] watcher reminders error:", error?.message || error));
   const now = new Date();
@@ -1295,6 +1392,13 @@ async function nextDelayMs() {
       AND a."winnerNotifiedAt" >= now() - interval '5 days'
       AND NOT EXISTS (SELECT 1 FROM "AuctionNotification" n WHERE n."auctionId" = a."id" AND n."type" = 'ARCHIVED')`;
   if (Number(waiting?.[0]?.n || 0) > 0) waits.push(10 * 60_000);
+  const relistPending = await prisma.$queryRaw`
+    SELECT COUNT(*)::int AS n FROM "Auction" a
+    WHERE a."status" = 'ENDED' AND a."winnerId" IS NULL AND a."isTest" = false
+      AND a."endsAt" > now() - interval '24 hours'
+      AND EXISTS (SELECT 1 FROM "AuctionNotification" m WHERE m."auctionId" = a."id" AND m."type" = 'AUTO_RELIST')
+      AND NOT EXISTS (SELECT 1 FROM "AuctionNotification" d WHERE d."auctionId" = a."id" AND d."type" = 'AUTO_RELISTED')`;
+  if (Number(relistPending?.[0]?.n || 0) > 0) waits.push(60_000);
   if (nextStart) waits.push(nextStart.startsAt.getTime() - now.getTime() + 1000);
   if (nextEnd) waits.push(nextEnd.endsAt.getTime() - now.getTime() + 1000);
   if (nextReminder) waits.push(nextReminder.endsAt.getTime() - ENDING_SOON_WINDOW_MS - now.getTime() + 1000);

@@ -8,6 +8,7 @@ import { canCreateAuction, getShopPlan } from "../plans.server";
 import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep } from "../auction-worker.server";
 import { getShopSettings, saveShopSettings } from "../settings.server";
 import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
+import BulkImport from "../bulk-import";
 
 const DURATION_OPTIONS = [
   { value: "1", label: "24 Hours" },
@@ -887,6 +888,18 @@ export const loader = async ({ request }) => {
     console.error("[admin] weights lookup failed:", error?.message || error);
   }
 
+  const relistLeft = new Map(); // auctionId -> automatic relists still to come
+  try {
+    const relistMarks = await prisma.auctionNotification.findMany({
+      where: { type: { in: ["AUTO_RELIST", "AUTO_RELISTED"] }, auctionId: { in: auctions.map((a) => a.id) } },
+      select: { auctionId: true, type: true, key: true },
+    });
+    const relistDone = new Set(relistMarks.filter((m) => m.type === "AUTO_RELISTED").map((m) => m.auctionId));
+    for (const m of relistMarks) if (m.type === "AUTO_RELIST" && !relistDone.has(m.auctionId)) relistLeft.set(m.auctionId, Number(m.key) || 0);
+  } catch (error) {
+    console.error("[admin] auto-relist lookup failed:", error?.message || error);
+  }
+
   const settings = await getShopSettings(session.shop);
   const strikeMap = new Map(); // customerId -> unpaid sales on record
   try {
@@ -939,6 +952,7 @@ export const loader = async ({ request }) => {
       paymentStatus: auction.winnerDraftOrderId ? draftStatuses.get(auction.winnerDraftOrderId) || null : null,
       weight: weights.get(auction.productId) || null,
       winnerStrikes: auction.winnerId ? strikeMap.get(String(auction.winnerId)) || 0 : 0,
+      autoRelistLeft: relistLeft.get(auction.id) || 0,
       winnerUnpaidCount: unpaidByWinner.get(auction.winnerId)?.n || 0,
       winnerDraftCount: unpaidByWinner.get(auction.winnerId)?.drafts.size || 0,
       payDeadline: auction.winnerId
@@ -1328,6 +1342,10 @@ const actionImpl = async ({ request }) => {
     }
   }
 
+  // Spreadsheet import: exact start and end times in the store's time zone ("YYYY-MM-DDTHH:mm").
+  const customStart = parseStoreLocal(formData.get("customStartLocal"));
+  const customEnd = parseStoreLocal(formData.get("customEndLocal"));
+
   const title =
     formData.get("title")?.toString().trim();
 
@@ -1341,16 +1359,16 @@ const actionImpl = async ({ request }) => {
     formData.get("reservePrice");
 
   const startsAtDate =
-    formData.get("startsAtDate")?.toString();
+    customStart?.date ?? formData.get("startsAtDate")?.toString();
 
   const startsAtHour =
-    formData.get("startsAtHour")?.toString();
+    customStart?.hour ?? formData.get("startsAtHour")?.toString();
 
   const startsAtMinute =
-    formData.get("startsAtMinute")?.toString();
+    customStart?.minute ?? formData.get("startsAtMinute")?.toString();
 
   const startsAtAmPm =
-    formData.get("startsAtAmPm")?.toString();
+    customStart?.ampm ?? formData.get("startsAtAmPm")?.toString();
 
   const durationValue =
     formData.get("durationDays")?.toString() || "";
@@ -1365,7 +1383,7 @@ const actionImpl = async ({ request }) => {
     !startsAtHour ||
     !startsAtMinute ||
     !startsAtAmPm ||
-    !isDurationOption(durationValue)
+    (!customEnd && !isDurationOption(durationValue))
   ) {
     return {
       error: "Please complete all required auction fields.",
@@ -1388,10 +1406,13 @@ const actionImpl = async ({ request }) => {
     if (startsAt.getTime() < nowMs) startsAt = new Date(nowMs); // chosen minute just passed: start right now
   }
 
-  const endsAt = new Date(
-    startsAt.getTime() +
-      durationMs(durationValue),
-  );
+  let endsAt = new Date(startsAt.getTime() + (customEnd ? 0 : durationMs(durationValue)));
+  if (customEnd) {
+    endsAt = easternLocalToUtc(customEnd.date, customEnd.hour, customEnd.minute, customEnd.ampm, timezone);
+    if (endsAt.getTime() < startsAt.getTime() + 60 * 60 * 1000) {
+      return { error: "Each auction must end at least 1 hour after it starts." };
+    }
+  }
 
   const reservePrice =
     reservePriceValue !== null &&
@@ -1602,7 +1623,8 @@ const actionImpl = async ({ request }) => {
    */
   const cloneImageUrl = formData.get("cloneImageUrl")?.toString() || "";
   const hasUpload = Boolean(imageFile && typeof imageFile === "object" && imageFile.size > 0);
-  const useCopiedPhoto = !hasUpload && /^https:\/\/cdn\.shopify\.com\//.test(cloneImageUrl);
+  // Shopify itself fetches the photo from this link, so any https link works (Shopify rejects anything that is not an image).
+  const useCopiedPhoto = !hasUpload && /^https:\/\/[^\s]{4,2000}$/.test(cloneImageUrl);
 
   if (!hasUpload && !useCopiedPhoto) {
     return {
@@ -1751,6 +1773,12 @@ const actionImpl = async ({ request }) => {
         status: startsAt > new Date() ? "UPCOMING" : (new Date() < endsAt ? "LIVE" : "ENDED"),
       },
     });
+
+  // "If it doesn't sell, relist automatically" (up to 3 times); the worker does the relisting.
+  const relistTimes = Math.min(3, Math.max(0, Math.round(Number(formData.get("autoRelist")) || 0)));
+  if (relistTimes > 0 && !durationValue.startsWith("m")) {
+    await prisma.auctionNotification.create({ data: { auctionId: auction.id, customerId: "__admin__", type: "AUTO_RELIST", key: String(relistTimes) } }).catch(() => {});
+  }
 
   return {
     success: true,
@@ -2061,6 +2089,19 @@ function AuctionForm({
             {!allowAutoExtend && " (Inferno plan)"}
           </span>
         </label>
+
+        {!isEdit && !String(duration).startsWith("m") && (
+          <label style={{ display: "grid", gap: 6 }}>
+            <strong>If it doesn&rsquo;t sell</strong>
+            <select name="autoRelist" defaultValue="0" style={{ padding: "10px 12px", border: "1px solid #8a8a8a", borderRadius: 8, maxWidth: 320 }}>
+              <option value="0">Don&rsquo;t relist</option>
+              <option value="1">Relist it automatically once</option>
+              <option value="2">Relist it automatically up to 2 times</option>
+              <option value="3">Relist it automatically up to 3 times</option>
+            </select>
+            <span style={{ fontSize: 13, color: "#616161" }}>An unsold item goes live again for the same length, about a minute after it ends.</span>
+          </label>
+        )}
 
         <div>
           <div style={{ fontWeight: 600, marginBottom: 6 }}>Shipping weight (optional)</div>
@@ -2416,6 +2457,7 @@ export default function AuctionsPage() {
             <li><strong>Paid items</strong> are archived from your store automatically. Use <em>Clear all paid</em> above your auctions to tidy this list; nothing is deleted.</li>
             <li><strong>Unsold auctions</strong> are taken off your store about 10 minutes after they end. <em>Relist</em> puts them back.</li>
             <li><strong>Auction events:</strong> create several auctions, tick <em>Add to an auction event</em> on the upcoming ones, then schedule them all to start together and end one after another (for example, every 8 minutes).</li>
+            <li><strong>Bulk creation:</strong> open <em>Create many auctions from a spreadsheet (CSV)</em> to upload a list, schedule the whole batch as an event, repeat it every week, and relist unsold items automatically.</li>
           </ul>
         </div>
       </details>
@@ -2445,6 +2487,7 @@ export default function AuctionsPage() {
               </div>
             )}
             <AuctionForm key={`${cloneFrom?.id || "new"}-${formNonce}`} timezone={timezone} prefill={cloneFrom} allowAutoExtend={Boolean(planFlags?.autoExtend)} />
+        <BulkImport timezone={timezone} />
           </>
         )}
       </s-section>
@@ -2657,7 +2700,13 @@ export default function AuctionsPage() {
                         Add to an auction event
                       </label>
                     )}
-                    {state === "ENDED" && !auction.winnerId && auction.status !== "CANCELLED" && (
+                    {state !== "ENDED" && auction.autoRelistLeft > 0 && (
+                      <div style={{ fontSize: 12, color: "#616161" }}>Relists automatically if it doesn&rsquo;t sell ({auction.autoRelistLeft} more time{auction.autoRelistLeft === 1 ? "" : "s"}).</div>
+                    )}
+                    {state === "ENDED" && !auction.winnerId && auction.status !== "CANCELLED" && auction.autoRelistLeft > 0 && (
+                      <div style={{ fontSize: 12, color: "#616161" }}>Unsold: relisting automatically in a moment.</div>
+                    )}
+                    {state === "ENDED" && !auction.winnerId && auction.status !== "CANCELLED" && !(auction.autoRelistLeft > 0) && (
                       <div style={{ fontSize: 12, color: "#616161" }}>Unsold: taken off your store a few minutes after it ends. Relist to put it back.</div>
                     )}
                     {!showRemoved && !(state === "ENDED" && (!auction.winnerId || auction.paymentStatus === "COMPLETED")) && (

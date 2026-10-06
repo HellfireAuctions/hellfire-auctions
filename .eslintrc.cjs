@@ -52,6 +52,8 @@ module.exports = {
         "react/no-unknown-property": ["error", { ignore: ["variant"] }],
         // Wording in page text is fine; what matters is code that refers to things that do not exist (no-undef).
         "react/no-unescaped-entities": "off",
+        // This project does not use PropTypes (components are small and checked by the build and tests).
+        "react/prop-types": "off",
         // The text of a label often sits a few elements deep (label > span > strong > {t("...")}).
         "jsx-a11y/label-has-associated-control": ["error", { depth: 4 }],
         "no-empty": ["error", { allowEmptyCatch: true }],

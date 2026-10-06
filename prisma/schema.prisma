@@ -148,3 +148,19 @@ model ShopSettings {
   approvedTag   String   @default("bidder-approved")
   updatedAt     DateTime @updatedAt
 }
+
+// Live Sale Mode: a queue of existing auctions the host runs one lot at a time.
+model LiveSale {
+  id           String   @id @default(cuid())
+  shop         String
+  title        String
+  videoUrl     String?
+  lotSeconds   Int      @default(120)
+  lotIds       String[]
+  currentIndex Int      @default(-1)
+  status       String   @default("DRAFT")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([shop, status])
+}

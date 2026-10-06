@@ -9,6 +9,7 @@ import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combi
 import { getShopSettings, saveShopSettings } from "../settings.server";
 import { BIDDER_RULES } from "../bidder-rules";
 import { parseBuyNowPrice } from "../buy-now";
+import { squareCrop, outputSide, photoProblem } from "../photo-ratio";
 import { memoDelete } from "../memo.server";
 import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
 import BulkImport from "../bulk-import";
@@ -150,6 +151,29 @@ function getEasternParts(dateValue, tz = DEFAULT_TZ) {
     minute: get("minute"),
     ampm: get("dayPeriod"),
   };
+}
+
+// Crops a chosen photo to a centred square in the browser (JPEG, 1600 px at most) before it is uploaded.
+// Returns null when the browser can't read the photo.
+async function toSquare(file) {
+  try {
+    const bitmap = await createImageBitmap(file); // respects the photo's own rotation
+    const { sx, sy, side } = squareCrop(bitmap.width, bitmap.height);
+    const out = outputSide(side);
+    const canvas = document.createElement("canvas");
+    canvas.width = out;
+    canvas.height = out;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff"; // transparent areas become white
+    ctx.fillRect(0, 0, out, out);
+    ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, out, out);
+    if (bitmap.close) bitmap.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    if (!blob) return null;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return null;
+  }
 }
 
 async function uploadImage(admin, imageFile) {
@@ -1605,6 +1629,8 @@ const actionImpl = async ({ request }) => {
     if (newFiles.some((f) => !f.type?.startsWith("image/"))) {
       return { error: "Photos must be image files." };
     }
+    const editPhotoError = await photoProblem(newFiles); // every photo must be square
+    if (editPhotoError) return { error: editPhotoError };
     if (newFiles.length) {
       const sources = [];
       for (const f of newFiles) sources.push(await uploadImage(admin, f));
@@ -1720,6 +1746,8 @@ const actionImpl = async ({ request }) => {
   if (uploadFiles.some((f) => !f.type?.startsWith("image/"))) {
     return { error: "Photos must be image files." };
   }
+  const createPhotoError = await photoProblem(uploadFiles); // every photo must be square
+  if (createPhotoError) return { error: createPhotoError };
   const stagedSources = [];
   if (uploadFiles.length) {
     for (const f of uploadFiles) stagedSources.push(await uploadImage(admin, f));
@@ -1917,6 +1945,7 @@ function AuctionForm({
 
   const [photoCount, setPhotoCount] = useState(0);
   const [thumbs, setThumbs] = useState([]);
+  const [photoNote, setPhotoNote] = useState("");
 
   const calculateEndPreview = () => {
     try {
@@ -1939,29 +1968,26 @@ function AuctionForm({
     }
   };
 
-  const handleImageChange = (event) => {
-    setPhotoCount(event.currentTarget.files?.length || 0);
-    setThumbs(
-      Array.from(event.currentTarget.files || [])
-        .filter((f) => f.type?.startsWith("image/"))
-        .slice(0, 10)
-        .map((f) => URL.createObjectURL(f)),
-    );
-    const file =
-      event.currentTarget.files?.[0];
-
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      setImagePreview(
-        source?.imageUrl || null,
-      );
-      return;
+  const handleImageChange = async (event) => {
+    const input = event.currentTarget; // grab it now: it is gone after the first await
+    const chosen = Array.from(input.files || [])
+      .filter((f) => f.type?.startsWith("image/"))
+      .slice(0, 10);
+    const squared = [];
+    let skipped = 0;
+    for (const f of chosen) {
+      const out = await toSquare(f);
+      if (out) squared.push(out);
+      else skipped += 1;
     }
-
-    setImagePreview(
-      URL.createObjectURL(file),
-    );
+    // what the form uploads is now the squared copies, so what you see is exactly what is stored
+    const transfer = new DataTransfer();
+    for (const f of squared) transfer.items.add(f);
+    input.files = transfer.files;
+    setPhotoNote(skipped ? `${skipped} photo${skipped === 1 ? " couldn't" : "s couldn't"} be read and ${skipped === 1 ? "was" : "were"} left out. Please use JPG, PNG, WebP or GIF images.` : "");
+    setPhotoCount(squared.length);
+    setThumbs(squared.map((f) => URL.createObjectURL(f)));
+    setImagePreview(squared[0] ? URL.createObjectURL(squared[0]) : source?.imageUrl || null);
   };
 
   return (
@@ -2048,7 +2074,7 @@ function AuctionForm({
                     : "Upload auction photos (up to 10, the first is the main photo)"}
               </div>
               <div style={{ fontSize: 13, color: "#616161", marginBottom: 8 }}>
-                Click below to choose photos. Select several at once by holding Ctrl (or Cmd) or Shift.
+                Click below to choose photos. Select several at once by holding Ctrl (or Cmd) or Shift. Photos are cropped to a square automatically, so they line up in every theme and never overlap.
               </div>
               <input
                 type="file"
@@ -2062,6 +2088,10 @@ function AuctionForm({
             </label>
 
             {prefill?.imageUrl && <input type="hidden" name="cloneImageUrl" value={prefill.imageUrl} />}
+
+            {photoNote && (
+              <div role="alert" style={{ fontSize: 13, color: "#b3261e" }}>{photoNote}</div>
+            )}
 
             {photoCount > 0 && (
               <div>

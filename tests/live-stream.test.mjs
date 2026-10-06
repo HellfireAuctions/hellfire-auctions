@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { liveStreamResponse, liveStreamUrl } from "../app/live-stream.server.js";
+import { liveStreamResponse, liveStreamUrl, liveHasRoom, liveMax } from "../app/live-stream.server.js";
 import { publish, subscribe, connectionCount, roomCount, resetHub } from "../app/live-hub.server.js";
 import { liveToken } from "../app/live-token.js";
 
@@ -160,5 +160,25 @@ process.env.HELLFIRE_LIVE = "on";
 assert.ok(liveStreamUrl("auction-1", "https://x.test", S), "on again: addresses are handed out");
 delete process.env.HELLFIRE_LIVE;
 assert.ok(liveStreamUrl("auction-1", "https://x.test", S), "unset means on");
+
+// ---------- the cap: live for up to 150 at once, polling for everyone else ----------
+assert.equal(liveMax(), 150, "the proven-safe default");
+assert.equal(liveHasRoom(), true);
+process.env.HELLFIRE_LIVE_MAX = "2";
+assert.equal(liveMax(), 2, "changeable without a release");
+const c1 = liveStreamResponse({ auctionId: "auction-1", token: liveToken("auction-1", S), secret: S, heartbeatMs: 60_000 });
+const c2 = liveStreamResponse({ auctionId: "auction-1", token: liveToken("auction-1", S), secret: S, heartbeatMs: 60_000 });
+assert.equal(c1.status, 200);
+assert.equal(c2.status, 200);
+assert.equal(liveHasRoom(), false, "full: no more live addresses are handed out");
+const c3 = liveStreamResponse({ auctionId: "auction-1", token: liveToken("auction-1", S), secret: S, heartbeatMs: 60_000 });
+assert.equal(c3.status, 503, "full: a new connection is turned away politely");
+await c1.body.cancel();
+await sleep(30);
+assert.equal(liveHasRoom(), true, "room again once someone leaves");
+await c2.body.cancel();
+await sleep(30);
+delete process.env.HELLFIRE_LIVE_MAX;
+assert.equal(connectionCount(), 0);
 
 console.log("Live connection: all checks passed");

@@ -8,7 +8,7 @@ import { getShopSettings } from "../settings.server";
 import { checkBidder } from "../bidder-rules.server";
 import { buyNowOffer } from "../buy-now";
 import { publish } from "../live-hub.server";
-import { liveStreamUrl } from "../live-stream.server";
+import { liveStreamUrl, liveHasRoom } from "../live-stream.server";
 import {
   MAX_ALLOWED_BID,
   bidIncrement,
@@ -155,7 +155,7 @@ export const loader = async ({ request }) => {
           isTest: Boolean(auction.isTest),
           buyNowPrice: offer.available ? offer.price : null,
           // The address (with a signed pass) of the live connection; nothing personal travels on it.
-          live: auctionState(auction) !== "ENDED" ? liveStreamUrl(auction.id, process.env.SHOPIFY_APP_URL || url.origin) : null,
+          live: auctionState(auction) !== "ENDED" && liveHasRoom() ? liveStreamUrl(auction.id, process.env.SHOPIFY_APP_URL || url.origin) : null,
           canWatch: Boolean(watchPlan?.emails),
           watching,
           watchers: watcherCount,

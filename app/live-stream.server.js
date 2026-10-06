@@ -4,13 +4,19 @@ import { liveToken, validLiveToken } from "./live-token.js";
 // The live connection itself (Server-Sent Events). Shopify's app proxy can't carry a stream, so the shopper's browser
 // connects straight to this server with the signed pass from live-token.js. Nothing personal is ever sent on it:
 // it only says "something changed", and the page then fetches the details over the normal secure route.
-export const MAX_CONNECTIONS = 3000;
+// Measured on the production server: 100 live viewers ran with zero failures, while 300 or more caused errors. So live
+// updates are capped at 150 at once; everyone beyond that is served by the normal polling, which handled 300 shoppers
+// with zero failures. HELLFIRE_LIVE_MAX can change the cap without a release.
+export const liveMax = () => Number(process.env.HELLFIRE_LIVE_MAX) || 150;
 const HEARTBEAT_MS = 15_000;
 const CORS = { "Access-Control-Allow-Origin": "*" };
 
 // Emergency off switch: set HELLFIRE_LIVE=off on the server and nobody is offered or accepted on the live connection.
 // Shoppers simply go back to the normal polling.
 export const liveEnabled = () => process.env.HELLFIRE_LIVE !== "off";
+
+// Is there room for one more live viewer? When not, the panel isn't offered a live address and simply polls.
+export const liveHasRoom = () => liveEnabled() && connectionCount() < liveMax();
 
 export function liveStreamUrl(auctionId, origin, secret = process.env.SHOPIFY_API_SECRET) {
   if (!liveEnabled()) return null;
@@ -19,7 +25,7 @@ export function liveStreamUrl(auctionId, origin, secret = process.env.SHOPIFY_AP
   return `${String(origin).replace(/\/$/, "")}/api/stream/${encodeURIComponent(auctionId)}?t=${token}`;
 }
 
-export function liveStreamResponse({ auctionId, token, signal, secret = process.env.SHOPIFY_API_SECRET, heartbeatMs = HEARTBEAT_MS, maxConnections = MAX_CONNECTIONS }) {
+export function liveStreamResponse({ auctionId, token, signal, secret = process.env.SHOPIFY_API_SECRET, heartbeatMs = HEARTBEAT_MS, maxConnections = liveMax() }) {
   if (!liveEnabled()) return new Response("Live updates are switched off", { status: 503, headers: { ...CORS, "Retry-After": "300" } });
   if (!validLiveToken(auctionId, token, Date.now(), secret)) {
     return new Response("Forbidden", { status: 403, headers: CORS });

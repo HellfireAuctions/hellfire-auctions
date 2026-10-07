@@ -2,37 +2,42 @@ import { unauthenticated } from "../shopify.server";
 import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
 import { shopCurrency } from "../currency.server";
+import { pathsFromNodes } from "../live-paths";
 
 // Public (signed app-proxy) list of the store's running auctions, soonest-ending first.
 // Only auctions whose product is published on the Online Store are returned.
 const cache = new Map(); // "shop|limit" -> { at, body }
 const CACHE_MS = 5000;
 
+async function fetchNodes(admin, ids, withUrl) {
+  const response = await admin.graphql(
+    `#graphql
+      query LiveBlockProducts($ids: [ID!]!) {
+        nodes(ids: $ids) { ... on Product { id status handle ${withUrl ? "onlineStoreUrl" : ""} } }
+      }`,
+    { variables: { ids } },
+  );
+  return response.json();
+}
+
+// product id -> its page on the storefront. Problems are always logged (an empty list must never be a silent failure).
 async function productPaths(shop, productIds) {
-  const paths = new Map();
-  if (!productIds.length) return paths;
+  if (!productIds.length) return new Map();
   try {
     const { admin } = await unauthenticated.admin(shop);
-    const response = await admin.graphql(
-      `#graphql
-        query LiveBlockProducts($ids: [ID!]!) {
-          nodes(ids: $ids) { ... on Product { id status onlineStoreUrl } }
-        }`,
-      { variables: { ids: productIds } },
-    );
-    for (const node of (await response.json())?.data?.nodes || []) {
-      if (node?.id && node.status === "ACTIVE" && node.onlineStoreUrl) {
-        try {
-          paths.set(node.id, new URL(node.onlineStoreUrl).pathname);
-        } catch {
-          // skip a product with a malformed URL
-        }
-      }
+    let json = await fetchNodes(admin, productIds, true);
+    if (json?.errors || !Array.isArray(json?.data?.nodes)) {
+      console.error("[live-auctions] product lookup returned errors, retrying without the store address:", JSON.stringify(json?.errors || json).slice(0, 300));
+      json = await fetchNodes(admin, productIds, false);
+      if (json?.errors || !Array.isArray(json?.data?.nodes)) console.error("[live-auctions] product lookup failed:", JSON.stringify(json?.errors || json).slice(0, 300));
     }
+    const paths = pathsFromNodes(json?.data?.nodes);
+    if (!paths.size) console.error("[live-auctions] none of the", productIds.length, "running auctions has an active product page");
+    return paths;
   } catch (error) {
     console.error("[live-auctions] product lookup failed:", error?.message || error);
+    return new Map();
   }
-  return paths;
 }
 
 export const loader = async ({ request }) => {

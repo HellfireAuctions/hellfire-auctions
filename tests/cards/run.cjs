@@ -303,6 +303,8 @@ function check(name, condition) {
   check("Hub button: position, custom text and colour follow the settings", hubLeft.includes("hf-hub--left") && hubLeft.includes(">Auctions<") && hubLeft.includes("#ff5500") && hubLeft.includes("80px"));
   const hubCart = await dumpDom(`${base}/cart`);
   check("Hub button: never covers the cart page", !hubCart.includes("hf-hub-root"));
+  const hubLivePage = await dumpDom(`${base}/collections/live-auctions`);
+  check("Hub button: not shown on the Live Auctions page itself, where it would only repeat the page", hubLivePage.includes("hellfire-hub-config") && !hubLivePage.includes("hf-hub-root"));
 
   if (process.env.SHOT_DIR) {
     await screenshot(`${base}/collections/dawn`, path.join(process.env.SHOT_DIR, "cards-dawn.png"));

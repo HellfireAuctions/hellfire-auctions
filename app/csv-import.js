@@ -1,6 +1,8 @@
 // Reads a spreadsheet saved as CSV (Excel or Google Sheets: File > Download > CSV) into auction rows.
 // Pure functions with no dependencies, so the browser and the tests use the same code.
 
+import { parseBuyNowPrice } from "./buy-now.js";
+
 export const MAX_ROWS = 100;
 export const REQUIRED = ["title", "startingBid", "imageUrl"];
 
@@ -9,6 +11,7 @@ const ALIASES = {
   description: ["description", "desc", "details", "about"],
   startingBid: ["startingbid", "startbid", "startingprice", "startprice", "price", "opening", "openingbid"],
   reservePrice: ["reserve", "reserveprice", "reservebid"],
+  buyNowPrice: ["buynowprice", "buynow", "buyitnow", "buyitnowprice", "bin", "buyoutprice", "buyout"],
   imageUrl: ["imageurl", "image", "photo", "photourl", "picture", "imagelink", "photolink"],
   weight: ["weight", "shippingweight"],
   weightUnit: ["weightunit", "unit", "weightuom"],
@@ -87,6 +90,13 @@ function buildRow(cells, col, line) {
     if (!(reservePrice > startingBid)) problems.push("Reserve price must be higher than the starting bid (or leave it empty)");
   }
 
+  let buyNowPrice = null;
+  if (get("buyNowPrice") !== "") {
+    const parsed = parseBuyNowPrice(money(get("buyNowPrice")), { startingBid, reservePrice });
+    if (parsed.ok) buyNowPrice = parsed.value;
+    else problems.push(parsed.error);
+  }
+
   const imageUrl = get("imageUrl");
   if (!/^https:\/\/[^\s]{4,2000}$/.test(imageUrl)) problems.push("Image link must start with https://");
 
@@ -105,7 +115,7 @@ function buildRow(cells, col, line) {
   const description = get("description");
   if (description.length > 5000) problems.push("Description is longer than 5000 characters");
 
-  return { line, problems, data: { title, description, startingBid, reservePrice, imageUrl, weightValue, weightUnit } };
+  return { line, problems, data: { title, description, startingBid, reservePrice, buyNowPrice, imageUrl, weightValue, weightUnit } };
 }
 
 export function readAuctionRows(text) {
@@ -124,7 +134,7 @@ export function readAuctionRows(text) {
 }
 
 export const CSV_TEMPLATE = [
-  "title,description,starting bid,reserve price,image url,weight,weight unit",
-  '"Rainbow Zoanthid frag","Colony of 10 polyps, healthy and growing",25,60,https://example.com/photos/zoanthid.jpg,4,oz',
-  '"Blue Tenuis Acro frag","1 inch frag, fully encrusted",40,,https://example.com/photos/acro.jpg,3,oz',
+  "title,description,starting bid,reserve price,buy it now price,image url,weight,weight unit",
+  '"Rainbow Zoanthid frag","Colony of 10 polyps, healthy and growing",25,60,90,https://example.com/photos/zoanthid.jpg,4,oz',
+  '"Blue Tenuis Acro frag","1 inch frag, fully encrusted",40,,,https://example.com/photos/acro.jpg,3,oz',
 ].join("\n");

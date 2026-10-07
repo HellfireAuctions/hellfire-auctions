@@ -14,9 +14,11 @@ function jobFormData(job, row, relist) {
   fd.set("description", row.description);
   fd.set("startingBid", String(row.startingBid));
   if (row.reservePrice != null) fd.set("reservePrice", String(row.reservePrice));
+  if (row.buyNowPrice != null) fd.set("buyNowPrice", String(row.buyNowPrice));
   fd.set("customStartLocal", job.startLocal);
   fd.set("customEndLocal", job.endLocal);
   fd.set("cloneImageUrl", row.imageUrl);
+  fd.set("checkPhotoSquare", "1"); // photos from links must be square, like uploaded ones
   if (row.weightValue) {
     fd.set("weightValue", String(row.weightValue));
     fd.set("weightUnit", row.weightUnit);
@@ -129,7 +131,7 @@ export default function BulkImport({ timezone }) {
             {valid.length > 0 && (
               <ol style={{ margin: 0, paddingLeft: 20, color: "#303030" }}>
                 {valid.slice(0, 5).map((r, i) => (
-                  <li key={i}>{r.title} &middot; starts at ${r.startingBid}{r.reservePrice != null ? ` \u00b7 reserve $${r.reservePrice}` : ""}</li>
+                  <li key={i}>{r.title} &middot; starts at ${r.startingBid}{r.reservePrice != null ? ` \u00b7 reserve $${r.reservePrice}` : ""}{r.buyNowPrice != null ? ` \u00b7 buy it now $${r.buyNowPrice}` : ""}</li>
                 ))}
                 {valid.length > 5 && <li>…and {valid.length - 5} more</li>}
               </ol>

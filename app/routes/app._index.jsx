@@ -10,6 +10,7 @@ import { getShopSettings, saveShopSettings } from "../settings.server";
 import { BIDDER_RULES } from "../bidder-rules";
 import { parseBuyNowPrice } from "../buy-now";
 import { squareCrop, outputSide, photoProblem } from "../photo-ratio";
+import { urlPhotoProblem } from "../photo-url.server";
 import { memoDelete } from "../memo.server";
 import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
 import BulkImport from "../bulk-import";
@@ -1713,6 +1714,10 @@ const actionImpl = async ({ request }) => {
   const hasUpload = Boolean(imageFile && typeof imageFile === "object" && imageFile.size > 0);
   // Shopify itself fetches the photo from this link, so any https link works (Shopify rejects anything that is not an image).
   const useCopiedPhoto = !hasUpload && /^https:\/\/[^\s]{4,2000}$/.test(cloneImageUrl);
+  if (useCopiedPhoto && formData.get("checkPhotoSquare") === "1") {
+    const linkProblem = await urlPhotoProblem(cloneImageUrl); // photos from CSV links must be square too
+    if (linkProblem) return { error: linkProblem };
+  }
 
   if (!hasUpload && !useCopiedPhoto) {
     return {

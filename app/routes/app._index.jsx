@@ -11,6 +11,7 @@ import { BIDDER_RULES } from "../bidder-rules";
 import { parseBuyNowPrice } from "../buy-now";
 import { squareCrop, outputSide, photoProblem } from "../photo-ratio";
 import { urlPhotoProblem } from "../photo-url.server";
+import { wantsBubble } from "../bubble-setting";
 import { memoDelete } from "../memo.server";
 import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
 import BulkImport from "../bulk-import";
@@ -1092,6 +1093,11 @@ const actionImpl = async ({ request }) => {
       success: `Event scheduled: ${eventIds.length} auction${eventIds.length === 1 ? "" : "s"} start ${formatEastern(evStart, evTz)} and end one after another, ${gapMinutes} minute${gapMinutes === 1 ? "" : "s"} apart, from ${formatEastern(evEnds[0], evTz)} to ${formatEastern(evEnds[evEnds.length - 1], evTz)}.`,
       eventScheduled: true,
     };
+  }
+
+  if (intent === "save-bubble") {
+    const saved = await saveShopSettings(session.shop, { showLiveBubble: wantsBubble(formData.getAll("showLiveBubble")) });
+    return { success: saved.showLiveBubble ? "The Live Auctions button is on. Shoppers see it within a few seconds." : "The Live Auctions button is off. It disappears from your storefront within a few seconds." };
   }
 
   if (intent === "save-bidder-rule") {
@@ -2637,6 +2643,22 @@ export default function AuctionsPage() {
         <BulkImport timezone={timezone} />
           </>
         )}
+      </s-section>
+
+      <s-section heading="Live Auctions button">
+        <Form method="post" style={{ display: "grid", gap: 12, maxWidth: 680 }}>
+          <input type="hidden" name="intent" value="save-bubble" />
+          <input type="hidden" name="showLiveBubble" value="off" />
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <input type="checkbox" name="showLiveBubble" value="on" defaultChecked={settings?.showLiveBubble !== false} style={{ marginTop: 4 }} />
+            <span>
+              <strong>Show the floating Live Auctions button on my storefront</strong>
+              <br />
+              A small button in the bottom corner of every page that opens a list of your running auctions. Turn it off if you prefer not to have a floating button. Your Live Auctions page and the Live Auctions section keep working either way. You can also move it, rename it or recolour it in the theme editor (Online Store, Customize, App embeds).
+            </span>
+          </label>
+          <div><s-button type="submit" variant="primary">Save</s-button></div>
+        </Form>
       </s-section>
 
       <s-section heading="Who can bid">

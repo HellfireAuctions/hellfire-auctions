@@ -3,6 +3,7 @@ import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
 import { shopCurrency } from "../currency.server";
 import { pathsFromNodes } from "../live-paths";
+import { getShopSettings } from "../settings.server";
 
 // Public (signed app-proxy) list of the store's running auctions, soonest-ending first.
 // Only auctions whose product is published on the Online Store are returned.
@@ -72,7 +73,8 @@ export const loader = async ({ request }) => {
       endsAt: r.endsAt.toISOString(),
       isTest: Boolean(r.isTest),
     }));
-  const body = { now: now.toISOString(), currency: await shopCurrency(shop), auctions };
+  const settings = await getShopSettings(shop);
+  const body = { now: now.toISOString(), currency: await shopCurrency(shop), auctions, hub: { enabled: settings.showLiveBubble !== false } };
   if (cache.size > 500) cache.clear();
   cache.set(key, { at: Date.now(), body });
   return Response.json(body);

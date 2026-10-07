@@ -55,6 +55,9 @@ const pages = {
   "/pages/live-block": "live-block.html",
   "/pages/live-empty": "live-empty.html",
   "/pages/hub": "hub.html",
+  "/pages/hub-off": "hub-off.html",
+  "/pages/hub-off-design": "hub-off-design.html",
+  "/pages/hub-fail": "hub-fail.html",
   "/pages/hub-empty": "hub-empty.html",
   "/pages/hub-hidden": "hub-hidden.html",
   "/pages/hub-design": "hub-design.html",
@@ -107,13 +110,14 @@ const server = http.createServer((req, res) => {
     }));
   }
   if (url.pathname === "/apps/hellfire-auctions/live-auctions") {
+    if (url.searchParams.get("fail")) { res.writeHead(500); return res.end(); }
     res.writeHead(200, { "Content-Type": "application/json" });
     const list = url.searchParams.get("empty") ? [] : [
       { id: "a", title: "Ends first", image: "", url: "/products/one", currentBid: 20, bidCount: 3, endsAt: iso(2 * H), isTest: false },
       { id: "b", title: "Ends second", image: "", url: "/products/two", currentBid: 35, bidCount: 1, endsAt: iso(30 * H), isTest: false },
       { id: "c", title: "Ends third", image: "", url: "/products/three", currentBid: 10, bidCount: 0, endsAt: iso(80 * H), isTest: false },
     ];
-    return res.end(JSON.stringify({ now: new Date().toISOString(), currency: "USD", auctions: list }));
+    return res.end(JSON.stringify({ now: new Date().toISOString(), currency: "USD", auctions: list, hub: { enabled: url.searchParams.get("hub") !== "off" } }));
   }
   if (url.pathname.startsWith("/assets/")) {
     const file = path.join(ASSETS, path.basename(url.pathname));
@@ -303,6 +307,12 @@ function check(name, condition) {
   check("Hub button: position, custom text and colour follow the settings", hubLeft.includes("hf-hub--left") && hubLeft.includes(">Auctions<") && hubLeft.includes("#ff5500") && hubLeft.includes("80px"));
   const hubCart = await dumpDom(`${base}/cart`);
   check("Hub button: never covers the cart page", !hubCart.includes("hf-hub-root"));
+  const hubOff = await dumpDom(`${base}/pages/hub-off`);
+  check("Hub button: turned off in the app's settings, shoppers never see it", /id="hf-hub-root"[^>]*hidden/.test(hubOff));
+  const hubOffDesign = await dumpDom(`${base}/pages/hub-off-design`);
+  check("Hub button: turned off in the app, but still shown in the theme editor with a note", !/id="hf-hub-root"[^>]*hidden/.test(hubOffDesign) && hubOffDesign.includes('<p class="hf-hub__note">Hidden on your storefront'));
+  const hubFail = await dumpDom(`${base}/pages/hub-fail`);
+  check("Hub button: if the list can't be fetched it still shows (fails open)", hubFail.includes("hf-hub__pill") && !/id="hf-hub-root"[^>]*hidden/.test(hubFail));
   const hubLivePage = await dumpDom(`${base}/collections/live-auctions`);
   check("Hub button: not shown on the Live Auctions page itself, where it would only repeat the page", hubLivePage.includes("hellfire-hub-config") && !hubLivePage.includes("hf-hub-root"));
 

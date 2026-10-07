@@ -50,6 +50,8 @@
   var items = [];
   var offset = 0;
   var isOpen = false;
+  var ready = false; // hidden until we know whether the merchant wants it
+  var enabled = true;
 
   var root = node("div", "hf-hub hf-hub--" + (cfg.position === "left" ? "left" : "right"));
   root.setAttribute("data-hellfire-no-badges", "");
@@ -76,6 +78,9 @@
   list.setAttribute("aria-live", "polite");
   panel.appendChild(list);
   if (cfg.designMode) panel.appendChild(node("p", "hf-hub__note", "Preview in the theme editor. Shoppers see this button on your storefront."));
+  var offNote = node("p", "hf-hub__note", "Hidden on your storefront: it is turned off in the Hellfire Auctions app settings. You only see it here in the editor.");
+  offNote.hidden = true;
+  panel.appendChild(offNote);
   var all = node("a", "hf-hub__all", T("View all auctions"));
   all.href = typeof cfg.collection === "string" && cfg.collection.charAt(0) === "/" ? cfg.collection : "/collections/live-auctions";
   panel.appendChild(all);
@@ -102,7 +107,8 @@
     count.hidden = !live.length;
     count.textContent = live.length ? String(live.length) : "";
     pill.setAttribute("aria-label", label + (live.length ? ": " + live.length : ""));
-    root.hidden = !live.length && cfg.hideEmpty === true && !cfg.designMode;
+    root.hidden = !ready || (!enabled && !cfg.designMode) || (!live.length && cfg.hideEmpty === true && !cfg.designMode);
+    offNote.hidden = enabled || !cfg.designMode;
     list.innerHTML = "";
     if (!live.length) {
       list.appendChild(node("p", "hf-hub__empty", T("No live auctions right now.")));
@@ -150,6 +156,18 @@
     offset = d.now ? Date.parse(d.now) - Date.now() : 0;
     if (d.currency) currency = d.currency;
     items = d.auctions;
+    enabled = !(d.hub && d.hub.enabled === false);
+    try { sessionStorage.setItem("hf_hub_on", enabled ? "1" : "0"); } catch (e) {}
+    ready = true;
+    render();
+  }
+  // If the list can't be fetched, show the button unless we already know the merchant turned it off.
+  function offline() {
+    if (ready) return;
+    var known = null;
+    try { known = sessionStorage.getItem("hf_hub_on"); } catch (e) {}
+    enabled = known !== "0";
+    ready = true;
     render();
   }
   function load() {
@@ -160,11 +178,11 @@
     fetch(cfg.endpoint + (cfg.endpoint.indexOf("?") > -1 ? "&" : "?") + "limit=6", { credentials: "same-origin", headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
-        if (!d) return;
+        if (!d) { offline(); return; }
         try { sessionStorage.setItem(KEY, JSON.stringify({ t: Date.now(), e: cfg.endpoint, d: d })); } catch (e) {}
         use(d);
       })
-      .catch(function () {});
+      .catch(offline);
   }
 
   function openPanel() {
@@ -191,6 +209,7 @@
     document.body.appendChild(root);
     render();
     load();
+    setTimeout(offline, 4000); // never wait forever
     setInterval(function () { if (!document.hidden) load(); }, 30000);
     setInterval(function () { if (!document.hidden) tick(); }, 1000);
   }

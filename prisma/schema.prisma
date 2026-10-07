@@ -146,6 +146,7 @@ model ShopSettings {
   defaultWeightUnit String @default("OUNCES")
   bidderRule    String   @default("ANYONE")
   approvedTag   String   @default("bidder-approved")
+  showLiveBubble Boolean @default(true)
   updatedAt     DateTime @updatedAt
 }
 

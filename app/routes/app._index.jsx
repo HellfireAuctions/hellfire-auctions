@@ -1,5 +1,5 @@
 ﻿import crypto from "node:crypto";
-import { useActionData, useLoaderData, useRevalidator, Form } from "react-router";
+import { useActionData, useLoaderData, useRevalidator, useLocation, useNavigate, useSearchParams, Form } from "react-router";
 import { useEffect, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -12,6 +12,7 @@ import { parseBuyNowPrice } from "../buy-now";
 import { squareCrop, outputSide, photoProblem } from "../photo-ratio";
 import { urlPhotoProblem } from "../photo-url.server";
 import { wantsBubble } from "../bubble-setting";
+import { viewFromPath, countByState, filterAuctions, FILTER_LABELS } from "../admin-view";
 import { memoDelete } from "../memo.server";
 import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
 import BulkImport from "../bulk-import";
@@ -2451,17 +2452,23 @@ function AuctionForm({
 export default function AuctionsPage() {
   const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, liveBlockUrl, adminBase, settings, removedCount = 0, showRemoved = false } = useLoaderData();
   const paidCount = auctions.filter((a) => a.paymentStatus === "COMPLETED").length;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = viewFromPath(location.pathname); // home (setup guide), add, auctions or settings
+  const [filter, setFilter] = useState(null); // which auctions the list shows; null picks a sensible default
 
   // Live admin: refresh bids, high bidders and statuses every 10 seconds while the tab is visible.
   const revalidator = useRevalidator();
   useEffect(() => {
+    if (view !== "auctions") return undefined;
     const hasActive = auctions.some((a) => new Date(a.endsAt).getTime() > Date.now() - 5 * 60_000);
     if (!hasActive) return undefined;
     const id = setInterval(() => {
       if (document.visibilityState === "visible" && navigator.onLine !== false && revalidator.state === "idle") revalidator.revalidate();
     }, 10000);
     return () => clearInterval(id);
-  }, [revalidator, auctions]);
+  }, [revalidator, auctions, view]);
   const [salesBusy, setSalesBusy] = useState(false);
   const downloadSales = async () => {
     setSalesBusy(true);
@@ -2516,12 +2523,41 @@ export default function AuctionsPage() {
   const [formNonce, setFormNonce] = useState(0);
   useEffect(() => {
     if (actionData && (actionData.error || actionData.success)) window.scrollTo({ top: 0, behavior: "smooth" });
-    if (actionData?.success) setCloneFrom(null);
+    if (actionData?.success) {
+      setCloneFrom(null);
+      if (searchParams.get("clone")) setSearchParams({}, { replace: true });
+    }
+    if (actionData?.success && actionData?.mode === "update") navigate("/app/auctions"); // back to the list after an edit
     // A successful create (not an edit, and not a message-style result) clears the form for the next listing.
     if (actionData?.success && typeof actionData.success !== "string" && actionData?.mode !== "update") {
       setFormNonce((n) => n + 1);
     }
   }, [actionData]);
+
+  // "Edit" and "Sell similar" on the Live auctions page open the Add auction page with ?edit=<id> or ?clone=<id>.
+  useEffect(() => {
+    if (view !== "add") return;
+    const editId = searchParams.get("edit");
+    const cloneId = searchParams.get("clone");
+    if (editId) {
+      setEditingId(editId);
+      setCloneFrom(null);
+    } else if (cloneId) {
+      const source = auctions.find((a) => a.id === cloneId);
+      if (source) {
+        setCloneFrom((current) => (current?.id === source.id ? current : source));
+        setEditingId(null);
+      }
+    }
+  }, [view, searchParams, auctions]);
+  const leaveForm = () => {
+    setEditingId(null);
+    setCloneFrom(null);
+    if (searchParams.get("edit") || searchParams.get("clone")) setSearchParams({}, { replace: true });
+  };
+  const counts = countByState(auctions, Date.now());
+  const effectiveFilter = showRemoved ? "ALL" : filter ?? (counts.LIVE > 0 ? "LIVE" : "ALL");
+  const shownAuctions = filterAuctions(auctions, effectiveFilter, Date.now());
 
   const editingAuction =
     auctions.find(
@@ -2530,8 +2566,8 @@ export default function AuctionsPage() {
     );
 
   return (
-    <s-page heading="Hellfire Auctions">
-      {showMenuBanner && (
+    <s-page heading={{ home: "Set up Hellfire Auctions", add: "Add auction", auctions: "Live auctions", settings: "Settings" }[view]}>
+      {view === "home" && showMenuBanner && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", background: "linear-gradient(90deg,#1a0000,#7a0000,#ff3b30)", color: "#fff", borderRadius: 14, padding: "16px 20px", marginBottom: 16 }}>
           <div>
             <div style={{ fontWeight: 800, fontSize: 16 }}>{"\u{1F525}"} Add &ldquo;My Auctions&rdquo; to your store menu</div>
@@ -2561,6 +2597,7 @@ export default function AuctionsPage() {
         </s-banner>
       )}
 
+      {view === "home" && (
       <details open style={{ background: "#fff", border: "1px solid #e3e3e3", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
         <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 15 }}>Setup guide (about 10 minutes)</summary>
         <ol style={{ margin: "12px 0 0", paddingLeft: 20, display: "grid", gap: 12, fontSize: 14, lineHeight: 1.5 }}>
@@ -2584,7 +2621,7 @@ export default function AuctionsPage() {
             <s-link href={shippingSettingsUrl} target="_top">Settings, Shipping and delivery</s-link>. If your rates depend on weight, give each auction a weight: there&rsquo;s a field on the create form and a <em>Shipping weight</em> line on every auction card, and you can add or change it at any time. You can also set a <em>Default shipping weight</em> in the app, used whenever you don&rsquo;t enter one. Optional: add a $0.00 rate named <em>Add to my existing order (free)</em>; when a winner picks it, add the item to their earlier order before shipping.
           </li>
           <li>
-            <strong>Create your first auction</strong> with the form below: title, description, photos, starting bid, optional reserve price, start time and length. The app creates the product, adds it to a <em>Live Auctions</em> collection, and starts and ends the auction automatically. The winner is invoiced through Shopify when it ends. Tip: a test auction (under 1 hour) never counts toward your monthly limit.
+            <strong>Create your first auction</strong> on the <s-link href="/app/add-auction">Add auction</s-link> page: title, description, photos, starting bid, optional reserve price, start time and length. The app creates the product, adds it to a <em>Live Auctions</em> collection, and starts and ends the auction automatically. The winner is invoiced through Shopify when it ends. Tip: a test auction (under 1 hour) never counts toward your monthly limit.
           </li>
           <li>
             <strong>Add &ldquo;My Auctions&rdquo; to your store menu</strong> using the one-click banner (if shown), so customers can see every auction they&rsquo;re bidding on, have won, lost or paid for.
@@ -2606,7 +2643,7 @@ export default function AuctionsPage() {
           <ul style={{ margin: "6px 0 0", paddingLeft: 20, display: "grid", gap: 6 }}>
             <li><strong>The $99,999 price in your product list</strong> is a placeholder so nobody can buy an auction item outside the auction. Shoppers never see it, and the winner always pays exactly their winning bid.</li>
             <li><strong>Unpaid winners</strong> get 4 days to pay, with reminders. After that the app offers the item to the next bidder for you (you can turn this off under <em>Unpaid winners</em>), counts the unpaid sale against that bidder, and blocks anyone who reaches your limit (2 unpaid sales by default; you can change or turn this off under <em>Unpaid winners</em>). You can still send a reminder, offer the item yourself, or cancel the sale from any auction card.</li>
-            <li><strong>Paid items</strong> are archived from your store automatically. Use <em>Clear all paid</em> above your auctions to tidy this list; nothing is deleted.</li>
+            <li><strong>Paid items</strong> are archived from your store automatically. Use <em>Clear all paid</em> on the Live auctions page to tidy that list; nothing is deleted.</li>
             <li><strong>Unsold auctions</strong> are taken off your store about 10 minutes after they end. <em>Relist</em> puts them back.</li>
             <li><strong>Auction events:</strong> create several auctions, tick <em>Add to an auction event</em> on the upcoming ones, then schedule them all to start together and end one after another (for example, every 8 minutes).</li>
             <li><strong>Bulk creation:</strong> open <em>Create many auctions from a spreadsheet (CSV)</em> to upload a list, schedule the whole batch as an event, repeat it every week, and relist unsold items automatically.</li>
@@ -2614,7 +2651,9 @@ export default function AuctionsPage() {
           </ul>
         </div>
       </details>
+      )}
 
+      {view === "add" && (
       <s-section
         heading={
           editingAuction
@@ -2627,16 +2666,14 @@ export default function AuctionsPage() {
             key={editingAuction.id}
             auction={editingAuction}
             timezone={timezone}
-            onCancel={() =>
-              setEditingId(null)
-            }
+            onCancel={leaveForm}
           />
         ) : (
           <>
             {cloneFrom && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", background: "#f1f8f5", border: "1px solid #b7dfc9", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
                 <span>Selling similar to <strong>{cloneFrom.title}</strong>. Details are filled in; change anything you like.</span>
-                <s-button type="button" variant="tertiary" onClick={() => setCloneFrom(null)}>Clear</s-button>
+                <s-button type="button" variant="tertiary" onClick={leaveForm}>Clear</s-button>
               </div>
             )}
             <AuctionForm key={`${cloneFrom?.id || "new"}-${formNonce}`} timezone={timezone} prefill={cloneFrom} allowAutoExtend={Boolean(planFlags?.autoExtend)} />
@@ -2645,6 +2682,10 @@ export default function AuctionsPage() {
         )}
       </s-section>
 
+      )}
+
+      {view === "settings" && (
+      <>
       <s-section heading="Live Auctions button">
         <Form method="post" style={{ display: "grid", gap: 12, maxWidth: 680 }}>
           <input type="hidden" name="intent" value="save-bubble" />
@@ -2736,6 +2777,11 @@ export default function AuctionsPage() {
         </Form>
       </s-section>
 
+      </>
+      )}
+
+      {view === "auctions" && (
+      <>
       <s-section heading="Auctions">
         {!showRemoved && evSel.length > 0 && (
           <Form method="post" style={{ background: "#f6f6f7", border: "1px solid #c9cccf", borderRadius: 12, padding: 16, margin: "0 0 16px", display: "grid", gap: 12 }}>
@@ -2785,20 +2831,36 @@ export default function AuctionsPage() {
               </Form>
             )}
             {showRemoved ? (
-              <s-link href="/app">Back to your auctions</s-link>
+              <s-link href="/app/auctions">Back to your auctions</s-link>
             ) : removedCount > 0 ? (
-              <s-link href="/app?removed=1">Show removed ({removedCount})</s-link>
+              <s-link href="/app/auctions?removed=1">Show removed ({removedCount})</s-link>
             ) : null}
           </div>
         )}
 
+        {!showRemoved && auctions.length > 0 && (
+          <div role="group" aria-label="Show auctions" style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 14px" }}>
+            {["LIVE", "UPCOMING", "ENDED", "ALL"].map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilter(key)}
+                aria-pressed={effectiveFilter === key}
+                style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid #8a8a8a", background: effectiveFilter === key ? "#303030" : "#fff", color: effectiveFilter === key ? "#fff" : "#303030", fontWeight: 600, cursor: "pointer" }}
+              >
+                {FILTER_LABELS[key]} ({counts[key]})
+              </button>
+            ))}
+          </div>
+        )}
+        {auctions.length > 0 && shownAuctions.length === 0 && <p style={{ margin: "8px 0 16px" }}>Nothing in this view. Choose another one above.</p>}
         {auctions.length === 0 ? (
           <s-empty-state heading="No auctions yet">
-            Create your first Hellfire auction above.
+            Create your first Hellfire auction on the <s-link href="/app/add-auction">Add auction</s-link> page.
           </s-empty-state>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 16 }}>
-            {auctions.map((auction) => {
+            {shownAuctions.map((auction) => {
               const now = Date.now();
               const state =
                 now < new Date(auction.startsAt).getTime()
@@ -2987,15 +3049,13 @@ export default function AuctionsPage() {
                       </details>
                     )}
                     <div style={{ marginTop: "auto", paddingTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      <s-button type="button" onClick={() => setEditingId(auction.id)}>
+                      <s-button type="button" onClick={() => navigate(`/app/add-auction?edit=${auction.id}`)}>
                         Edit
                       </s-button>
                       <s-button
                         type="button"
                         onClick={() => {
-                          setCloneFrom(auction);
-                          setEditingId(null);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
+                          navigate(`/app/add-auction?clone=${auction.id}`);
                         }}
                       >
                         Sell similar
@@ -3059,10 +3119,14 @@ export default function AuctionsPage() {
 
       {moreAuctions && (
         <s-text>
-          Showing your 60 most recent auctions. <s-link href="/app?all=1">Show all</s-link>
+          Showing your 60 most recent auctions. <s-link href="/app/auctions?all=1">Show all</s-link>
         </s-text>
       )}
 
+      </>
+      )}
+
+      {false && ( // the old Insights block: the Analytics page covers the same figures and more
       <s-section heading="Insights (last 30 days)">
         {!planFlags?.insights ? (
           <s-text>
@@ -3110,8 +3174,13 @@ export default function AuctionsPage() {
         )}
       </s-section>
 
+      
+      )}
+
+      {view === "settings" && (
+      <>
       {blocked.length > 0 && (
-        <s-section heading="Blocked bidders">
+      <s-section heading="Blocked bidders">
           <s-stack gap="small">
             {blocked.map((b) => (
               <div key={b.customerId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -3141,7 +3210,8 @@ export default function AuctionsPage() {
           </s-button>
         </s-stack>
       </s-section>
-
+      </>
+      )}
     </s-page>
   );
 }

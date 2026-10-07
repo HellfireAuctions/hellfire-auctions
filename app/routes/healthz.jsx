@@ -31,7 +31,9 @@ export const loader = async ({ request }) => {
     problems.push(...dbProblems);
   }
   const lastTick = globalThis.__HF_LAST_TICK__ || 0;
-  if (lastTick && Date.now() - lastTick > 10 * 60_000) problems.push("auction worker has not run for 10+ minutes");
+  // The worker sleeps up to 30 minutes when nothing is about to end (which also lets the database rest), so only a
+  // silence well beyond that means it is stuck.
+  if (lastTick && Date.now() - lastTick > 45 * 60_000) problems.push("auction worker has not run for 45+ minutes");
   const robot = selfTestStatus();
   if (robot.ok === false) problems.push(`self-test failing: ${robot.failures.slice(0, 3).join("; ")}`);
   if (robot.at && Date.now() - robot.at > 40 * 60_000) problems.push("self-test has not run for 40+ minutes");

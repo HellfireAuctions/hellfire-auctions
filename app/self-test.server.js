@@ -100,6 +100,15 @@ export async function runSelfTest({ base, secret, db, subscribeFn = subscribe, f
   return { ...judge(checks), ms: now() - started };
 }
 
+// One run shortly after every start-up, so a bad release is caught within minutes of going live. Later runs happen on
+// the worker's own passes (never on a timer of its own), so the robot never keeps the database awake by itself.
+export function selfTestAfterBoot(alertOwner, delayMs = 100_000) {
+  if (globalThis.__HF_SELFTEST_BOOT__) return;
+  globalThis.__HF_SELFTEST_BOOT__ = true;
+  const timer = setTimeout(() => selfTestIfDue(alertOwner).catch((error) => console.error("[hellfire-auctions] self-test error:", error?.message || error)), delayMs);
+  if (timer.unref) timer.unref();
+}
+
 // Called by the background worker on every pass; does the real work at most once every 10 minutes.
 export async function selfTestIfDue(alertOwner) {
   const state = slot();

@@ -3,7 +3,7 @@ import { Outlet, useLoaderData, useRevalidator, useRouteError } from "react-rout
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
-import { isNetworkError } from "../network-error";
+import { isNetworkError, isSessionExpired, mayReauth } from "../network-error";
 
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
@@ -32,7 +32,28 @@ export default function App() {
 export function ErrorBoundary() {
   const error = useRouteError();
   const dropped = isNetworkError(error);
+  const expired = isSessionExpired(error);
   const revalidator = useRevalidator();
+
+  // A 401 means Shopify's login token went missing or expired (an idle admin tab, a refreshed session). Reload once,
+  // by itself, to get a fresh one; the guard stops it from ever looping.
+  useEffect(() => {
+    if (!expired) return undefined;
+    let last = null;
+    try {
+      last = sessionStorage.getItem("hf_reauth");
+    } catch {
+      /* storage can be unavailable in an embedded frame */
+    }
+    if (!mayReauth(last)) return undefined;
+    try {
+      sessionStorage.setItem("hf_reauth", String(Date.now()));
+    } catch {
+      /* fine */
+    }
+    const timer = setTimeout(() => window.location.reload(), 1200);
+    return () => clearTimeout(timer);
+  }, [expired]);
 
   // A dropped connection (a computer that went to sleep, a wifi blip, a server restart) is not a crash:
   // keep trying quietly and come back by itself as soon as the connection does.
@@ -49,6 +70,20 @@ export function ErrorBoundary() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropped]);
+
+  if (expired) {
+    return (
+      <div role="status" style={{ maxWidth: 640, margin: "48px auto", padding: "20px 24px", border: "1px solid #e3e3e3", borderRadius: 12, background: "#fff", fontFamily: "Arial, Helvetica, sans-serif" }}>
+        <strong style={{ fontSize: 18 }}>Reconnecting to Shopify&hellip;</strong>
+        <p style={{ margin: "8px 0 14px" }}>
+          Your Shopify session needed a quick refresh. This page reloads by itself in a moment. If you were in the middle of filling something in, it will need to be entered again.
+        </p>
+        <button type="button" onClick={() => window.location.reload()} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #8a8a8a", background: "#f6f6f7", cursor: "pointer" }}>
+          Reload now
+        </button>
+      </div>
+    );
+  }
 
   if (dropped) {
     return (

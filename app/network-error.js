@@ -7,3 +7,15 @@ export function isNetworkError(error) {
   const message = String(error.message || "");
   return /failed to fetch|networkerror|network request failed|load failed|fetch failed|the internet connection appears to be offline/i.test(message);
 }
+
+// Did Shopify's login token go missing or expire (the admin tab was idle, or the admin session refreshed)?
+// The server answers 401 in that case. It is not a bug and not the merchant's fault: reloading fixes it.
+export function isSessionExpired(error) {
+  return Boolean(error) && typeof error === "object" && error.status === 401;
+}
+
+// Reload at most once every 30 seconds, so a persistent problem can never turn into a reload loop.
+export function mayReauth(lastAttemptMs, nowMs = Date.now()) {
+  const last = Number(lastAttemptMs);
+  return !Number.isFinite(last) || last <= 0 || nowMs - last > 30_000;
+}

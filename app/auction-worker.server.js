@@ -7,6 +7,7 @@ import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, aler
 import { getShopSettings, recordStrike } from "./settings.server.js";
 import { publish } from "./live-hub.server.js";
 import { selfTestIfDue, selfTestAfterBoot } from "./self-test.server.js";
+import { orphanSweepIfDue, orphanSweepAfterBoot } from "./orphan-sweep.server.js";
 import { memoDelete } from "./memo.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
@@ -1300,6 +1301,7 @@ async function tick() {
   await paymentFollowUps().catch((error) => console.error("[hellfire-auctions] payment follow-ups error:", error?.message || error));
   await paymentSweep().catch((error) => console.error("[hellfire-auctions] payment sweep error:", error?.message || error));
   await selfTestIfDue((subject, lines) => alertOwner("self-test", subject, lines)).catch((error) => console.error("[hellfire-auctions] self-test error:", error?.message || error));
+  await orphanSweepIfDue().catch((error) => console.error("[hellfire-auctions] leftover-product sweep error:", error?.message || error));
   await autoRelistSweep().catch((error) => console.error("[hellfire-auctions] auto-relist error:", error?.message || error));
   await unsoldSweep().catch((error) => console.error("[hellfire-auctions] unsold sweep error:", error?.message || error));
   await sendWatcherReminders().catch((error) => console.error("[hellfire-auctions] watcher reminders error:", error?.message || error));
@@ -1446,6 +1448,7 @@ export function wakeWorker() {
 if (!globalThis.__HELLFIRE_AUCTION_WORKER__) {
   globalThis.__HELLFIRE_AUCTION_WORKER__ = true;
   selfTestAfterBoot((subject, lines) => alertOwner("self-test", subject, lines));
+  orphanSweepAfterBoot();
   runScheduledTick().catch((error) =>
     console.error("[hellfire-auctions] initial settlement failed:", error),
   );

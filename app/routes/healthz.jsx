@@ -1,5 +1,6 @@
 import prisma from "../db.server";
 import { connectionCount } from "../live-hub.server";
+import { selfTestStatus } from "../self-test.server";
 
 // /healthz        -> quick "the server is up" check (never touches the database).
 // /healthz?deep=1 -> also checks the database, the auction worker, overdue auctions and email failures.
@@ -31,6 +32,9 @@ export const loader = async ({ request }) => {
   }
   const lastTick = globalThis.__HF_LAST_TICK__ || 0;
   if (lastTick && Date.now() - lastTick > 10 * 60_000) problems.push("auction worker has not run for 10+ minutes");
+  const robot = selfTestStatus();
+  if (robot.ok === false) problems.push(`self-test failing: ${robot.failures.slice(0, 3).join("; ")}`);
+  if (robot.at && Date.now() - robot.at > 40 * 60_000) problems.push("self-test has not run for 40+ minutes");
   const fails = globalThis.__HF_EMAIL_FAILS__ || 0;
   if (fails >= 5) problems.push(`${fails} email sends failed in a row`);
 
@@ -44,6 +48,7 @@ export const loader = async ({ request }) => {
       liveViewers: connectionCount(),
       uptimeSeconds: Math.round(process.uptime()),
       version: (process.env.RENDER_GIT_COMMIT || "").slice(0, 7) || null,
+      selfTest: robot.at ? { ok: robot.ok, ageSeconds: Math.round((Date.now() - robot.at) / 1000), checks: robot.checks, ms: robot.ms, failures: robot.failures } : null,
     },
     { status: problems.length ? 503 : 200 },
   );

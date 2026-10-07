@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { connectionCount } from "../live-hub.server";
 
 // /healthz        -> quick "the server is up" check (never touches the database).
 // /healthz?deep=1 -> also checks the database, the auction worker, overdue auctions and email failures.
@@ -29,9 +30,21 @@ export const loader = async ({ request }) => {
     problems.push(...dbProblems);
   }
   const lastTick = globalThis.__HF_LAST_TICK__ || 0;
-  if (lastTick && Date.now() - lastTick > 45 * 60_000) problems.push("auction worker has not run for 45+ minutes");
+  if (lastTick && Date.now() - lastTick > 10 * 60_000) problems.push("auction worker has not run for 10+ minutes");
   const fails = globalThis.__HF_EMAIL_FAILS__ || 0;
   if (fails >= 5) problems.push(`${fails} email sends failed in a row`);
 
-  return Response.json({ ok: problems.length === 0, problems }, { status: problems.length ? 503 : 200 });
+  // The details help when something looks wrong: how long ago the worker last finished a pass, how many shoppers are
+  // on the live connection, how long the server has been up, and which version is running.
+  return Response.json(
+    {
+      ok: problems.length === 0,
+      problems,
+      workerAgeSeconds: lastTick ? Math.round((Date.now() - lastTick) / 1000) : null,
+      liveViewers: connectionCount(),
+      uptimeSeconds: Math.round(process.uptime()),
+      version: (process.env.RENDER_GIT_COMMIT || "").slice(0, 7) || null,
+    },
+    { status: problems.length ? 503 : 200 },
+  );
 };

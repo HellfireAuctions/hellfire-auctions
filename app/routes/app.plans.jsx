@@ -87,6 +87,7 @@ const TIERS = [
     perks: [
       "10 auctions every month",
       "Live bidding with automatic proxy bids",
+      "Instant bid updates: shoppers see new bids within a second, with no refreshing",
       "Reserve prices, scheduling and test auctions",
       "Bid history, bidder blocking and a My Auctions page",
       "Winner invoiced automatically",
@@ -122,7 +123,8 @@ const TIERS = [
     perks: [
       "Unlimited auctions",
       "Everything in Blaze",
-      "Insights: sales, sell-through and top bidders",
+      "Deeper analytics: best times to end auctions, your best buyers, what didn't sell and plain-language advice",
+      "Live Sale Mode: run an auction night with a host console, a live room and an embedded video",
       "Anti-sniping: auto-extend on late bids",
       `\u{1F525} HOT flame badge on auctions with ${HOT_BID_THRESHOLD}+ bids`,
       "Priority support",

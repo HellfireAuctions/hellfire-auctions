@@ -24,10 +24,13 @@ const PLANS = [
     features: [
       "10 auctions per month",
       "Live bidding with automatic proxy bids",
+      "Instant bid updates: shoppers see new bids within a second, with no refreshing",
       "Reserve prices, scheduling and test auctions",
       "Bulk creation from a spreadsheet, weekly repeats and staggered auction events",
       "Automatic relisting of unsold items",
       "Bid history, bidder blocking, optional bidder rules, an optional Buy It Now price and a My Auctions page",
+      "Square photos: every upload is cropped to a perfect square, so product grids line up in any theme",
+      "Analytics: sales, share sold, average sale, price uplift and payment speed",
       "Winner invoiced automatically, with an automatic second chance and blocking for non-payers",
       "A Live Auctions section for your home page (Online Store 2.0 themes)",
       "Storefront and buyer emails in Spanish, French, German, Portuguese, Italian and Dutch",
@@ -59,7 +62,8 @@ const PLANS = [
     features: [
       "Unlimited auctions",
       "Everything in Blaze",
-      "Insights: sales, sell-through and top bidders",
+      "Deeper analytics: best times to end auctions, your best buyers, what didn't sell and plain-language advice",
+      "Live Sale Mode: run an auction night with a host console, a live room and an embedded video",
       "Anti-sniping option: auto-extend on late bids",
       "HOT flame badge on auctions with 10+ bids",
       "Priority support",

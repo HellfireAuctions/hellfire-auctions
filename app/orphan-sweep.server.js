@@ -27,9 +27,9 @@ export async function sweepShop(shop, { admin, db, now = new Date(), maxPages = 
     if (!block?.pageInfo?.hasNextPage) break;
     cursor = block.pageInfo.endCursor;
   }
-  if (!products.length) return { checked: 0, hidden: [] };
+  if (!products.length) return { checked: 0, hidden: [], kept: [] };
 
-  const rows = await db.auction.findMany({ where: { shop, productId: { in: products.map((p) => p.id) } }, select: { productId: true } });
+  const rows = await db.auction.findMany({ where: { shop, productId: { in: products.map((p) => p.id) } }, select: { productId: true, status: true, endsAt: true, winnerId: true, isTest: true } });
   const ids = orphansToHide({ products, knownIds: new Set(rows.map((r) => r.productId)), now });
   const hidden = [];
   for (const id of ids) {
@@ -44,7 +44,17 @@ export async function sweepShop(shop, { admin, db, now = new Date(), maxPages = 
     if (errors.length) console.error("[hellfire-auctions] leftover product not hidden:", id, errors.map((e) => e.message).join(", "));
     else hidden.push(id);
   }
-  return { checked: products.length, hidden };
+  // What the app still knows about the products it left alone (so a leftover that stays can be explained).
+  const byProduct = new Map();
+  for (const r of rows) {
+    if (!byProduct.has(r.productId)) byProduct.set(r.productId, []);
+    byProduct.get(r.productId).push(r);
+  }
+  const kept = products
+    .filter((p) => byProduct.has(p.id))
+    .slice(0, 10)
+    .map((p) => ({ product: p.id.split("/").pop(), auctions: byProduct.get(p.id).map((r) => ({ status: r.status, ended: new Date(r.endsAt).getTime() < now.getTime(), winner: Boolean(r.winnerId), test: Boolean(r.isTest) })) }));
+  return { checked: products.length, hidden, kept };
 }
 
 export async function orphanSweepIfDue() {
@@ -58,9 +68,10 @@ export async function orphanSweepIfDue() {
     try {
       const { admin } = await unauthenticated.admin(shop);
       const result = await sweepShop(shop, { admin, db: prisma });
+      if (result.checked) console.log("[hellfire-auctions] leftover sweep:", shop, JSON.stringify({ checked: result.checked, hidden: result.hidden.length, kept: result.kept }));
       if (result.hidden.length) console.log("[hellfire-auctions] leftover products taken off the storefront:", shop, JSON.stringify(result.hidden));
     } catch (error) {
-      console.error("[hellfire-auctions] leftover-product sweep failed:", shop, error?.message || error);
+      console.error("[hellfire-auctions] leftover-product sweep failed:", shop, error instanceof Response ? `Shopify answered HTTP ${error.status} (the store may have uninstalled the app)` : error?.message || error);
     }
   }
 }

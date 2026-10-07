@@ -59,10 +59,17 @@ assert.deepEqual(w.calls.hides.map((h) => h.status), ["DRAFT", "DRAFT"], "hidden
 assert.deepEqual(w.calls.hides.map((h) => Object.keys(h).sort().join()), ["id,status", "id,status"], "nothing else about the product is changed");
 assert.equal(w.asked[0].where.shop, "shop.myshopify.com", "only this store's auctions are consulted");
 
+// what was left alone is explained
+w = world({ pages: [{ nodes: [P(1), P(2)], hasNext: false }], rows: [P(1).id] });
+w.db.auction.findMany = async () => [{ productId: P(1).id, status: "ENDED", endsAt: new Date(now.getTime() - 86_400_000).toISOString(), winnerId: null, isTest: true }];
+r = await sweepShop("s", { admin: w.admin, db: w.db, now });
+assert.deepEqual(r.kept, [{ product: "1", auctions: [{ status: "ENDED", ended: true, winner: false, test: true }] }], "the product the app still knows about is reported with its state");
+assert.deepEqual(r.hidden, [P(2).id]);
+
 // nothing to do: no database query, no changes
 w = world({ pages: [{ nodes: [], hasNext: false }], rows: [] });
 r = await sweepShop("s", { admin: w.admin, db: w.db, now });
-assert.deepEqual(r, { checked: 0, hidden: [] });
+assert.deepEqual(r, { checked: 0, hidden: [], kept: [] });
 assert.equal(w.asked.length, 0);
 
 // everything known: nothing hidden

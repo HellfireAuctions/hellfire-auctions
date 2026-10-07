@@ -197,4 +197,8 @@ module.exports = [
   ["It's yours! We're preparing your invoice. You'll get an email shortly, and it will also appear in My Auctions.", "¡Es tuyo! Estamos preparando tu factura. Recibirás un email en breve y también aparecerá en Mis subastas."],
   ["Buy It Now is no longer available for this auction.", "«Cómpralo ya» ya no está disponible para esta subasta."],
   ["This auction doesn't have a Buy It Now price.", "Esta subasta no tiene precio de «Cómpralo ya»."],
+  // ---- Live Auctions button ----
+  ["No live auctions right now.", "No hay subastas en vivo ahora mismo."],
+  ["View all auctions", "Ver todas las subastas"],
+  ["Close", "Cerrar"],
 ];

@@ -57,6 +57,7 @@ const TARGETS = [
   { marker: "I18N:myauctions", file: "app/routes/api.proxy.my-auctions.jsx", make: () => `const DICT = ${JSON.stringify(dictsFor("myauctions"), null, 2)};` },
   { marker: "I18N-HF", file: "app/routes/api.proxy.my-auctions.jsx", make: () => hfChain() },
   { marker: "I18N:prefs", file: "app/routes/email-preferences.jsx", make: () => `const DICT = ${JSON.stringify(dictsFor("prefs"), null, 2)};` },
+  { marker: "I18N:hub", file: A + "auction-hub.js", make: () => `var TR = ${JSON.stringify(dictsFor("hub"))};` },
   { marker: "I18N:emails", file: "app/email-i18n.server.js", make: () => `export const DICT = ${JSON.stringify(dictsFor("emails"), null, 2)};` },
 ];
 

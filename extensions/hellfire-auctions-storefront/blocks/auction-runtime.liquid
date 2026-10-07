@@ -136,12 +136,41 @@ html:has(#hellfire-auction-runtime[data-auction-product="true"]) product-price {
 {{ 'auction-cards.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'auction-cards.js' | asset_url }}" defer></script>
 
+{%- comment -%} The "Live Auctions" button: visible as soon as this embed is switched on. {%- endcomment -%}
+{%- if block.settings.show_hub -%}
+<script type="application/json" id="hellfire-hub-config">
+  {
+    "endpoint": "/apps/hellfire-auctions/live-auctions",
+    "collection": {{ block.settings.hub_collection | default: '/collections/live-auctions' | json }},
+    "position": {{ block.settings.hub_position | default: 'right' | json }},
+    "label": {{ block.settings.hub_label | json }},
+    "hideEmpty": {{ block.settings.hub_hide_when_empty | json }},
+    "color": {{ block.settings.hub_color | default: '#1a1a1a' | json }},
+    "offset": {{ block.settings.hub_offset | default: 20 | json }},
+    "designMode": {{ request.design_mode | json }},
+    "locale": {{ request.locale.iso_code | json }},
+    "currency": {{ shop.currency | json }}
+  }
+</script>
+{{ 'auction-hub.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'auction-hub.js' | asset_url }}" defer></script>
+{%- endif -%}
+
 {% schema %}
 {
   "name": "Hellfire Auctions Runtime",
   "target": "head",
   "javascript": "auction-runtime-v4.js",
   "stylesheet": "auction.css",
-  "settings": []
+  "settings": [
+    { "type": "header", "content": "Live Auctions button" },
+    { "type": "checkbox", "id": "show_hub", "label": "Show the Live Auctions button", "default": true, "info": "A small button on every page that opens a list of your running auctions. Turn it off if you only want the bidding panel on auction pages." },
+    { "type": "select", "id": "hub_position", "label": "Position", "default": "right", "options": [ { "value": "right", "label": "Bottom right" }, { "value": "left", "label": "Bottom left" } ] },
+    { "type": "range", "id": "hub_offset", "label": "Distance from the bottom edge", "min": 8, "max": 160, "step": 4, "unit": "px", "default": 20 },
+    { "type": "text", "id": "hub_label", "label": "Button text", "info": "Leave empty to use \"Live Auctions\" in the shopper's own language." },
+    { "type": "color", "id": "hub_color", "label": "Button color", "default": "#1a1a1a" },
+    { "type": "checkbox", "id": "hub_hide_when_empty", "label": "Hide the button when no auction is running", "default": false },
+    { "type": "url", "id": "hub_collection", "label": "Where \"View all auctions\" goes", "info": "Leave empty to use your Live Auctions collection." }
+  ]
 }
 {% endschema %}

@@ -54,6 +54,13 @@ const pages = {
   "/collections/article": "collection-article.html",
   "/pages/live-block": "live-block.html",
   "/pages/live-empty": "live-empty.html",
+  "/pages/hub": "hub.html",
+  "/pages/hub-empty": "hub-empty.html",
+  "/pages/hub-hidden": "hub-hidden.html",
+  "/pages/hub-design": "hub-design.html",
+  "/pages/hub-fr": "hub-fr.html",
+  "/pages/hub-left": "hub-left.html",
+  "/cart": "hub.html",
   "/collections/fr": "collection-fr.html",
   "/products/hf-fr": "product-fr.html",
   "/collections/de": "collection-de.html",
@@ -274,6 +281,28 @@ function check(name, condition) {
     check(`${lang}: bid panel labels and button`, panelHtml.includes(words.get("Highest Bid")) && panelHtml.includes(words.get("INCREASE BID")) && panelHtml.includes(words.get("Bid history")));
     check(`${lang}: bid panel is not mixed with English`, !panelHtml.includes("INCREASE BID") && !panelHtml.includes("Highest Bid"));
   }
+
+  // ----- the Live Auctions button: the first thing a Shopify reviewer looks for -----
+  const hubHtml = await dumpDom(`${base}/pages/hub`);
+  check("Hub button: appears on a store page as soon as the embed is on", hubHtml.includes('id="hf-hub-root"') && hubHtml.includes("hf-hub__pill"));
+  check("Hub button: says Live Auctions and shows how many are running", hubHtml.includes(">Live Auctions<") && /hf-hub__count"[^>]*>3</.test(hubHtml));
+  check("Hub button: lists the running auctions with their prices", hubHtml.includes("Ends first") && hubHtml.includes("$20.00") && hubHtml.includes("Ends third"));
+  check("Hub button: the list starts closed and is announced as closed", /id="hf-hub-panel"[^>]*hidden/.test(hubHtml) && hubHtml.includes('aria-expanded="false"'));
+  check("Hub button: has a way to see all auctions and is labelled for screen readers", hubHtml.includes('href="/collections/live-auctions"') && hubHtml.includes('role="dialog"') && hubHtml.includes('aria-controls="hf-hub-panel"'));
+  const hubEmpty = await dumpDom(`${base}/pages/hub-empty`);
+  check("Hub button: with no auctions it still shows, and says so kindly", hubEmpty.includes("hf-hub__pill") && hubEmpty.includes("No live auctions right now.") && !/hf-hub__count"[^>]*>\d/.test(hubEmpty));
+  check("Hub button: not hidden when there is nothing running (unless asked)", !/id="hf-hub-root"[^>]*hidden/.test(hubEmpty));
+  const hubHidden = await dumpDom(`${base}/pages/hub-hidden`);
+  check("Hub button: can be set to hide itself when nothing is running", /id="hf-hub-root"[^>]*hidden/.test(hubHidden));
+  const hubDesign = await dumpDom(`${base}/pages/hub-design`);
+  check("Hub button: always visible in the theme editor, with a note", !/id="hf-hub-root"[^>]*hidden/.test(hubDesign) && hubDesign.includes("Preview in the theme editor"));
+  check("Hub button: text stays readable on a light button colour", hubDesign.includes("#111111"));
+  const hubFr = await dumpDom(`${base}/pages/hub-fr`);
+  check("Hub button: in French for French shoppers", hubFr.includes("Enchères en cours") && hubFr.includes("Voir toutes les enchères") && hubFr.includes('aria-label="Fermer"'));
+  const hubLeft = await dumpDom(`${base}/pages/hub-left`);
+  check("Hub button: position, custom text and colour follow the settings", hubLeft.includes("hf-hub--left") && hubLeft.includes(">Auctions<") && hubLeft.includes("#ff5500") && hubLeft.includes("80px"));
+  const hubCart = await dumpDom(`${base}/cart`);
+  check("Hub button: never covers the cart page", !hubCart.includes("hf-hub-root"));
 
   if (process.env.SHOT_DIR) {
     await screenshot(`${base}/collections/dawn`, path.join(process.env.SHOT_DIR, "cards-dawn.png"));

@@ -203,4 +203,8 @@ module.exports = [
   ["It's yours! We're preparing your invoice. You'll get an email shortly, and it will also appear in My Auctions.", "Het is van jou! We bereiden je factuur voor. Je ontvangt zo een e-mail, en hij verschijnt ook onder Mijn veilingen."],
   ["Buy It Now is no longer available for this auction.", "Direct kopen is niet meer beschikbaar voor deze veiling."],
   ["This auction doesn't have a Buy It Now price.", "Deze veiling heeft geen direct-kopenprijs."],
+  // ---- Live Auctions button ----
+  ["No live auctions right now.", "Op dit moment zijn er geen live veilingen."],
+  ["View all auctions", "Bekijk alle veilingen"],
+  ["Close", "Sluiten"],
 ];

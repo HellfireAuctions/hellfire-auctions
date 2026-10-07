@@ -203,4 +203,8 @@ module.exports = [
   ["It's yours! We're preparing your invoice. You'll get an email shortly, and it will also appear in My Auctions.", "È tuo! Stiamo preparando la fattura. Riceverai presto un'email e comparirà anche in Le mie aste."],
   ["Buy It Now is no longer available for this auction.", "Compralo subito non è più disponibile per questa asta."],
   ["This auction doesn't have a Buy It Now price.", "Questa asta non ha un prezzo Compralo subito."],
+  // ---- Live Auctions button ----
+  ["No live auctions right now.", "Nessuna asta in corso al momento."],
+  ["View all auctions", "Vedi tutte le aste"],
+  ["Close", "Chiudi"],
 ];

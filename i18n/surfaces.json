@@ -232,5 +232,16 @@
     "Another win added to your invoice",
     "You won \"{title}\". We added it to your open invoice, so you pay shipping only once.",
     "Your invoice now has {n} items ({money} before shipping and tax). Your 4-day payment window restarted today."
+  ],
+  "hub": [
+    "Live Auctions",
+    "No live auctions right now.",
+    "View all auctions",
+    "Close",
+    "Current bid",
+    "Starting bid",
+    "1 bid",
+    "{n} bids",
+    "No bids yet"
   ]
 }

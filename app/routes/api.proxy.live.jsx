@@ -83,6 +83,25 @@ function pageHtml(view, streamUrl, money) {
         box.appendChild(f);
       }
     }
+    // The bidding panel. The store's page script only loads the panel code on product pages, and it stands down when the
+    // panel's container already exists (as it does here), so the room loads the panel code itself. Its address is published
+    // on every page by the Hellfire Auctions Runtime embed. Without the embed there is no panel, so say so plainly.
+    var root = document.getElementById("hellfire-auction-root");
+    if (root) {
+      var meta = document.getElementById("hellfire-auction-runtime");
+      var panelSrc = meta && meta.getAttribute("data-experience-src");
+      if (panelSrc) {
+        if (!window.__hellfireAuctionRemount && !document.querySelector("script[data-hellfire-auction-experience]")) {
+          var panel = document.createElement("script");
+          panel.src = panelSrc;
+          panel.defer = true;
+          panel.setAttribute("data-hellfire-auction-experience", "true");
+          document.head.appendChild(panel);
+        }
+      } else {
+        root.innerHTML = "<p>Bidding is not available on this page yet. The store owner needs to switch on the Hellfire Auctions Runtime app embed (Online Store, Themes, Customize, App embeds).</p>";
+      }
+    }
     function check() {
       if (document.hidden) return;
       fetch(cfg.url, { credentials: "same-origin" })

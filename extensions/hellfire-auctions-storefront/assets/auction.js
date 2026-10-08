@@ -172,6 +172,7 @@
     if(done)return;
     var s=window.__hfLeave;if(!s||!s.ended||s.mine)return;
     if(window.Shopify&&Shopify.designMode)return;
+    if(location.pathname.indexOf("/apps/hellfire-auctions/live")===0)return; /* the live room moves between lots by itself */
     if(/[?&]keep=1(&|$)/.test(location.search))return;
     if(Date.now()+(window.__hfOffset||0)-Date.parse(s.endsAt)<=60000)return;
     done=true;

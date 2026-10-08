@@ -4,6 +4,7 @@ import prisma from "../db.server";
 import { memo } from "../memo.server";
 import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
 import { shopCurrency } from "../currency.server";
+import { olderEndedEntry, OLDER_ENDED_DAYS, OLDER_ENDED_MAX } from "../cards-older";
 
 // Read-only data for the product-card badges: one request per page returns every
 // auction the storefront might show, keyed by product handle (themes link cards by handle).
@@ -75,9 +76,17 @@ export const loader = async ({ request }) => {
     take: 250,
   }));
 
+  // Auctions that ended more than 3 days ago keep their card hidden too (only "this one has ended" is sent for them).
+  const older = await memo("cards-old:" + shop, 60_000, () => prisma.auction.findMany({
+    where: { shop, endsAt: { gt: new Date(now.getTime() - OLDER_ENDED_DAYS * 24 * 60 * 60_000), lte: new Date(now.getTime() - ENDED_WINDOW_MS) } },
+    select: { productId: true, startsAt: true, endsAt: true },
+    orderBy: { endsAt: "desc" },
+    take: OLDER_ENDED_MAX,
+  }));
+
   let handles = new Map();
   try {
-    handles = await handlesFor(shop, auctions.map((a) => a.productId));
+    handles = await handlesFor(shop, [...auctions, ...older].map((a) => a.productId));
   } catch (error) {
     console.error("[auction-cards] handle lookup failed:", error?.message || error);
   }
@@ -133,8 +142,11 @@ export const loader = async ({ request }) => {
       reserveMet: a.reservePrice == null ? null : Number(a.currentBid) >= Number(a.reservePrice),
     }));
 
+  // Older ones come first, so a product that was relisted (a newer auction) is still treated by its newest auction.
+  const olderPayload = older.filter((a) => handles.has(a.productId)).map((a) => olderEndedEntry(handles.get(a.productId), a));
+
   return Response.json(
-    { now: now.toISOString(), currency: await shopCurrency(shop), branding: plan.branding, auctions: payload },
+    { now: now.toISOString(), currency: await shopCurrency(shop), branding: plan.branding, auctions: [...olderPayload, ...payload] },
     { headers: { "Cache-Control": "no-store" } },
   );
 };

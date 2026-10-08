@@ -1,5 +1,6 @@
 // Hellfire Auctions plans: Spark (free), Blaze ($10/mo), Inferno ($30/mo).
 import prisma from "./db.server.js";
+import { needsPlanChoice, confirmOnSync } from "./plan-choice.js";
 
 import { BILLING_NAMES, PLANS, HOT_BID_THRESHOLD, TRIAL_DAYS } from "./plans.shared.js";
 
@@ -24,12 +25,26 @@ export async function getShopPlan(shop) {
   }
 }
 
-export async function setShopPlan(shop, planKey, subscriptionId = null) {
+// `confirm` marks the plan as chosen by the merchant (a paid plan is active, or Spark was picked on purpose).
+// Saving what Shopify says never un-chooses.
+export async function setShopPlan(shop, planKey, subscriptionId = null, { confirm = Boolean(subscriptionId) } = {}) {
+  const now = new Date();
   await prisma.shopPlan.upsert({
     where: { shop },
-    create: { shop, plan: planKey, subscriptionId },
-    update: { plan: planKey, subscriptionId },
+    create: { shop, plan: planKey, subscriptionId, planConfirmedAt: confirm ? now : null },
+    update: confirm ? { plan: planKey, subscriptionId, planConfirmedAt: now } : { plan: planKey, subscriptionId },
   });
+}
+
+// Has this store been asked to choose a plan yet? If the table can't be read, the merchant is never blocked.
+export async function planNeedsChoice(shop) {
+  if (isComplimentary(shop)) return false;
+  try {
+    const row = await prisma.shopPlan.findUnique({ where: { shop } });
+    return needsPlanChoice({ complimentary: false, row });
+  } catch {
+    return false;
+  }
 }
 
 export function planKeyFromBillingName(name) {
@@ -62,7 +77,7 @@ export async function syncShopPlan({ billing, admin, shop }) {
   });
   const active = (appSubscriptions || []).find((s) => s.status === "ACTIVE") || null;
   const key = active ? planKeyFromBillingName(active.name) : "SPARK";
-  await setShopPlan(shop, key, active?.id || null);
+  await setShopPlan(shop, key, active?.id || null, { confirm: confirmOnSync(active) });
   return { plan: PLANS[key], isTest, subscription: active, complimentary: false };
 }
 

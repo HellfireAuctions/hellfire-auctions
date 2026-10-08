@@ -1,14 +1,18 @@
 import { useEffect } from "react";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { BILLING_NAMES, PLANS, TRIAL_DAYS, HOT_BID_THRESHOLD } from "../plans.shared";
-import { auctionsCreatedThisMonth, setShopPlan, syncShopPlan } from "../plans.server";
+import { auctionsCreatedThisMonth, planNeedsChoice, setShopPlan, syncShopPlan } from "../plans.server";
 
 export const loader = async ({ request }) => {
   const { billing, admin, session } = await authenticate.admin(request);
+  const wasUndecided = await planNeedsChoice(session.shop);
   const { plan, isTest, complimentary } = await syncShopPlan({ billing, admin, shop: session.shop });
+  const stillUndecided = await planNeedsChoice(session.shop);
+  if (wasUndecided && !stillUndecided) throw redirect("/app"); // a paid plan was just approved: on to the setup guide
   const used = await auctionsCreatedThisMonth(session.shop);
   return {
+    needsChoice: stillUndecided,
     current: plan.key,
     used,
     limit: Number.isFinite(plan.monthlyLimit) ? plan.monthlyLimit : null,
@@ -27,7 +31,9 @@ export const action = async ({ request }) => {
     if (subscription?.id) {
       await billing.cancel({ subscriptionId: subscription.id, isTest, prorate: true });
     }
-    await setShopPlan(session.shop, "SPARK", null);
+    const wasUndecided = await planNeedsChoice(session.shop);
+    await setShopPlan(session.shop, "SPARK", null, { confirm: true });
+    if (wasUndecided) return redirect("/app"); // plan chosen: on to the setup guide
     return { message: "You're on Spark (free). You can upgrade again any time." };
   }
 
@@ -137,7 +143,7 @@ const TIERS = [
 ];
 
 export default function Plans() {
-  const { current, used, limit, isTest, complimentary } = useLoaderData();
+  const { current, used, limit, isTest, complimentary, needsChoice } = useLoaderData();
   const navigation = useNavigation();
   const actionData = useActionData();
   useEffect(() => {
@@ -156,6 +162,12 @@ export default function Plans() {
   return (
     <s-page heading="Hellfire Auctions plans">
       <div style={{ display: "grid", gap: 20 }}>
+        {needsChoice && (
+          <div style={{ background: "#fff8e1", border: "2px solid #ffd60a", borderRadius: 12, padding: "14px 16px" }}>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>Step 1 of setup: choose your plan</div>
+            <div>Your plan decides which features you get. Spark is free; Blaze and Inferno start with a 7-day free trial. You can change plans any time. When you have chosen, the setup guide opens.</div>
+          </div>
+        )}
         {actionData?.confirmationUrl && (
           <div style={{ background: "#fff8e1", border: "2px solid #ffd60a", borderRadius: 12, padding: "14px 16px" }}>
             <div style={{ fontWeight: 800, marginBottom: 6 }}>One more step: approve your plan on Shopify</div>
@@ -178,10 +190,10 @@ export default function Plans() {
         )}
         <div style={{ background: "linear-gradient(90deg,#1a0000,#7a0000,#ff3b30)", color: "#fff", borderRadius: 16, padding: "22px 24px" }}>
           <div style={{ fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: "#ffd60a", fontWeight: 700 }}>
-            Your plan
+            {needsChoice ? "Step 1: choose your plan" : "Your plan"}
           </div>
           <div style={{ fontSize: 30, fontWeight: 800, margin: "4px 0 10px" }}>
-            {currentPlan.name} {complimentary ? "(complimentary)" : ""}
+            {needsChoice ? "Pick the plan that fits you" : `${currentPlan.name}${complimentary ? " (complimentary)" : ""}`}
           </div>
           <div style={{ fontSize: 15, marginBottom: 8 }}>
             {limit ? `${used} of ${limit} auctions used this month` : `${used} auctions this month \u2014 unlimited`}
@@ -198,7 +210,7 @@ export default function Plans() {
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 16 }}>
           {TIERS.map((tier) => {
-            const isCurrent = tier.key === currentPlan.key;
+            const isCurrent = !needsChoice && tier.key === currentPlan.key;
             return (
               <div
                 key={tier.key}
@@ -245,7 +257,7 @@ export default function Plans() {
                       disabled={busy}
                       style={{ width: "100%", border: 0, cursor: "pointer", fontWeight: 800, fontSize: 15, padding: "12px 0", borderRadius: 10, background: tier.accent, color: "#1a0000" }}
                     >
-                      {tier.key === "SPARK" ? "Switch to Spark" : `Ignite ${PLANS[tier.key].name}`}
+                      {tier.key === "SPARK" ? (needsChoice ? "Start with Spark (free)" : "Switch to Spark") : `Ignite ${PLANS[tier.key].name}`}
                     </button>
                   </Form>
                 )}

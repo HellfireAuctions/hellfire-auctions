@@ -1,10 +1,10 @@
 ﻿import crypto from "node:crypto";
-import { useActionData, useLoaderData, useRevalidator, useLocation, useNavigate, useSearchParams, Form } from "react-router";
+import { useActionData, useLoaderData, useRevalidator, useLocation, useNavigate, useSearchParams, redirect, Form } from "react-router";
 import { useEffect, useState } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { resolveProxyBids } from "../bidding.server";
-import { canCreateAuction, getShopPlan } from "../plans.server";
+import { canCreateAuction, getShopPlan, planNeedsChoice } from "../plans.server";
 import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep } from "../auction-worker.server";
 import { getShopSettings, saveShopSettings } from "../settings.server";
 import { BIDDER_RULES } from "../bidder-rules";
@@ -12,6 +12,7 @@ import { parseBuyNowPrice } from "../buy-now";
 import { squareCrop, outputSide, photoProblem } from "../photo-ratio";
 import { urlPhotoProblem } from "../photo-url.server";
 import { wantsBubble } from "../bubble-setting";
+import { menuStatus, itemsToAdd } from "../menu-items";
 import { viewFromPath, countByState, filterAuctions, FILTER_LABELS } from "../admin-view";
 import { memoDelete } from "../memo.server";
 import { parseStoreLocal, staggeredEnds, validateEvent } from "../event-schedule";
@@ -464,9 +465,9 @@ async function getMainMenu(admin) {
   const json = await response.json();
   const menus = json?.data?.menus?.nodes || [];
   const menu = menus.find((m) => m.handle === "main-menu") || menus[0] || null;
-  if (!menu) return { menu: null, hasLink: false };
-  const has = (items) => (items || []).some((i) => (i.url || "").includes(MY_AUCTIONS_URL) || has(i.items));
-  return { menu, hasLink: has(menu.items) };
+  if (!menu) return { menu: null, hasLink: false, hasLive: false };
+  const status = menuStatus(menu.items, MY_AUCTIONS_URL);
+  return { menu, hasLink: status.hasMyAuctions, hasLive: status.hasLive };
 }
 
 // Rebuilds the item list exactly as it is (menuUpdate replaces all items), then adds ours at the end.
@@ -482,11 +483,39 @@ function toMenuInput(items) {
   }));
 }
 
+// Publishes a collection to the Online Store, so its page works on the storefront and not only in the admin.
+async function publishToOnlineStore(admin, resourceId) {
+  const pubs = await (await admin.graphql(`#graphql
+    query OnlineStorePublication { publications(first: 50) { nodes { id name } } }`)).json();
+  const onlineStore = pubs?.data?.publications?.nodes?.find((p) => p.name === "Online Store");
+  if (!onlineStore) throw new Error('The Shopify "Online Store" publication could not be found.');
+  const result = await (await admin.graphql(
+    `#graphql
+      mutation PublishToOnlineStore($id: ID!, $publicationId: ID!) {
+        publishablePublish(id: $id, input: { publicationId: $publicationId }) { userErrors { message } }
+      }`,
+    { variables: { id: resourceId, publicationId: onlineStore.id } },
+  )).json();
+  const errors = result?.data?.publishablePublish?.userErrors || [];
+  if (errors.length) throw new Error(errors.map((e) => e.message).join(", "));
+}
+
+// One click adds whatever the main menu is missing: "Live Auctions" and "My Auctions".
 async function addMyAuctionsToMenu(admin) {
-  const { menu, hasLink } = await getMainMenu(admin);
+  const { menu, hasLink, hasLive } = await getMainMenu(admin);
   if (!menu) return { error: "Your store doesn't have a navigation menu yet." };
-  if (hasLink) return { success: "\u201CMy Auctions\u201D is already in your store menu." };
-  const items = [...toMenuInput(menu.items), { title: "My Auctions", type: "HTTP", url: MY_AUCTIONS_URL, items: [] }];
+  if (hasLink && hasLive) return { success: "\u201CLive Auctions\u201D and \u201CMy Auctions\u201D are already in your store menu." };
+  let collectionId = null;
+  if (!hasLive) {
+    try {
+      const collection = await ensureLiveAuctionsCollection(admin); // created now if it doesn't exist yet
+      await publishToOnlineStore(admin, collection.id);
+      collectionId = collection.id;
+    } catch (error) {
+      console.error("[menu] could not prepare the Live Auctions collection:", error?.message || error);
+    }
+  }
+  const items = [...toMenuInput(menu.items), ...itemsToAdd({ hasLive, hasMyAuctions: hasLink, collectionId, myAuctionsUrl: MY_AUCTIONS_URL })];
   const response = await admin.graphql(
     `#graphql
       mutation AddMyAuctions($id: ID!, $title: String!, $handle: String, $items: [MenuItemUpdateInput!]!) {
@@ -500,7 +529,8 @@ async function addMyAuctionsToMenu(admin) {
   const json = await response.json();
   const errors = json?.data?.menuUpdate?.userErrors || [];
   if (errors.length) return { error: "Couldn't update your menu: " + errors.map((e) => e.message).join(", ") };
-  return { success: "Added \u201CMy Auctions\u201D to your store menu. Customers can now find every auction they've bid on." };
+  const added = [!hasLive && "Live Auctions", !hasLink && "My Auctions"].filter(Boolean).map((name) => `\u201C${name}\u201D`).join(" and ");
+  return { success: `Added ${added} to your store menu.` + (hasLink ? "" : " Customers can now find every auction they've bid on.") };
 }
 
 async function ensureLiveAuctionsCollection(admin) {
@@ -1033,13 +1063,15 @@ export const loader = async ({ request }) => {
 
   let showMenuBanner = false;
   try {
-    const { menu, hasLink } = await getMainMenu(admin);
-    showMenuBanner = Boolean(menu) && !hasLink;
+    const { menu, hasLink, hasLive } = await getMainMenu(admin);
+    showMenuBanner = Boolean(menu) && !(hasLink && hasLive);
   } catch (error) {
     console.error("[admin] menu check skipped:", error?.message || error);
   }
 
-  return { auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, settings, removedCount: hiddenIds.length, showRemoved, adminBase: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}`, liveBlockUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/themes/current/editor?template=index&addAppBlockId=${process.env.SHOPIFY_API_KEY}/live-auctions&target=newAppsSection`, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
+  const planNeedsChoiceNow = await planNeedsChoice(session.shop);
+  if (planNeedsChoiceNow && viewFromPath(new URL(request.url).pathname) === "add") throw redirect("/app"); // plan first, then the form
+  return { planNeedsChoice: planNeedsChoiceNow, auctions: auctionsWithLeaders, storefrontActivationUrl, timezone, showMenuBanner, blocked, insights, moreAuctions: totalAuctions > auctions.length, embedOff, settings, removedCount: hiddenIds.length, showRemoved, adminBase: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}`, liveBlockUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/themes/current/editor?template=index&addAppBlockId=${process.env.SHOPIFY_API_KEY}/live-auctions&target=newAppsSection`, shippingSettingsUrl: `https://admin.shopify.com/store/${session.shop.replace(".myshopify.com", "")}/settings/shipping`, planFlags: { name: planNow.name, insights: Boolean(planNow.insights), autoExtend: Boolean(planNow.autoExtend) } };
 };
 
 const actionImpl = async ({ request }) => {
@@ -2218,7 +2250,7 @@ function AuctionForm({
           />
           <span>
             <strong>Anti-sniping:</strong> add 2 minutes if a bid arrives in the last 2 minutes.
-            {!allowAutoExtend && " (Inferno plan)"}
+            {!allowAutoExtend && <> (Inferno plan: <s-link href="/app/plans">see plans</s-link>)</>}
           </span>
         </label>
 
@@ -2450,7 +2482,7 @@ function AuctionForm({
 }
 
 export default function AuctionsPage() {
-  const { auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, liveBlockUrl, adminBase, settings, removedCount = 0, showRemoved = false } = useLoaderData();
+  const { planNeedsChoice, auctions, storefrontActivationUrl, timezone, showMenuBanner, blocked = [], insights, planFlags, moreAuctions, embedOff, shippingSettingsUrl, liveBlockUrl, adminBase, settings, removedCount = 0, showRemoved = false } = useLoaderData();
   const paidCount = auctions.filter((a) => a.paymentStatus === "COMPLETED").length;
   const location = useLocation();
   const navigate = useNavigate();
@@ -2567,10 +2599,10 @@ export default function AuctionsPage() {
 
   return (
     <s-page heading={{ home: "Set up Hellfire Auctions", add: "Add auction", auctions: "Live auctions", settings: "Settings" }[view]}>
-      {view === "home" && showMenuBanner && (
+      {view === "home" && !planNeedsChoice && showMenuBanner && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap", background: "linear-gradient(90deg,#1a0000,#7a0000,#ff3b30)", color: "#fff", borderRadius: 14, padding: "16px 20px", marginBottom: 16 }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 16 }}>{"\u{1F525}"} Add &ldquo;My Auctions&rdquo; to your store menu</div>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>{"\u{1F525}"} Add &ldquo;Live Auctions&rdquo; and &ldquo;My Auctions&rdquo; to your store menu</div>
             <div style={{ fontSize: 13, opacity: 0.9 }}>One click gives your customers a page showing every auction they&rsquo;re bidding on, winning or outbid.</div>
           </div>
           <Form method="post">
@@ -2580,6 +2612,12 @@ export default function AuctionsPage() {
         </div>
       )}
 
+
+      {view !== "home" && planNeedsChoice && (
+        <s-banner tone="warning" heading="Choose your plan first">
+          Your plan decides which features you get. <s-link href="/app/plans">Choose your plan</s-link>
+        </s-banner>
+      )}
 
       {actionData?.error && (
         <s-banner tone="critical">
@@ -2597,7 +2635,23 @@ export default function AuctionsPage() {
         </s-banner>
       )}
 
-      {view === "home" && (
+      {view === "home" && planNeedsChoice && (
+        <div style={{ background: "linear-gradient(90deg,#1a0000,#7a0000,#ff3b30)", color: "#fff", borderRadius: 16, padding: "22px 24px", marginBottom: 16 }}>
+          <div style={{ fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: "#ffd60a", fontWeight: 700 }}>Step 1</div>
+          <div style={{ fontSize: 26, fontWeight: 800, margin: "4px 0 8px" }}>Choose your plan</div>
+          <p style={{ margin: "0 0 12px", fontSize: 15, lineHeight: 1.5 }}>
+            Your plan decides which features you get (buyer emails, how many auctions a month, anti-sniping and more), so pick it before you set up. You can change it any time.
+          </p>
+          <ul style={{ margin: "0 0 16px", paddingLeft: 20, display: "grid", gap: 6, fontSize: 14, lineHeight: 1.5 }}>
+            <li><strong>Spark, free:</strong> 10 auctions a month, automatic bidding and analytics. No bidder emails.</li>
+            <li><strong>Blaze, $10/month:</strong> 90 auctions a month, plus outbid, reminder and &ldquo;Sorry, you didn&rsquo;t win&rdquo; emails. 7-day free trial.</li>
+            <li><strong>Inferno, $25/month:</strong> unlimited auctions, optional anti-sniping, deeper analytics, Live Sale Mode and the HOT badge. 7-day free trial.</li>
+          </ul>
+          <s-button href="/app/plans" variant="primary">Choose your plan</s-button>
+        </div>
+      )}
+
+      {view === "home" && !planNeedsChoice && (
       <details open style={{ background: "#fff", border: "1px solid #e3e3e3", borderRadius: 12, padding: "14px 18px", marginBottom: 16 }}>
         <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 15 }}>Setup guide (about 10 minutes)</summary>
         <ol style={{ margin: "12px 0 0", paddingLeft: 20, display: "grid", gap: 12, fontSize: 14, lineHeight: 1.5 }}>
@@ -2624,7 +2678,7 @@ export default function AuctionsPage() {
             <strong>Create your first auction</strong> on the <s-link href="/app/add-auction">Add auction</s-link> page: title, description, photos, starting bid, optional reserve price, start time and length. The app creates the product, adds it to a <em>Live Auctions</em> collection, and starts and ends the auction automatically. The winner is invoiced through Shopify when it ends. Tip: a test auction (under 1 hour) never counts toward your monthly limit.
           </li>
           <li>
-            <strong>Add &ldquo;My Auctions&rdquo; to your store menu</strong> using the one-click banner (if shown), so customers can see every auction they&rsquo;re bidding on, have won, lost or paid for.
+            <strong>Add &ldquo;Live Auctions&rdquo; and &ldquo;My Auctions&rdquo; to your store menu</strong> using the one-click banner (if shown), so customers can browse running auctions and see every auction they&rsquo;re bidding on, have won, lost or paid for.
           </li>
           <li>
             <strong>Show your live auctions on any page (optional).</strong> Add the <em>Live Auctions</em> block, for example to your home page. It needs a newer (Online Store 2.0) theme; the bidding panel and card badges work on any theme. It lists only running auctions, soonest-ending first, and matches your theme&rsquo;s fonts and colors.{" "}

@@ -89,6 +89,7 @@ model ShopPlan {
   shop           String   @id
   plan           String   @default("SPARK")
   subscriptionId String?
+  planConfirmedAt DateTime?
   updatedAt      DateTime @updatedAt
 }
 

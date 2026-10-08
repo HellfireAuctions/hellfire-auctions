@@ -1,4 +1,5 @@
-import { redirect, Form, useLoaderData } from "react-router";
+import { useEffect, useState } from "react";
+import { redirect, Form, useLoaderData, useNavigate } from "react-router";
 import { login } from "../../shopify.server";
 import { shouldOpenApp } from "../../root-redirect";
 import styles from "./styles.module.css";
@@ -14,12 +15,12 @@ export const loader = async ({ request }) => {
 };
 
 export const meta = () => [
-  { title: "Hellfire Auctions: eBay-style auctions for Shopify stores" },
+  { title: "Hellfire Auctions: live auctions for Shopify stores" },
   { name: "description", content: "Turn any product into a live auction on your Shopify store, with automatic bidding, instant updates and winner invoices through Shopify." },
 ];
 
 const FEATURES = [
-  ["Automatic bidding", "Shoppers set a maximum and the app bids for them, one increment at a time, exactly like eBay."],
+  ["Automatic bidding", "Shoppers set a maximum and the app bids for them, one increment at a time, only as much as it takes to stay in front."],
   ["Buy It Now, reserves and anti-sniping", "Optional on every auction. Anti-sniping extends an auction when a bid lands in the last moments (Inferno plan)."],
   ["Instant updates", "New bids appear within a second, with no refreshing. A Live Auctions button on every page shows what is running."],
   ["Fits your theme", "Works with Online Store 2.0 themes. Photos are cropped to a square so product grids line up. Available in English, Spanish, French, German, Portuguese, Italian and Dutch."],
@@ -29,12 +30,24 @@ const FEATURES = [
 
 export default function App() {
   const { showForm } = useLoaderData();
+  const navigate = useNavigate();
+  const [inAdmin, setInAdmin] = useState(false);
+
+  // Clicking the app's own name inside the Shopify admin navigates here without asking the server, so the server-side
+  // redirect never runs. If this page finds itself inside the admin's frame, it hands straight over to the app.
+  useEffect(() => {
+    if (window.self !== window.top) {
+      setInAdmin(true);
+      navigate(`/app${window.location.search}`, { replace: true });
+    }
+  }, [navigate]);
+  if (inAdmin) return null;
 
   return (
     <main className={styles.page}>
       <div className={styles.wrap}>
         <p className={styles.brand}>Hellfire Auctions</p>
-        <h1 className={styles.heading}>Run eBay-style auctions on your Shopify store</h1>
+        <h1 className={styles.heading}>Run live auctions on your Shopify store</h1>
         <p className={styles.lead}>
           Turn any product into a live auction with a countdown, automatic bidding and instant updates. When it ends, the winner is invoiced through Shopify. Free to start; paid plans begin at $10 a month with a 7-day free trial.
         </p>

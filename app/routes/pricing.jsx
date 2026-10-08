@@ -32,7 +32,7 @@ const PLANS = [
       "Square photos: every upload is cropped to a perfect square, so product grids line up in any theme",
       "Analytics: sales, share sold, average sale, price uplift and payment speed",
       "Winner invoiced automatically, with an automatic second chance and blocking for non-payers",
-      "A Live Auctions section for your home page (Online Store 2.0 themes)",
+      "A floating Live Auctions button (optional, one switch turns it off) and a Live Auctions section for your home page (Online Store 2.0 themes)",
       "Storefront and buyer emails in Spanish, French, German, Portuguese, Italian and Dutch",
       "Sales report (CSV) and a full data backup",
       "Works with any Shopify theme",
@@ -102,7 +102,7 @@ const FAQ = [
   ],
   [
     "Does it work in other languages?",
-    "Yes: English, Spanish, French, German, Portuguese, Italian and Dutch. The bidding panel, product-card badges, Live Auctions section, My Auctions page and buyer emails appear in the shopper's language when they browse your store in one of these (emails follow the buyer's own Shopify account language). Other languages show English for now.",
+    "Yes: English, Spanish, French, German, Portuguese, Italian and Dutch. The bidding panel, product-card badges, Live Auctions button, Live Auctions section, My Auctions page and buyer emails appear in the shopper's language when they browse your store in one of these (emails follow the buyer's own Shopify account language). Other languages show English for now.",
   ],
   [
     "What happens when a winner doesn't pay?",

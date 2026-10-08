@@ -4,7 +4,7 @@ import prisma from "../db.server";
 import { memo } from "../memo.server";
 import { getShopPlan, HOT_BID_THRESHOLD } from "../plans.server";
 import { shopCurrency } from "../currency.server";
-import { olderEndedEntry, OLDER_ENDED_DAYS, OLDER_ENDED_MAX } from "../cards-older";
+import { olderEndedEntry, orderForCards, OLDER_ENDED_DAYS, OLDER_ENDED_MAX } from "../cards-older";
 
 // Read-only data for the product-card badges: one request per page returns every
 // auction the storefront might show, keyed by product handle (themes link cards by handle).
@@ -59,22 +59,14 @@ export const loader = async ({ request }) => {
 
   const now = new Date();
   // The list of auctions is the same for every shopper, so concurrent requests share one fetch for 2 seconds.
-  const auctions = await memo("cards:" + shop, 2000, () => prisma.auction.findMany({
-    where: { shop, endsAt: { gt: new Date(now.getTime() - ENDED_WINDOW_MS) } },
-    select: {
-      id: true,
-      productId: true,
-      startingBid: true,
-      currentBid: true,
-      reservePrice: true,
-      isTest: true,
-      bidCount: true,
-      startsAt: true,
-      endsAt: true,
-    },
-    orderBy: { createdAt: "asc" }, // newest auction per product wins
-    take: 250,
-  }));
+  // Running and upcoming auctions are always included (up to 250, newest first); recently ended ones come from their own
+  // query (newest 100). Neither can crowd the other out. See orderForCards for how they are combined.
+  const CARD_SELECT = { id: true, productId: true, startingBid: true, currentBid: true, reservePrice: true, isTest: true, bidCount: true, startsAt: true, endsAt: true };
+  const [active, endedRecent] = await memo("cards:" + shop, 2000, () => Promise.all([
+    prisma.auction.findMany({ where: { shop, endsAt: { gt: now } }, select: CARD_SELECT, orderBy: { createdAt: "desc" }, take: 250 }),
+    prisma.auction.findMany({ where: { shop, endsAt: { gt: new Date(now.getTime() - ENDED_WINDOW_MS), lte: now } }, select: CARD_SELECT, orderBy: { endsAt: "desc" }, take: 100 }),
+  ]));
+  const auctions = orderForCards(active, endedRecent);
 
   // Auctions that ended more than 3 days ago keep their card hidden too (only "this one has ended" is sent for them).
   const older = await memo("cards-old:" + shop, 60_000, () => prisma.auction.findMany({

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData, useNavigation, useRevalidator } from "react-router";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
@@ -6,8 +6,10 @@ import { getShopPlan } from "../plans.server";
 import { memoDelete } from "../memo.server";
 import { publish } from "../live-hub.server";
 import { embedFor } from "../video-embed";
-import { parseDrop, remaining } from "../action-sale";
+import { parseNewItem, remaining } from "../action-sale";
+import { photoProblem, squareCrop, outputSide } from "../photo-ratio";
 import { addDropToSale, openDrop, closeOpenDrop, endShowAndInvoice } from "../action-sale.server";
+import { createDropProduct, deleteDropProduct } from "../drop-product.server";
 
 // Live Drops: the host's screen. The host streams anywhere (TikTok, Instagram, Facebook, YouTube...), shares the
 // show's link, and sells items at a set price: press Go on an item and shoppers see a CLAIM button; the first people
@@ -50,18 +52,38 @@ export const action = async ({ request }) => {
   if (!sale) return { error: "That show wasn't found." };
 
   if (intent === "add-drop") {
-    const parsed = parseDrop(form);
+    const parsed = parseNewItem(form);
     if (!parsed.ok) return { error: parsed.error };
-    const added = await addDropToSale({ shop, saleId, drop: parsed.drop });
-    if (!added.ok) return { error: added.message };
+    if (sale.status === "ENDED") return { error: "This show has ended." };
+    const photo = form.get("photo");
+    const hasPhoto = Boolean(photo) && typeof photo === "object" && photo.size > 0;
+    if (hasPhoto) {
+      if (!photo.type?.startsWith("image/")) return { error: "The photo must be an image file." };
+      const problem = await photoProblem([photo]); // always square, like every photo in the app
+      if (problem) return { error: problem };
+    }
+    let made;
+    try {
+      // The app creates the product itself (hidden from the shop's catalog), so Live Drops needs nothing set up beforehand.
+      made = await createDropProduct({ admin, title: parsed.item.title, price: parsed.item.price, imageFile: hasPhoto ? photo : null });
+    } catch (error) {
+      console.error("[HELLFIRE LIVE DROPS] could not create the product:", error?.message || error);
+      return { error: "Shopify couldn't create the product just now. Please try again." };
+    }
+    const added = await addDropToSale({ shop, saleId, drop: { ...parsed.item, productId: made.productId, variantId: made.variantId, imageUrl: made.imageUrl } });
+    if (!added.ok) {
+      await deleteDropProduct(admin, made.productId);
+      return { error: added.message };
+    }
     touch(saleId);
-    return { success: "Item added." };
+    return { success: "Item added. Press Go when you're ready to sell it." };
   }
   if (intent === "remove-drop") {
     const drop = await prisma.actionDrop.findFirst({ where: { id: String(form.get("dropId") || ""), saleId, shop } });
     if (!drop) return { error: "That item wasn't found." };
     if (drop.status === "OPEN" || drop.claimed > 0) return { error: "An item that is open, or already has claims, can't be removed." };
     await prisma.actionDrop.delete({ where: { id: drop.id } });
+    await deleteDropProduct(admin, drop.productId); // the hidden product it made goes too
     touch(saleId);
     return { success: "Item removed." };
   }
@@ -93,6 +115,8 @@ export const action = async ({ request }) => {
   }
   if (intent === "delete-sale") {
     if (sale.status === "LIVE") return { error: "End the show before deleting it." };
+    const unclaimed = await prisma.actionDrop.findMany({ where: { saleId, shop, claimed: 0 }, select: { productId: true } });
+    for (const d of unclaimed) await deleteDropProduct(admin, d.productId); // products with claims stay: invoices refer to them
     await prisma.actionSale.delete({ where: { id: saleId } });
     return redirect("/app/live");
   }
@@ -120,40 +144,78 @@ function Act({ saleId, intent, label, primary, disabled, extra }) {
   );
 }
 
+// Crops a chosen photo to a centred square on the device before it is uploaded (JPEG, 1600 px at most).
+async function squarePhoto(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const { sx, sy, side } = squareCrop(bitmap.width, bitmap.height);
+    const out = outputSide(side);
+    const canvas = document.createElement("canvas");
+    canvas.width = out;
+    canvas.height = out;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, out, out);
+    ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, out, out);
+    if (bitmap.close) bitmap.close();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+    return blob ? new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" }) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Adding an item is one quick form: the app creates the product itself, so it works the moment you are live.
 function AddItem({ saleId, busy }) {
-  const [picked, setPicked] = useState(null);
-  const [price, setPrice] = useState("");
-  async function choose() {
-    try {
-      const result = await window.shopify.resourcePicker({ type: "variant", action: "select", multiple: false });
-      const product = result?.[0];
-      const variant = product?.variants?.[0];
-      if (!product || !variant) return;
-      const image = product.images?.[0]?.originalSrc || product.images?.[0]?.url || variant.image?.originalSrc || "";
-      setPicked({ productId: product.id, variantId: variant.id, title: variant.displayName || product.title, imageUrl: image });
-      setPrice(variant.price ? String(variant.price) : "");
-    } catch {
-      /* the picker was closed */
+  const result = useActionData();
+  const formRef = useRef(null);
+  const [preview, setPreview] = useState(null);
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    if (result?.success && String(result.success).startsWith("Item added")) {
+      formRef.current?.reset();
+      setPreview(null);
     }
+  }, [result]);
+  async function onPhoto(event) {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) {
+      setPreview(null);
+      return;
+    }
+    const squared = await squarePhoto(file);
+    if (!squared) {
+      setNote("We couldn't read that photo. Please use a JPG, PNG, WebP or GIF image.");
+      input.value = "";
+      setPreview(null);
+      return;
+    }
+    const transfer = new DataTransfer();
+    transfer.items.add(squared);
+    input.files = transfer.files;
+    setNote("");
+    setPreview(URL.createObjectURL(squared));
   }
   return (
-    <Form method="post" style={{ display: "grid", gap: 10 }} key={picked?.variantId || "none"}>
+    <Form ref={formRef} method="post" encType="multipart/form-data" style={{ display: "grid", gap: 10 }}>
       <input type="hidden" name="intent" value="add-drop" />
       <input type="hidden" name="saleId" value={saleId} />
-      <input type="hidden" name="productId" value={picked?.productId || ""} />
-      <input type="hidden" name="variantId" value={picked?.variantId || ""} />
-      <input type="hidden" name="title" value={picked?.title || ""} />
-      <input type="hidden" name="imageUrl" value={picked?.imageUrl || ""} />
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <button type="button" onClick={choose} style={button(false)}>{picked ? "Choose a different product" : "Choose a product"}</button>
-        {picked && (<><Thumb src={picked.imageUrl} /><strong>{picked.title}</strong></>)}
+        <label style={{ ...button(false), display: "inline-block" }}>
+          Add a photo
+          <input name="photo" type="file" accept="image/*" onChange={onPhoto} style={{ display: "none" }} />
+        </label>
+        {preview ? <Thumb src={preview} /> : <span style={{ fontSize: 13, color: "#616161" }}>Optional, but shoppers like to see the item. It is cropped to a square for you.</span>}
       </div>
+      {note && <div role="alert" style={{ color: "#b3261e" }}>{note}</div>}
+      <label>What is it?<input name="title" maxLength={120} placeholder="Rainbow zoanthid frag" required style={field} /></label>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10 }}>
-        <label>Show price<input name="price" type="number" step="0.01" min="0.01" value={price} onChange={(e) => setPrice(e.target.value)} style={field} required /></label>
-        <label>How many<input name="quantity" type="number" min="1" defaultValue="1" style={field} required /></label>
+        <label>Price<input name="price" type="number" step="0.01" min="0.01" required style={field} /></label>
+        <label>How many<input name="quantity" type="number" min="1" defaultValue="1" required style={field} /></label>
         <label>Limit per person<input name="perPerson" type="number" min="1" defaultValue="1" style={field} /></label>
       </div>
-      <div><button type="submit" disabled={busy || !picked} style={{ ...button(true), opacity: busy || !picked ? 0.5 : 1 }}>Add to the show</button></div>
+      <div><button type="submit" disabled={busy} style={{ ...button(true), opacity: busy ? 0.5 : 1 }}>{busy ? "Adding..." : "Add to the show"}</button></div>
     </Form>
   );
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseDrop, claimDecision, openDecision, roomView, invoiceLines, remaining, MAX_QUANTITY } from "../app/action-sale.js";
+import { parseDrop, parseNewItem, claimDecision, openDecision, roomView, invoiceLines, remaining, MAX_QUANTITY } from "../app/action-sale.js";
 
 const V = "gid://shopify/ProductVariant/123";
 const P = "gid://shopify/Product/456";
@@ -117,5 +117,21 @@ assert.deepEqual(invoiceLines({ claims: [], drops }), { lines: [], total: 0 });
 assert.deepEqual(invoiceLines({ claims: [{ dropId: "gone", quantity: 3 }], drops }).lines, [], "a deleted item is skipped");
 assert.equal(invoiceLines({ claims: [{ dropId: "a", quantity: 3 }], drops: [item("a", 1, "CLOSED", 3, { price: 19.99 })] }).total, 59.97, "cents add up exactly");
 assert.deepEqual(invoiceLines({ claims: undefined, drops: undefined }), { lines: [], total: 0 });
+
+// ---------- an item typed in by the host (no product to pick: the app creates it) ----------
+let n = parseNewItem({ title: "Rainbow zoa", price: "25", quantity: "5", perPerson: "2" });
+assert.deepEqual(n, { ok: true, item: { title: "Rainbow zoa", price: 25, quantity: 5, perPerson: 2 } });
+assert.equal(parseNewItem({ title: "  ", price: "25", quantity: "5" }).error, "What is the item called?", "a plain question, not 'choose a product'");
+assert.equal(parseNewItem({ price: "25", quantity: "5" }).ok, false);
+assert.equal(parseNewItem({ title: "x", price: "0", quantity: "5" }).ok, false);
+assert.equal(parseNewItem({ title: "x", price: "abc", quantity: "5" }).ok, false);
+assert.equal(parseNewItem({ title: "x", price: "10", quantity: "0" }).ok, false);
+assert.equal(parseNewItem({ title: "x", price: "10", quantity: String(MAX_QUANTITY + 1) }).ok, false);
+assert.deepEqual(parseNewItem({ title: "x", price: "9.999", quantity: "3" }).item, { title: "x", price: 10, quantity: 3, perPerson: 1 }, "cents rounded; one each unless said");
+assert.equal(parseNewItem({ title: "x", price: "10", quantity: "2", perPerson: "9" }).item.perPerson, 2, "never more per person than the quantity");
+assert.equal(parseNewItem(new URLSearchParams({ title: "From a form", price: "5", quantity: "1" })).ok, true, "works with a real form submission");
+assert.equal(parseNewItem({ title: "A\u0000B", price: "5", quantity: "1" }).item.title, "A B", "control characters removed");
+assert.equal(parseNewItem(null).ok, false);
+assert.ok(!("productId" in parseNewItem({ title: "x", price: "5", quantity: "1" }).item), "no product ids: the app makes the product");
 
 console.log("Live Drops rules: all checks passed");

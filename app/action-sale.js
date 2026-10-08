@@ -30,6 +30,15 @@ export function parseDrop(form) {
   return { ok: true, drop: { title, variantId, productId, imageUrl: /^https:\/\/[^\s]{4,2000}$/.test(image) ? image : null, price, quantity, perPerson } };
 }
 
+// An item the host types in (the app creates the product itself): just what a shopper needs to see.
+export function parseNewItem(form) {
+  const get = (key) => (typeof form?.get === "function" ? form.get(key) : form?.[key]);
+  const base = parseDrop({ title: get("title"), price: get("price"), quantity: get("quantity"), perPerson: get("perPerson"), variantId: "gid://shopify/ProductVariant/0", productId: "gid://shopify/Product/0" });
+  if (!base.ok) return { ok: false, error: base.error === "Choose a product first." ? "What is the item called?" : base.error };
+  const { title, price, quantity, perPerson } = base.drop;
+  return { ok: true, item: { title, price, quantity, perPerson } };
+}
+
 export const remaining = (drop) => Math.max(0, Number(drop.quantity) - Number(drop.claimed));
 
 // Can this person claim right now? \`already\` is how many they hold of this item. Called inside the locked transaction.

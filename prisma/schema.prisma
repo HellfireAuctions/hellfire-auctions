@@ -166,3 +166,66 @@ model LiveSale {
 
   @@index([shop, status])
 }
+
+// Live Drops: a host sells items at a set price; the first shoppers to claim get them.
+model ActionSale {
+  id        String       @id @default(cuid())
+  shop      String
+  title     String
+  videoUrl  String?
+  status    String       @default("DRAFT")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  drops     ActionDrop[]
+
+  @@index([shop, status])
+}
+
+model ActionDrop {
+  id        String        @id @default(cuid())
+  saleId    String
+  sale      ActionSale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  shop      String
+  position  Int
+  productId String
+  variantId String
+  title     String
+  imageUrl  String?
+  price     Float
+  quantity  Int
+  claimed   Int           @default(0)
+  perPerson Int           @default(1)
+  status    String        @default("QUEUED")
+  openedAt  DateTime?
+  closedAt  DateTime?
+  claims    ActionClaim[]
+
+  @@index([saleId, position])
+}
+
+model ActionClaim {
+  id           String     @id @default(cuid())
+  dropId       String
+  drop         ActionDrop @relation(fields: [dropId], references: [id], onDelete: Cascade)
+  saleId       String
+  shop         String
+  customerId   String
+  quantity     Int        @default(1)
+  draftOrderId String?
+  createdAt    DateTime   @default(now())
+
+  @@index([saleId, customerId])
+  @@index([dropId, customerId])
+}
+
+model ActionBuyer {
+  saleId        String
+  customerId    String
+  shop          String
+  draftOrderId  String?
+  invoiceUrl    String?
+  invoiceSentAt DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  @@id([saleId, customerId])
+}

@@ -3,8 +3,9 @@ import { invoiceBuyer } from "./action-sale.server.js";
 import { applyStrikeLimit } from "./settings.server.js";
 import { needsInvoice, followUpAction, checkDue, reminderText, FINAL_HOURS, FOLLOW_UP_DAYS } from "./drops-followup.js";
 
-// Live Drops: the background work. Every minute while a show is active (every ten minutes otherwise):
-//   1. a shopper whose last claim is 15 minutes old is emailed one combined invoice;
+// Live Drops: the background work. Every minute right after claims or a show ending (every ten minutes otherwise):
+//   1. once a show has ended, any shopper not yet invoiced is emailed their one combined invoice (the end-of-show button
+//      does the first sixty at once; this catches the rest and any that failed);
 //   2. every unpaid invoice is checked for payment, reminded at 24 and 72 hours, and at 96 hours the store owner is
 //      emailed and the shopper gets an unpaid strike (strikes count together with auction strikes, and block at the
 //      store's limit).
@@ -52,18 +53,20 @@ export async function recordDropStrike({ shop, saleId, customerId, db = prisma, 
   return applyStrikeLimit(shop, customerId);
 }
 
-// 1. Invoices that go out by themselves.
+// 1. Invoices for shows that have ended (never during a show).
 export async function autoInvoicePass({ db = prisma, now = Date.now(), getAdmin = defaultAdmin, deps = {} } = {}) {
   const { invoice = invoiceBuyer } = deps;
   const out = { invoiced: 0, failed: 0 };
   const groups = await db.actionClaim.groupBy({ by: ["saleId", "customerId", "shop"], where: { createdAt: { gte: new Date(now - FOLLOW_UP_DAYS * DAY) } }, _max: { createdAt: true } });
   if (!groups.length) return out;
-  const buyers = await db.actionBuyer.findMany({ where: { saleId: { in: [...new Set(groups.map((g) => g.saleId))] } } });
+  const saleIds = [...new Set(groups.map((g) => g.saleId))];
+  const endedSales = new Set((await db.actionSale.findMany({ where: { id: { in: saleIds }, status: "ENDED" }, select: { id: true } })).map((s) => s.id));
+  const buyers = await db.actionBuyer.findMany({ where: { saleId: { in: saleIds } } });
   const known = new Map(buyers.map((b) => [`${b.saleId}:${b.customerId}`, b]));
   const due = groups
     .filter((g) => {
       const b = known.get(`${g.saleId}:${g.customerId}`);
-      return needsInvoice({ lastClaimAt: g._max.createdAt, invoiceSentAt: b?.invoiceSentAt, invoiceAttemptAt: b?.invoiceAttemptAt }, now);
+      return needsInvoice({ saleEnded: endedSales.has(g.saleId), lastClaimAt: g._max.createdAt, invoiceSentAt: b?.invoiceSentAt, invoiceAttemptAt: b?.invoiceAttemptAt }, now);
     })
     .slice(0, 25);
   for (const g of due) {

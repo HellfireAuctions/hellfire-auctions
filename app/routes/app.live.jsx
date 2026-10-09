@@ -14,6 +14,7 @@ import { signStudioToken } from "../studio-token.server";
 import { goLiveEnabled } from "../go-live";
 import { streamConfigured } from "../cloudflare-stream.server";
 import { releaseStream } from "../stream-control.server";
+import { noteDropActivity } from "../drops-followup.server";
 
 // Live Drops: the host's screen. The host streams anywhere (TikTok, Instagram, Facebook, YouTube...), shares the
 // show's link, and sells items at a set price: press Go on an item and shoppers see a CLAIM button; the first people
@@ -138,6 +139,7 @@ export const action = async ({ request }) => {
     if (intent === "invoices" && sale.status !== "ENDED") return { error: "End the show first." };
     const result = await endShowAndInvoice({ shop, saleId, admin });
     await releaseStream({ shop, saleId }); // the show is over: shut the video channel down
+    noteDropActivity(); // wakes the catch-up for any invoice the button did not reach
     touch(saleId);
     if (!result.ok) return { error: result.message };
     return { success: `${intent === "end" ? "The show has ended. " : ""}${result.people} shopper${result.people === 1 ? "" : "s"} claimed items. ${result.sent} invoice${result.sent === 1 ? "" : "s"} sent${result.failed ? `, ${result.failed} failed (check your store's sender email)` : ""}${result.pending ? `, ${result.pending} still to send: press "Send invoices" again` : ""}.` };
@@ -294,6 +296,7 @@ function RoomCard({ sale, link, busy, studioUrl }) {
         <li>Go live wherever you stream, and share the room link above.</li>
         <li>Press Open for claiming on an item. Shoppers see a CLAIM button.</li>
         <li>When it sells out (or you press Close), open the next one.</li>
+        <li>When you are done, press End the show. Everyone who claimed is emailed one combined invoice.</li>
       </ol>
     </div>
   );

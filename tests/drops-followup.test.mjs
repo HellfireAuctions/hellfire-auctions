@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { needsInvoice, followUpAction, checkDue, reminderText, formatDue, AUTO_INVOICE_MINUTES, RETRY_MINUTES, CHECK_MINUTES } from "../app/drops-followup.js";
+import { needsInvoice, followUpAction, checkDue, reminderText, formatDue, RETRY_MINUTES, CHECK_MINUTES } from "../app/drops-followup.js";
 import { autoInvoicePass, followUpPass, noteDropActivity } from "../app/drops-followup.server.js";
 
 const T0 = Date.parse("2026-10-09T12:00:00Z");
@@ -7,15 +7,15 @@ const min = (n) => n * 60_000;
 const hr = (n) => n * 3_600_000;
 const at = (ms) => new Date(ms);
 
-// ---------- when is a shopper's invoice sent by itself? ----------
-assert.equal(AUTO_INVOICE_MINUTES, 15);
-assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(15)), invoiceSentAt: null }, T0), true, "15 minutes after the last claim");
-assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(14)), invoiceSentAt: null }, T0), false, "not before");
-assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(60)), invoiceSentAt: at(T0 - min(30)) }, T0), false, "already invoiced since the last claim");
-assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(20)), invoiceSentAt: at(T0 - min(50)) }, T0), true, "claimed again after the last invoice: a new invoice");
-assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(60)), invoiceSentAt: null, invoiceAttemptAt: at(T0 - min(RETRY_MINUTES - 1)) }, T0), false, "a failed attempt waits before retrying");
-assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(60)), invoiceSentAt: null, invoiceAttemptAt: at(T0 - min(RETRY_MINUTES)) }, T0), true, "then tries again");
-assert.equal(needsInvoice({ lastClaimAt: null }, T0), false, "no claims, no invoice");
+// ---------- when is a shopper's invoice sent? Only after the show has ended ----------
+assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(1)), invoiceSentAt: null }, T0), true, "the moment the show has ended, with no waiting");
+assert.equal(needsInvoice({ saleEnded: false, lastClaimAt: at(T0 - min(600)), invoiceSentAt: null }, T0), false, "never during the show, however long ago they claimed");
+assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(600)), invoiceSentAt: null }, T0), false, "no show information: never");
+assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(60)), invoiceSentAt: at(T0 - min(30)) }, T0), false, "already invoiced since the last claim");
+assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(20)), invoiceSentAt: at(T0 - min(50)) }, T0), true, "claimed after the last invoice: a new one");
+assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(60)), invoiceSentAt: null, invoiceAttemptAt: at(T0 - min(RETRY_MINUTES - 1)) }, T0), false, "a failed attempt waits before retrying");
+assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(60)), invoiceSentAt: null, invoiceAttemptAt: at(T0 - min(RETRY_MINUTES)) }, T0), true, "then tries again");
+assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: null }, T0), false, "no claims, no invoice");
 assert.equal(needsInvoice({}, T0), false);
 
 // ---------- the unpaid timeline (the same as auctions) ----------
@@ -53,7 +53,7 @@ assert.ok(formatDue(at(T0), "Not/AZone").length > 5, "a bad time zone never thro
 
 // ---------- a pretend database and Shopify ----------
 function world() {
-  const state = { claims: [], buyers: [], sales: [{ id: "s1", title: "Friday frags" }], invoiced: [], reminders: [], strikes: [], alerts: [] };
+  const state = { claims: [], buyers: [], sales: [{ id: "s1", title: "Friday frags", status: "ENDED" }], invoiced: [], reminders: [], strikes: [], alerts: [] };
   const matches = (row, where = {}) => Object.entries(where).every(([k, v]) => {
     if (v && typeof v === "object" && !(v instanceof Date)) {
       if ("not" in v) return v.not === null ? row[k] != null : row[k] !== v.not;
@@ -84,28 +84,46 @@ function world() {
       },
       updateMany: async ({ where, data }) => { state.buyers.filter((b) => matches(b, where)).forEach((b) => Object.assign(b, data)); },
     },
-    actionSale: { findFirst: async ({ where }) => state.sales.find((s) => s.id === where.id) || null },
+    actionSale: {
+      findFirst: async ({ where }) => state.sales.find((s) => s.id === where.id) || null,
+      findMany: async ({ where }) => state.sales.filter((s) => where.id.in.includes(s.id) && (!where.status || s.status === where.status)).map((s) => ({ id: s.id })),
+    },
   };
   return { state, db };
 }
 const claim = (saleId, customerId, createdAt) => ({ saleId, customerId, shop: "a.myshopify.com", createdAt: at(createdAt) });
 
-// ---------- automatic invoices ----------
+// ---------- invoices after the show ----------
 let { state, db } = world();
 state.claims.push(claim("s1", "c1", T0 - min(20)), claim("s1", "c1", T0 - min(40)), claim("s1", "c2", T0 - min(5)), claim("s1", "c3", T0 - min(90)));
-state.buyers.push({ saleId: "s1", customerId: "c3", shop: "a.myshopify.com", draftOrderId: "d3", invoiceSentAt: at(T0 - min(60)) }); // c3 already invoiced after their last claim
+state.buyers.push({ saleId: "s1", customerId: "c3", shop: "a.myshopify.com", draftOrderId: "d3", invoiceSentAt: at(T0 - min(60)) }); // already invoiced after their last claim
 let sentTo = [];
 const invoice = async ({ customerId }) => { sentTo.push(customerId); return { ok: true }; };
 let out = await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } });
-assert.deepEqual(sentTo, ["c1"], "only the shopper who has been quiet for 15 minutes and is not yet invoiced");
-assert.deepEqual(out, { invoiced: 1, failed: 0 });
+assert.deepEqual(sentTo.sort(), ["c1", "c2"], "once the show has ended: every shopper not yet invoiced, with no waiting");
+assert.deepEqual(out, { invoiced: 2, failed: 0 });
 assert.ok(state.buyers.find((b) => b.customerId === "c1").invoiceAttemptAt, "the attempt is noted");
+const failing = async () => { throw new Error("Shopify is down"); };
+// a show that is still live: nobody is invoiced, however long ago they claimed
+({ state, db } = world());
+state.sales[0].status = "LIVE";
+state.claims.push(claim("s1", "c1", T0 - min(600)), claim("s1", "c2", T0 - min(1000)));
 sentTo = [];
-out = await autoInvoicePass({ db, now: T0 + min(1), getAdmin: async () => ({}), deps: { invoice: async () => { throw new Error("Shopify is down"); } } });
-assert.deepEqual(out, { invoiced: 0, failed: 0 }, "a shopper just attempted is left alone for a few minutes");
-out = await autoInvoicePass({ db, now: T0 + min(12), getAdmin: async () => ({}), deps: { invoice: async () => { throw new Error("Shopify is down"); } } });
-assert.ok(out.failed >= 1 && out.invoiced === 0, "a failure is counted and never crashes the pass");
-out = await autoInvoicePass({ db, now: T0 + min(30), getAdmin: async () => ({}), deps: { invoice: async () => ({ ok: false, message: "nothing" }) } });
+out = await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } });
+assert.deepEqual([sentTo.length, out.invoiced], [0, 0], "during the show nothing is sent");
+state.sales[0].status = "ENDED";
+out = await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } });
+assert.equal(sentTo.length, 2, "and the moment it ends, they are");
+// failures are retried every few minutes, not every minute, and never crash the pass
+({ state, db } = world());
+state.claims.push(claim("s1", "c1", T0 - min(60)));
+out = await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice: failing } });
+assert.deepEqual(out, { invoiced: 0, failed: 1 });
+out = await autoInvoicePass({ db, now: T0 + min(1), getAdmin: async () => ({}), deps: { invoice: failing } });
+assert.deepEqual(out, { invoiced: 0, failed: 0 }, "just attempted: left alone for a few minutes");
+out = await autoInvoicePass({ db, now: T0 + min(11), getAdmin: async () => ({}), deps: { invoice: failing } });
+assert.equal(out.failed, 1);
+out = await autoInvoicePass({ db, now: T0 + min(22), getAdmin: async () => ({}), deps: { invoice: async () => ({ ok: false, message: "nothing" }) } });
 assert.equal(out.invoiced, 0);
 ({ state, db } = world());
 assert.deepEqual(await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } }), { invoiced: 0, failed: 0 }, "no claims: nothing to do");

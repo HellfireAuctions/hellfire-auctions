@@ -1,8 +1,7 @@
-// Live Drops: automatic invoices and unpaid follow-up. The same timeline as auctions (reminders at 24 and 72 hours, the store
-// owner and a strike at 96 hours), plus an invoice that goes out by itself 15 minutes after a shopper's last claim.
+// Live Drops: invoices and unpaid follow-up. Invoices go out when the show ends. After that, the same timeline as auctions:
+// reminders at 24 and 72 hours, then the store owner is emailed and the shopper gets a strike at 96 hours.
 // Pure rules only, so they can be tested without a database.
 
-export const AUTO_INVOICE_MINUTES = 15;
 export const RETRY_MINUTES = 10; // after a failed attempt, wait this long before trying again
 export const CHECK_MINUTES = 10; // how often an unpaid invoice is checked for payment
 export const REMINDER_1_HOURS = 24;
@@ -12,10 +11,11 @@ export const FOLLOW_UP_DAYS = 7; // after a week, we stop following up
 
 const ms = (d) => (d ? new Date(d).getTime() : 0);
 
-// Should this shopper's claims be invoiced now? Quiet for 15 minutes, and not yet invoiced since their last claim.
-export function needsInvoice({ lastClaimAt, invoiceSentAt, invoiceAttemptAt }, now = Date.now()) {
+// Should this shopper be invoiced now? Only once the show has ended, and not yet invoiced since their last claim.
+export function needsInvoice({ saleEnded, lastClaimAt, invoiceSentAt, invoiceAttemptAt }, now = Date.now()) {
+  if (!saleEnded) return false;
   const last = ms(lastClaimAt);
-  if (!last || now - last < AUTO_INVOICE_MINUTES * 60_000) return false;
+  if (!last) return false;
   if (invoiceSentAt && ms(invoiceSentAt) >= last) return false;
   if (invoiceAttemptAt && now - ms(invoiceAttemptAt) < RETRY_MINUTES * 60_000) return false;
   return true;

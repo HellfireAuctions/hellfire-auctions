@@ -37,7 +37,7 @@ function pageHtml(state, cfg) {
 (function () {
   var cfg = ${json};
   var root = document.getElementById("hf-show");
-  var state = null, message = "", busy = false, timer = null, spread = 400;
+  var state = null, message = "", busy = false, timer = null, spread = 400, confirming = null, confirmTimer = null;
   function money(n) { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cfg.currency }).format(Number(n)); } catch (e) { return "$" + Number(n).toFixed(2); } }
   function el(tag, css, text) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (text != null) e.textContent = text; return e; }
   var BORDER = "1px solid rgba(127,127,127,.35)";
@@ -61,12 +61,29 @@ function pageHtml(state, cfg) {
     return fetch(cfg.claimUrl, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() })
       .then(function (r) { return r.json().then(function (j) { return { status: r.status, json: j }; }); });
   }
-  function claim() {
+  function cancelConfirm() {
+    confirming = null;
+    if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
+    render();
+  }
+  // the first tap only asks; nothing is claimed until the shopper says yes (and it cancels itself after 8 seconds)
+  function askFirst() {
     if (!state || !state.open) return;
     if (!state.loggedIn) { location.href = cfg.login; return; }
+    confirming = state.open.id; message = "";
+    if (confirmTimer) clearTimeout(confirmTimer);
+    confirmTimer = setTimeout(cancelConfirm, 8000);
+    render();
+  }
+  function claim(dropId) {
+    var id = typeof dropId === "string" ? dropId : (state && state.open ? state.open.id : "");
+    if (!id) return;
+    if (!state || !state.loggedIn) { location.href = cfg.login; return; }
     if (busy) return;
+    confirming = null;
+    if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null; }
     busy = true; message = ""; render();
-    post("claim", { drop: state.open.id }).then(function (r) {
+    post("claim", { drop: id }).then(function (r) {
       busy = false;
       if (r.status === 401) { location.href = cfg.login; return; }
       var j = r.json || {};
@@ -112,7 +129,18 @@ function pageHtml(state, cfg) {
       card.appendChild(el("div", "font-size:34px;font-weight:800;margin:4px 0", money(o.price)));
       card.appendChild(el("div", "font-size:16px", o.remaining === 1 ? "Last one!" : o.remaining + " of " + o.quantity + " left" + (o.perPerson > 1 ? " (limit " + o.perPerson + " each)" : "")));
       var capped = o.mine >= o.perPerson;
-      card.appendChild(bigButton(!s.loggedIn ? "Log in to claim" : capped ? "You have " + o.mine : "CLAIM " + money(o.price), claim, busy || capped));
+      if (confirming === o.id && s.loggedIn && !capped) {
+        var ask = el("div", "margin:14px 0 6px;padding:14px;border:2px solid #d72c0d;border-radius:14px");
+        ask.appendChild(el("div", "font-size:18px;font-weight:800;margin-bottom:10px", "Claim " + o.title + " for " + money(o.price) + "?"));
+        var yes = el("button", "display:block;width:100%;min-height:60px;margin-bottom:8px;border:0;border-radius:12px;background:#d72c0d;color:#fff;font:inherit;font-size:20px;font-weight:800;cursor:pointer", "Yes, claim it");
+        yes.type = "button"; yes.disabled = busy;
+        yes.addEventListener("click", function () { claim(o.id); }); // always the item that was shown, even if the host has moved on
+        var no = el("button", "display:block;width:100%;min-height:48px;border:1px solid rgba(127,127,127,.6);border-radius:12px;background:transparent;color:inherit;font:inherit;font-size:16px;font-weight:700;cursor:pointer", "Cancel");
+        no.type = "button"; no.addEventListener("click", cancelConfirm);
+        ask.appendChild(yes); ask.appendChild(no); card.appendChild(ask);
+      } else {
+        card.appendChild(bigButton(!s.loggedIn ? "Log in to claim" : capped ? "You have " + o.mine : "CLAIM " + money(o.price), askFirst, busy || capped));
+      }
       if (o.mine) card.appendChild(el("div", "font-weight:600", "You have " + o.mine + " of these."));
     } else {
       card.appendChild(el("p", "font-size:18px;margin:0", { between: "The next item is coming up. Stay on this page: it appears here the moment it opens.", before: "The show hasn't started yet. Stay on this page: the first item appears here the moment it opens.", ended: "Thank you for joining! Anything you claimed is in your cart below." }[s.phase]));
@@ -203,7 +231,7 @@ function pageHtml(state, cfg) {
     if (live.url !== s.playUrl || dead) connectLive(s.playUrl);
   }
   function load() {
-    fetch(cfg.url, { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) { if (j && j.version) { state = j; render(); syncLive(); } }).catch(function () {});
+    fetch(cfg.url, { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) { if (j && j.version) { state = j; if (confirming && !(j.open && j.open.id === confirming)) confirming = null; render(); syncLive(); } }).catch(function () {});
   }
   function scheduleLoad() {
     if (timer) return;

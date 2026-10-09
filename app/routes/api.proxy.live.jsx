@@ -147,13 +147,26 @@ function pageHtml(state, cfg) {
     if (live.pc) { try { live.pc.close(); } catch (e) { /* already closed */ } }
     live.url = url;
     if (!live.video) {
-      live.wrap = el("div", "position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;margin-bottom:16px");
+      live.wrap = el("div", "position:relative;width:100%;max-width:640px;margin:0 auto 16px;aspect-ratio:1/1;min-height:min(600px,100vw);background:#000;border-radius:12px;overflow:hidden");
       var v = document.createElement("video");
       v.autoplay = true; v.muted = true; v.playsInline = true; v.controls = true;
       v.setAttribute("playsinline", "");
       v.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000";
       live.wrap.appendChild(v);
       live.video = v;
+      var BTN = "position:absolute;z-index:2;padding:8px 12px;border:0;border-radius:8px;background:rgba(0,0,0,.7);color:#fff;font:inherit;font-weight:700;cursor:pointer";
+      var full = el("button", BTN + ";top:10px;right:10px", "Full screen");
+      full.type = "button";
+      full.addEventListener("click", function () {
+        if (document.fullscreenElement) { document.exitFullscreen(); }
+        else if (live.wrap.requestFullscreen) { live.wrap.requestFullscreen(); }
+        else if (v.webkitEnterFullscreen) { v.webkitEnterFullscreen(); }
+      });
+      var sound = el("button", BTN + ";top:10px;left:10px", "Tap for sound");
+      sound.type = "button";
+      sound.addEventListener("click", function () { v.muted = false; sound.style.display = "none"; });
+      live.wrap.appendChild(full);
+      live.wrap.appendChild(sound);
     }
     liveBox.textContent = "";
     liveBox.appendChild(live.wrap);
@@ -161,8 +174,10 @@ function pageHtml(state, cfg) {
     live.pc = pc;
     pc.addTransceiver("video", { direction: "recvonly" });
     pc.addTransceiver("audio", { direction: "recvonly" });
+    var bag = new MediaStream();
     pc.ontrack = function (e) {
-      if (live.video.srcObject !== e.streams[0]) live.video.srcObject = e.streams[0];
+      bag.addTrack(e.track);
+      if (live.video.srcObject !== bag) live.video.srcObject = bag;
       var p = live.video.play(); if (p && p.catch) p.catch(function () {});
     };
     pc.onconnectionstatechange = function () {

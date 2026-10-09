@@ -20,6 +20,26 @@ export async function claimDrop({ shop, dropId, customerId, want = 1, db = prism
   });
 }
 
+// A show with no activity for an hour ends by itself, so every claim and every host action marks the show as active.
+export async function bumpActivity(saleId, db = prisma) {
+  try {
+    await db.actionSale.updateMany({ where: { id: saleId }, data: { lastActivityAt: new Date() } });
+  } catch {
+    /* best effort: a missed mark is harmless */
+  }
+}
+
+// Ends a show. Invoices are NOT sent here: they go out 30 minutes later (or when the host presses Send invoices now).
+export async function endShow({ shop, saleId, db = prisma }) {
+  const sale = await db.actionSale.findFirst({ where: { id: saleId, shop } });
+  if (!sale) return { ok: false, message: "That show wasn't found." };
+  if (sale.status !== "ENDED") {
+    await db.actionDrop.updateMany({ where: { saleId, status: "OPEN" }, data: { status: "CLOSED", closedAt: new Date() } });
+    await db.actionSale.update({ where: { id: saleId }, data: { status: "ENDED", endedAt: new Date() } });
+  }
+  return { ok: true };
+}
+
 // ---------- the host's controls ----------
 export async function openDrop({ shop, saleId, dropId, db = prisma }) {
   return db.$transaction(async (tx) => {
@@ -30,6 +50,7 @@ export async function openDrop({ shop, saleId, dropId, db = prisma }) {
     if (!decision.ok) return decision;
     await tx.actionDrop.updateMany({ where: { saleId, status: "OPEN" }, data: { status: "CLOSED", closedAt: new Date() } }); // one item at a time
     await tx.actionDrop.update({ where: { id: dropId }, data: { status: "OPEN", openedAt: new Date(), closedAt: null } });
+    await tx.actionSale.update({ where: { id: saleId }, data: { lastActivityAt: new Date() } });
     return { ok: true };
   });
 }
@@ -38,6 +59,7 @@ export async function closeOpenDrop({ shop, saleId, db = prisma }) {
   const sale = await db.actionSale.findFirst({ where: { id: saleId, shop }, select: { id: true } });
   if (!sale) return { ok: false, message: "That show wasn't found." };
   const result = await db.actionDrop.updateMany({ where: { saleId, status: "OPEN" }, data: { status: "CLOSED", closedAt: new Date() } });
+  if (result.count) await bumpActivity(saleId, db);
   return result.count ? { ok: true } : { ok: false, message: "No item is open." };
 }
 
@@ -48,6 +70,7 @@ export async function addDropToSale({ shop, saleId, drop, db = prisma }) {
   if (sale.drops.length >= MAX_DROPS) return { ok: false, message: `A show can have at most ${MAX_DROPS} items.` };
   const position = sale.drops.reduce((max, d) => Math.max(max, d.position), 0) + 1;
   await db.actionDrop.create({ data: { saleId, shop, position, ...drop } });
+  await bumpActivity(saleId, db);
   return { ok: true };
 }
 

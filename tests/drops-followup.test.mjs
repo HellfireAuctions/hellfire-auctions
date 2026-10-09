@@ -1,22 +1,38 @@
 import assert from "node:assert/strict";
-import { needsInvoice, followUpAction, checkDue, reminderText, formatDue, RETRY_MINUTES, CHECK_MINUTES } from "../app/drops-followup.js";
-import { autoInvoicePass, followUpPass, noteDropActivity } from "../app/drops-followup.server.js";
+import { needsInvoice, isIdle, followUpAction, checkDue, reminderText, formatDue, INVOICE_DELAY_MINUTES, IDLE_END_MINUTES, RETRY_MINUTES, CHECK_MINUTES } from "../app/drops-followup.js";
+import { autoInvoicePass, followUpPass, endIdleShows, noteDropActivity } from "../app/drops-followup.server.js";
 
 const T0 = Date.parse("2026-10-09T12:00:00Z");
 const min = (n) => n * 60_000;
 const hr = (n) => n * 3_600_000;
 const at = (ms) => new Date(ms);
 
-// ---------- when is a shopper's invoice sent? Only after the show has ended ----------
-assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(1)), invoiceSentAt: null }, T0), true, "the moment the show has ended, with no waiting");
-assert.equal(needsInvoice({ saleEnded: false, lastClaimAt: at(T0 - min(600)), invoiceSentAt: null }, T0), false, "never during the show, however long ago they claimed");
-assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(600)), invoiceSentAt: null }, T0), false, "no show information: never");
-assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(60)), invoiceSentAt: at(T0 - min(30)) }, T0), false, "already invoiced since the last claim");
-assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(20)), invoiceSentAt: at(T0 - min(50)) }, T0), true, "claimed after the last invoice: a new one");
-assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(60)), invoiceSentAt: null, invoiceAttemptAt: at(T0 - min(RETRY_MINUTES - 1)) }, T0), false, "a failed attempt waits before retrying");
-assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: at(T0 - min(60)), invoiceSentAt: null, invoiceAttemptAt: at(T0 - min(RETRY_MINUTES)) }, T0), true, "then tries again");
-assert.equal(needsInvoice({ saleEnded: true, lastClaimAt: null }, T0), false, "no claims, no invoice");
+// ---------- when is a shopper's invoice sent? 30 minutes after the show has ended ----------
+assert.equal(INVOICE_DELAY_MINUTES, 30);
+const endedShow = (minAgo, over = {}) => ({ endedAt: at(T0 - min(minAgo)), lastClaimAt: at(T0 - min(minAgo + 20)), invoiceSentAt: null, ...over });
+assert.equal(needsInvoice(endedShow(30), T0), true, "30 minutes after the show ended");
+assert.equal(needsInvoice(endedShow(29), T0), false, "not before");
+assert.equal(needsInvoice(endedShow(1), T0), false);
+assert.equal(needsInvoice({ lastClaimAt: at(T0 - min(600)), invoiceSentAt: null }, T0), false, "a show that has not ended: never");
+assert.equal(needsInvoice({ endedAt: null, lastClaimAt: at(T0 - min(600)) }, T0), false);
+assert.equal(needsInvoice(endedShow(60, { invoiceSentAt: at(T0 - min(30)) }), T0), false, "already invoiced since the last claim");
+assert.equal(needsInvoice(endedShow(60, { lastClaimAt: at(T0 - min(70)), invoiceSentAt: at(T0 - min(100)) }), T0), true, "claimed after the last invoice: a new one");
+assert.equal(needsInvoice(endedShow(60, { invoiceAttemptAt: at(T0 - min(RETRY_MINUTES - 1)) }), T0), false, "a failed attempt waits before retrying");
+assert.equal(needsInvoice(endedShow(60, { invoiceAttemptAt: at(T0 - min(RETRY_MINUTES)) }), T0), true, "then tries again");
+assert.equal(needsInvoice({ endedAt: at(T0 - min(60)), lastClaimAt: null }, T0), false, "no claims, no invoice");
 assert.equal(needsInvoice({}, T0), false);
+
+// ---------- a show with no activity for an hour ends by itself ----------
+assert.equal(IDLE_END_MINUTES, 60);
+const liveShow = (over = {}) => ({ status: "LIVE", lastActivityAt: at(T0 - min(30)), updatedAt: at(T0 - min(500)), ...over });
+assert.equal(isIdle(liveShow({ lastActivityAt: at(T0 - min(60)) }), T0), true, "an hour of silence");
+assert.equal(isIdle(liveShow({ lastActivityAt: at(T0 - min(59)) }), T0), false);
+assert.equal(isIdle(liveShow(), T0), false);
+assert.equal(isIdle(liveShow({ lastActivityAt: null, updatedAt: at(T0 - min(61)) }), T0), true, "no activity ever recorded: counted from the last change");
+assert.equal(isIdle(liveShow({ lastActivityAt: null, updatedAt: at(T0 - min(10)) }), T0), false);
+assert.equal(isIdle(liveShow({ status: "DRAFT", lastActivityAt: at(T0 - min(900)) }), T0), false, "a show that has not started never ends");
+assert.equal(isIdle(liveShow({ status: "ENDED", lastActivityAt: at(T0 - min(900)) }), T0), false);
+assert.equal(isIdle(null, T0), false);
 
 // ---------- the unpaid timeline (the same as auctions) ----------
 const buyer = (hoursAgo, over = {}) => ({ invoiceSentAt: at(T0 - hr(hoursAgo)), ...over });
@@ -53,7 +69,7 @@ assert.ok(formatDue(at(T0), "Not/AZone").length > 5, "a bad time zone never thro
 
 // ---------- a pretend database and Shopify ----------
 function world() {
-  const state = { claims: [], buyers: [], sales: [{ id: "s1", title: "Friday frags", status: "ENDED" }], invoiced: [], reminders: [], strikes: [], alerts: [] };
+  const state = { claims: [], buyers: [], sales: [{ id: "s1", shop: "a.myshopify.com", title: "Friday frags", status: "ENDED", endedAt: at(T0 - min(31)), updatedAt: at(T0 - min(31)) }], invoiced: [], reminders: [], strikes: [], alerts: [] };
   const matches = (row, where = {}) => Object.entries(where).every(([k, v]) => {
     if (v && typeof v === "object" && !(v instanceof Date)) {
       if ("not" in v) return v.not === null ? row[k] != null : row[k] !== v.not;
@@ -86,7 +102,7 @@ function world() {
     },
     actionSale: {
       findFirst: async ({ where }) => state.sales.find((s) => s.id === where.id) || null,
-      findMany: async ({ where }) => state.sales.filter((s) => where.id.in.includes(s.id) && (!where.status || s.status === where.status)).map((s) => ({ id: s.id })),
+      findMany: async ({ where }) => state.sales.filter((s) => (!where.id || where.id.in.includes(s.id)) && (!where.status || s.status === where.status)).map((s) => ({ ...s })),
     },
   };
   return { state, db };
@@ -100,7 +116,7 @@ state.buyers.push({ saleId: "s1", customerId: "c3", shop: "a.myshopify.com", dra
 let sentTo = [];
 const invoice = async ({ customerId }) => { sentTo.push(customerId); return { ok: true }; };
 let out = await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } });
-assert.deepEqual(sentTo.sort(), ["c1", "c2"], "once the show has ended: every shopper not yet invoiced, with no waiting");
+assert.deepEqual(sentTo.sort(), ["c1", "c2"], "31 minutes after the show ended: every shopper not yet invoiced");
 assert.deepEqual(out, { invoiced: 2, failed: 0 });
 assert.ok(state.buyers.find((b) => b.customerId === "c1").invoiceAttemptAt, "the attempt is noted");
 const failing = async () => { throw new Error("Shopify is down"); };
@@ -112,6 +128,11 @@ sentTo = [];
 out = await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } });
 assert.deepEqual([sentTo.length, out.invoiced], [0, 0], "during the show nothing is sent");
 state.sales[0].status = "ENDED";
+state.sales[0].endedAt = at(T0 - min(10));
+sentTo = [];
+out = await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } });
+assert.equal(sentTo.length, 0, "a show that ended 10 minutes ago: not yet");
+state.sales[0].endedAt = at(T0 - min(30));
 out = await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } });
 assert.equal(sentTo.length, 2, "and the moment it ends, they are");
 // failures are retried every few minutes, not every minute, and never crash the pass
@@ -137,6 +158,29 @@ for (let i = 0; i < 40; i += 1) state.claims.push(claim("s1", "c" + i, T0 - min(
 sentTo = [];
 await autoInvoicePass({ db, now: T0, getAdmin: async () => ({}), deps: { invoice } });
 assert.equal(sentTo.length, 25, "a busy pass handles 25 shoppers; the rest follow a minute later");
+
+// ---------- quiet shows end by themselves ----------
+({ state, db } = world());
+const S = "a.myshopify.com";
+state.sales = [
+  { id: "idle", shop: S, status: "LIVE", lastActivityAt: at(T0 - min(61)), updatedAt: at(T0 - min(61)) },
+  { id: "busy", shop: S, status: "LIVE", lastActivityAt: at(T0 - min(59)), updatedAt: at(T0 - min(59)) },
+  { id: "never", shop: S, status: "LIVE", lastActivityAt: null, updatedAt: at(T0 - min(90)) },
+  { id: "draft", shop: S, status: "DRAFT", lastActivityAt: at(T0 - min(900)), updatedAt: at(T0 - min(900)) },
+  { id: "done", shop: S, status: "ENDED", lastActivityAt: at(T0 - min(900)), updatedAt: at(T0 - min(900)) },
+];
+const endedIds = [];
+const releasedIds = [];
+let quiet = await endIdleShows({ db, now: T0, end: async ({ saleId }) => { endedIds.push(saleId); return { ok: true }; }, release: async ({ saleId }) => { releasedIds.push(saleId); } });
+assert.equal(quiet, 2);
+assert.deepEqual(endedIds.sort(), ["idle", "never"], "only live shows that have been quiet for an hour");
+assert.deepEqual(releasedIds.sort(), ["idle", "never"], "and their video channels are shut down too");
+endedIds.length = 0;
+quiet = await endIdleShows({ db, now: T0, end: async ({ saleId }) => { if (saleId === "idle") throw new Error("boom"); endedIds.push(saleId); return { ok: true }; }, release: async () => {} });
+assert.deepEqual([quiet, endedIds], [1, ["never"]], "one failure does not stop the others");
+({ state, db } = world());
+state.sales = [];
+assert.equal(await endIdleShows({ db, now: T0, end: async () => ({ ok: true }), release: async () => {} }), 0, "no live shows: nothing to do");
 
 // ---------- payment checks, reminders and strikes ----------
 const buyerRow = (hoursAgo, over = {}) => ({ saleId: "s1", customerId: "c1", shop: "a.myshopify.com", draftOrderId: "gid://shopify/DraftOrder/1", invoiceSentAt: at(T0 - hr(hoursAgo)), ...over });

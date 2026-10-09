@@ -1,11 +1,12 @@
 import prisma from "./db.server.js";
-import { invoiceBuyer } from "./action-sale.server.js";
+import { invoiceBuyer, endShow } from "./action-sale.server.js";
+import { releaseStream } from "./stream-control.server.js";
 import { applyStrikeLimit } from "./settings.server.js";
-import { needsInvoice, followUpAction, checkDue, reminderText, FINAL_HOURS, FOLLOW_UP_DAYS } from "./drops-followup.js";
+import { needsInvoice, followUpAction, checkDue, reminderText, isIdle, FINAL_HOURS, FOLLOW_UP_DAYS } from "./drops-followup.js";
 
 // Live Drops: the background work. Every minute right after claims or a show ending (every ten minutes otherwise):
-//   1. once a show has ended, any shopper not yet invoiced is emailed their one combined invoice (the end-of-show button
-//      does the first sixty at once; this catches the rest and any that failed);
+//   0. a live show with no activity for an hour ends by itself;
+//   1. 30 minutes after a show has ended, every shopper not yet invoiced is emailed their one combined invoice;
 //   2. every unpaid invoice is checked for payment, reminded at 24 and 72 hours, and at 96 hours the store owner is
 //      emailed and the shopper gets an unpaid strike (strikes count together with auction strikes, and block at the
 //      store's limit).
@@ -53,20 +54,38 @@ export async function recordDropStrike({ shop, saleId, customerId, db = prisma, 
   return applyStrikeLimit(shop, customerId);
 }
 
-// 1. Invoices for shows that have ended (never during a show).
+// 0. Quiet shows end by themselves (and their video channel is shut down).
+export async function endIdleShows({ db = prisma, now = Date.now(), end = endShow, release = releaseStream } = {}) {
+  const live = await db.actionSale.findMany({ where: { status: "LIVE" }, take: 100 });
+  let count = 0;
+  for (const sale of live) {
+    if (!isIdle(sale, now)) continue;
+    try {
+      await end({ shop: sale.shop, saleId: sale.id, db });
+      await release({ shop: sale.shop, saleId: sale.id, db });
+      count += 1;
+      console.log("[HELLFIRE LIVE DROPS]", JSON.stringify({ endedBecauseQuiet: sale.id }));
+    } catch (error) {
+      console.error("[HELLFIRE LIVE DROPS] could not end a quiet show:", sale.id, error?.message || error);
+    }
+  }
+  return count;
+}
+
+// 1. Invoices, 30 minutes after a show has ended (never during a show).
 export async function autoInvoicePass({ db = prisma, now = Date.now(), getAdmin = defaultAdmin, deps = {} } = {}) {
   const { invoice = invoiceBuyer } = deps;
   const out = { invoiced: 0, failed: 0 };
   const groups = await db.actionClaim.groupBy({ by: ["saleId", "customerId", "shop"], where: { createdAt: { gte: new Date(now - FOLLOW_UP_DAYS * DAY) } }, _max: { createdAt: true } });
   if (!groups.length) return out;
   const saleIds = [...new Set(groups.map((g) => g.saleId))];
-  const endedSales = new Set((await db.actionSale.findMany({ where: { id: { in: saleIds }, status: "ENDED" }, select: { id: true } })).map((s) => s.id));
+  const endedAtBy = new Map((await db.actionSale.findMany({ where: { id: { in: saleIds }, status: "ENDED" }, select: { id: true, endedAt: true, updatedAt: true } })).map((s) => [s.id, s.endedAt || s.updatedAt]));
   const buyers = await db.actionBuyer.findMany({ where: { saleId: { in: saleIds } } });
   const known = new Map(buyers.map((b) => [`${b.saleId}:${b.customerId}`, b]));
   const due = groups
     .filter((g) => {
       const b = known.get(`${g.saleId}:${g.customerId}`);
-      return needsInvoice({ saleEnded: endedSales.has(g.saleId), lastClaimAt: g._max.createdAt, invoiceSentAt: b?.invoiceSentAt, invoiceAttemptAt: b?.invoiceAttemptAt }, now);
+      return needsInvoice({ endedAt: endedAtBy.get(g.saleId), lastClaimAt: g._max.createdAt, invoiceSentAt: b?.invoiceSentAt, invoiceAttemptAt: b?.invoiceAttemptAt }, now);
     })
     .slice(0, 25);
   for (const g of due) {
@@ -149,6 +168,7 @@ export async function dropsTick({ now = Date.now(), force = false } = {}) {
   running = true;
   lastRun = now;
   try {
+    if (await endIdleShows({ now })) noteDropActivity(now); // the 30-minute invoice countdown needs the faster timer
     await autoInvoicePass({ now });
     await followUpPass({ now });
   } catch (error) {

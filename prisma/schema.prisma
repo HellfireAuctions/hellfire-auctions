@@ -180,6 +180,8 @@ model ActionSale {
   streamPlayUrl    String?
   streamStartedAt  DateTime?
   streamBeatAt     DateTime?
+  lastActivityAt   DateTime?
+  endedAt          DateTime?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
   drops     ActionDrop[]

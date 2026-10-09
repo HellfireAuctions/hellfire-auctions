@@ -20,20 +20,20 @@ export async function startStream({ shop, saleId, db = prisma, create = createLi
   const now = new Date();
   await db.actionSale.update({
     where: { id: saleId },
-    data: { streamUid, streamPublishUrl, streamPlayUrl, streaming: true, streamStartedAt: sale.streaming && sale.streamStartedAt ? sale.streamStartedAt : now, streamBeatAt: now },
+    data: { streamUid, streamPublishUrl, streamPlayUrl, streaming: true, streamStartedAt: sale.streaming && sale.streamStartedAt ? sale.streamStartedAt : now, streamBeatAt: now, lastActivityAt: now },
   });
   return { ok: true, publishUrl: streamPublishUrl };
 }
 
 // The host pressed Stop. The channel is kept so they can start again; viewers see "back soon".
 export async function stopStream({ shop, saleId, db = prisma }) {
-  await db.actionSale.updateMany({ where: { id: saleId, shop }, data: { streaming: false, streamStartedAt: null, streamBeatAt: null } });
+  await db.actionSale.updateMany({ where: { id: saleId, shop }, data: { streaming: false, streamStartedAt: null, streamBeatAt: null, lastActivityAt: new Date() } });
   return { ok: true };
 }
 
 // The Studio tab checks in every few seconds; silence for 30 seconds means the host has left.
 export async function beatStream({ shop, saleId, db = prisma }) {
-  const result = await db.actionSale.updateMany({ where: { id: saleId, shop, streaming: true }, data: { streamBeatAt: new Date() } });
+  const result = await db.actionSale.updateMany({ where: { id: saleId, shop, streaming: true }, data: { streamBeatAt: new Date(), lastActivityAt: new Date() } });
   return { ok: result.count > 0 };
 }
 

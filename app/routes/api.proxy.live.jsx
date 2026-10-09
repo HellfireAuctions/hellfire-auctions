@@ -143,7 +143,7 @@ function pageHtml(state, cfg) {
       }
       if (o.mine) card.appendChild(el("div", "font-weight:600", "You have " + o.mine + " of these."));
     } else {
-      card.appendChild(el("p", "font-size:18px;margin:0", { between: "The next item is coming up. Stay on this page: it appears here the moment it opens.", before: "The show hasn't started yet. Stay on this page: the first item appears here the moment it opens.", ended: "Thank you for joining! The show has ended. Anything you claimed is combined into one invoice, emailed to you." }[s.phase]));
+      card.appendChild(el("p", "font-size:18px;margin:0", { between: "The next item is coming up. Stay on this page: it appears here the moment it opens.", before: "The show hasn't started yet. Stay on this page: the first item appears here the moment it opens.", ended: "Thank you for joining! The show has ended. Anything you claimed is combined into one invoice, emailed to you within about 30 minutes (or pay now with Checkout)." }[s.phase]));
     }
     root.appendChild(card);
     var live = el("div", "min-height:24px;font-weight:600;margin-bottom:10px", message); live.setAttribute("aria-live", "polite"); root.appendChild(live);
@@ -152,7 +152,7 @@ function pageHtml(state, cfg) {
       cart.appendChild(el("div", "font-weight:800;margin-bottom:6px", "Your claims"));
       s.mine.forEach(function (m) { cart.appendChild(el("div", "", m.quantity + " x " + m.title + " - " + money(m.price * m.quantity))); });
       cart.appendChild(el("div", "font-weight:800;margin-top:6px", "Total " + money(s.mineTotal)));
-      cart.appendChild(el("div", "font-size:13px;opacity:.8;margin-top:4px", s.phase === "ended" ? "Your combined invoice has been emailed to you. You can also pay now." : "Your combined invoice is emailed when the show ends, or you can pay now."));
+      cart.appendChild(el("div", "font-size:13px;opacity:.8;margin-top:4px", s.phase === "ended" ? "Your combined invoice is emailed within about 30 minutes of the show ending. You can also pay now." : "Your combined invoice is emailed about 30 minutes after the show ends, or you can pay now."));
       var pay = el("button", "display:block;width:100%;min-height:52px;margin-top:10px;border:0;border-radius:12px;background:#008060;color:#fff;font:inherit;font-size:18px;font-weight:800;cursor:pointer", "Checkout");
       pay.type = "button"; pay.disabled = busy; pay.addEventListener("click", checkout); cart.appendChild(pay);
       root.appendChild(cart);

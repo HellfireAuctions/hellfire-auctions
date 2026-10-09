@@ -4,7 +4,7 @@ import prisma from "../db.server";
 import { publish } from "../live-hub.server";
 import { checkBidder } from "../bidder-rules.server";
 import { getShopSettings } from "../settings.server";
-import { claimDrop, checkoutFor } from "../action-sale.server";
+import { claimDrop, checkoutFor, bumpActivity } from "../action-sale.server";
 import { noteDropActivity } from "../drops-followup.server";
 import { unauthenticated } from "../shopify.server";
 
@@ -43,7 +43,8 @@ export const action = async ({ request }) => {
     if (result.ok) {
       memoDelete("action:" + result.saleId); // everyone sees the new count on their next refresh
       publish("sale-" + result.saleId, "update");
-      noteDropActivity(); // keeps the automatic-invoice timer awake while claims are fresh
+      noteDropActivity(); // keeps the automatic timer awake while claims are fresh
+      void bumpActivity(result.saleId); // a claim is activity: the show will not end as quiet
       console.log("[HELLFIRE LIVE DROPS]", JSON.stringify({ claim: result.title, left: result.remaining }));
     }
     return reply(result, result.ok ? 200 : result.code === "NOT_FOUND" ? 404 : 409);

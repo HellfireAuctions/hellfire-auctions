@@ -8,7 +8,7 @@ import { publish } from "../live-hub.server";
 import { embedFor } from "../video-embed";
 import { parseNewItem, remaining } from "../action-sale";
 import { photoProblem, squareCrop, outputSide } from "../photo-ratio";
-import { addDropToSale, openDrop, closeOpenDrop, endShowAndInvoice } from "../action-sale.server";
+import { addDropToSale, openDrop, closeOpenDrop, endShowAndInvoice, endShow } from "../action-sale.server";
 import { createDropProduct, deleteDropProduct } from "../drop-product.server";
 import { signStudioToken } from "../studio-token.server";
 import { goLiveEnabled } from "../go-live";
@@ -33,7 +33,7 @@ export const loader = async ({ request }) => {
   const buyerStats = { invoiced: buyerRows.filter((b) => b.invoiceSentAt).length, paid: buyerRows.filter((b) => b.paidAt).length, unpaid: buyerRows.filter((b) => b.struckAt).length };
   const studioReady = Boolean(sale) && sale.status !== "ENDED" && goLiveEnabled(shop, process.env.GOLIVE_SHOPS) && streamConfigured();
   const studioUrl = studioReady ? `${process.env.SHOPIFY_APP_URL}/live-studio?t=${encodeURIComponent(signStudioToken({ shop, saleId: sale.id, secret: process.env.SHOPIFY_API_SECRET }))}` : null;
-  return { allowed: plan.key === "INFERNO", shop, sales, buyers, buyerStats, studioUrl, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status })) } };
+  return { allowed: plan.key === "INFERNO", shop, sales, buyers, buyerStats, studioUrl, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, endedAt: sale.endedAt, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status })) } };
 };
 
 export const action = async ({ request }) => {
@@ -119,7 +119,7 @@ export const action = async ({ request }) => {
   if (intent === "start") {
     if (sale.status !== "DRAFT") return { error: "This show has already started." };
     if (!(await prisma.actionDrop.count({ where: { saleId } }))) return { error: "Add at least one item first." };
-    await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE" } });
+    await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } });
     touch(saleId);
     return { success: "The show is live. Press Go on an item when you're ready to sell it." };
   }
@@ -135,14 +135,22 @@ export const action = async ({ request }) => {
     touch(saleId);
     return { success: "Closed." };
   }
-  if (intent === "end" || intent === "invoices") {
-    if (intent === "invoices" && sale.status !== "ENDED") return { error: "End the show first." };
-    const result = await endShowAndInvoice({ shop, saleId, admin });
+  if (intent === "end") {
+    const ended = await endShow({ shop, saleId });
     await releaseStream({ shop, saleId }); // the show is over: shut the video channel down
-    noteDropActivity(); // wakes the catch-up for any invoice the button did not reach
+    noteDropActivity(); // keeps the invoice timer awake for the next 40 minutes
+    touch(saleId);
+    if (!ended.ok) return { error: ended.message };
+    return { success: "The show has ended. Combined invoices are emailed to shoppers automatically in 30 minutes. Press Send invoices now to send them immediately." };
+  }
+  if (intent === "invoices") {
+    if (sale.status !== "ENDED") return { error: "End the show first." };
+    const result = await endShowAndInvoice({ shop, saleId, admin });
     touch(saleId);
     if (!result.ok) return { error: result.message };
-    return { success: `${intent === "end" ? "The show has ended. " : ""}${result.people} shopper${result.people === 1 ? "" : "s"} claimed items. ${result.sent} invoice${result.sent === 1 ? "" : "s"} sent${result.failed ? `, ${result.failed} failed (check your store's sender email)` : ""}${result.pending ? `, ${result.pending} still to send: press "Send invoices" again` : ""}.` };
+    return {
+      success: result.people + " shopper" + (result.people === 1 ? "" : "s") + " claimed items. " + result.sent + " invoice" + (result.sent === 1 ? "" : "s") + " sent" + (result.failed ? ", " + result.failed + " failed (check your store's sender email)" : "") + (result.pending ? ", " + result.pending + " more follow within minutes" : "") + ".",
+    };
   }
   if (intent === "delete-sale") {
     if (sale.status === "LIVE") return { error: "End the show before deleting it." };
@@ -296,7 +304,7 @@ function RoomCard({ sale, link, busy, studioUrl }) {
         <li>Go live wherever you stream, and share the room link above.</li>
         <li>Press Open for claiming on an item. Shoppers see a CLAIM button.</li>
         <li>When it sells out (or you press Close), open the next one.</li>
-        <li>When you are done, press End the show. Everyone who claimed is emailed one combined invoice.</li>
+        <li>When you are done, press End the show (it also ends by itself after an hour with no activity). Everyone who claimed is emailed one combined invoice 30 minutes later.</li>
       </ol>
     </div>
   );
@@ -336,6 +344,7 @@ export default function LiveActionSale() {
   const revalidator = useRevalidator();
   const busy = navigation.state !== "idle";
   const live = sale?.status === "LIVE";
+  const dueIn = sale?.endedAt ? Math.max(0, Math.ceil((new Date(sale.endedAt).getTime() + 30 * 60_000 - Date.now()) / 60_000)) : 0;
 
   useEffect(() => {
     if (!live) return undefined;
@@ -391,10 +400,11 @@ export default function LiveActionSale() {
                   {chip(sale.status)}
                   <span style={{ fontSize: 13 }}>{buyers} shopper{buyers === 1 ? "" : "s"} with claims{buyers > 0 ? ` \u00B7 ${buyerStats.invoiced} invoiced \u00B7 ${buyerStats.paid} paid` : ""}{buyerStats.unpaid ? ` \u00B7 ${buyerStats.unpaid} unpaid` : ""}</span>
                   {sale.status === "DRAFT" && <Act saleId={sale.id} intent="start" label="Start the show" primary disabled={busy || sale.drops.length === 0} />}
-                  {live && <Act saleId={sale.id} intent="end" label="End the show and send invoices" disabled={busy} />}
-                  {sale.status === "ENDED" && <Act saleId={sale.id} intent="invoices" label="Send invoices" primary disabled={busy} />}
+                  {live && <Act saleId={sale.id} intent="end" label="End the show" disabled={busy} />}
+                  {sale.status === "ENDED" && <Act saleId={sale.id} intent="invoices" label="Send invoices now" primary disabled={busy} />}
                   {sale.status !== "LIVE" && <Act saleId={sale.id} intent="delete-sale" label="Delete" disabled={busy} />}
                 </div>
+                {sale.status === "ENDED" && buyers > buyerStats.invoiced && <div style={{ fontSize: 13 }}>{dueIn > 0 ? `Invoices are emailed automatically in about ${dueIn} minute${dueIn === 1 ? "" : "s"}. Press Send invoices now to send them immediately.` : "Invoices are being sent now."}</div>}
                 <RoomCard sale={sale} link={link} busy={busy} studioUrl={studioUrl} />
                 {live && <NowSelling sale={sale} busy={busy} />}
                 {sale.status !== "ENDED" && (

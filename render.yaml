@@ -1,3 +1,5 @@
+# DOCUMENTATION ONLY. The live service was set up by hand and has no link to this file, so editing it changes nothing
+# on Render by itself. Where the data lives and how to check: see DATABASE.md.
 services:
   - type: web
     name: hellfire-auctions
@@ -11,19 +13,12 @@ services:
         value: "3000"
       - key: HOST
         value: "0.0.0.0"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: hellfire-auctions-db
-          property: connectionString
+      # The database is Neon (see DATABASE.md). The old Render database was retired in October 2026.
+      - key: NEON_DATABASE_URL
+        sync: false
       - key: SCOPES
         value: write_metaobject_definitions,write_metaobjects,write_products,write_publications,read_inventory,write_inventory,read_locations,write_draft_orders,write_app_proxy
       - key: SHOPIFY_API_KEY
         sync: false
       - key: SHOPIFY_API_SECRET
         sync: false
-
-databases:
-  - name: hellfire-auctions-db
-    plan: free
-    databaseName: hellfire_auctions
-# Render production database is managed by this Blueprint.

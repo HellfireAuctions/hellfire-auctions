@@ -945,3 +945,37 @@ export async function notifyJoinedInvoice({ shop, customerId, title, count, tota
         lang: data?.lang,
   });
 }
+
+// Tells the store owner that a Live Drops buyer has not paid after the deadline. The caller makes sure it happens once.
+export async function notifyMerchantDropUnpaid({ shop, saleTitle, total, currency, strikes, blocked }) {
+  if (!notificationsEnabled()) return false;
+  try {
+    const { unauthenticated } = await import("./shopify.server.js");
+    const { admin } = await unauthenticated.admin(shop);
+    const info = (await (await admin.graphql(`#graphql
+      query DropOwner { shop { name email contactEmail } }`)).json())?.data?.shop;
+    const to = info?.email || info?.contactEmail;
+    if (!to) return false;
+    const amount = total != null ? `${Number(total).toFixed(2)}${currency ? " " + currency : ""}` : "";
+    await sendEmail({
+      to,
+      subject: `Unpaid Live Drops order: ${saleTitle}`,
+      heading: "A Live Drops buyer hasn't paid",
+      lines: [
+        `A shopper's combined invoice${amount ? " (" + amount + ")" : ""} from "${saleTitle}" is still unpaid after 4 days.`,
+        blocked
+          ? `They now have ${strikes} unpaid sale${strikes === 1 ? "" : "s"} and have been blocked from bidding and claiming in your store.`
+          : `This counts as an unpaid sale against them (${strikes} so far). Shoppers are blocked automatically at your store's limit.`,
+        "Open Hellfire Auctions to follow up.",
+      ],
+      buttonLabel: "Open Hellfire Auctions",
+      buttonUrl: `https://admin.shopify.com/store/${shop.replace(".myshopify.com", "")}/apps/${process.env.SHOPIFY_API_KEY}`,
+      shopName: info?.name || "your store",
+    });
+    console.log("[notify] unpaid Live Drops alert sent", JSON.stringify({ shop }));
+    return true;
+  } catch (error) {
+    console.error("[notify] unpaid Live Drops alert failed:", error?.message || error);
+    return false;
+  }
+}

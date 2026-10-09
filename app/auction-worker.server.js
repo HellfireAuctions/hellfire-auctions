@@ -8,6 +8,7 @@ import { getShopSettings, recordStrike } from "./settings.server.js";
 import { publish } from "./live-hub.server.js";
 import { selfTestIfDue, selfTestAfterBoot } from "./self-test.server.js";
 import { orphanSweepIfDue, orphanSweepAfterBoot } from "./orphan-sweep.server.js";
+import { startDropsFollowUp } from "./drops-followup.server.js";
 import { memoDelete } from "./memo.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
@@ -1449,6 +1450,7 @@ if (!globalThis.__HELLFIRE_AUCTION_WORKER__) {
   globalThis.__HELLFIRE_AUCTION_WORKER__ = true;
   selfTestAfterBoot((subject, lines) => alertOwner("self-test", subject, lines));
   orphanSweepAfterBoot();
+  startDropsFollowUp();
   runScheduledTick().catch((error) =>
     console.error("[hellfire-auctions] initial settlement failed:", error),
   );

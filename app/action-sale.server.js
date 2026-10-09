@@ -88,7 +88,7 @@ export async function checkoutFor({ shop, saleId, customerId, admin, db = prisma
   }
 
   const included = claims.filter((c) => !c.draftOrderId || (draftId && c.draftOrderId === draftId));
-  if (!included.length) return { ok: false, message: "Everything you claimed is already paid for." };
+  if (!included.length) return { ok: false, paid: true, message: "Everything you claimed is already paid for." };
   const { lines, total } = invoiceLines({ claims: included, drops: sale.drops });
   if (!lines.length) return { ok: false, message: "Nothing to check out." };
 
@@ -125,6 +125,31 @@ export async function checkoutFor({ shop, saleId, customerId, admin, db = prisma
   return { ok: true, url: invoiceUrl, total, draftOrderId: draftId };
 }
 
+// Builds the shopper's combined order and emails them the invoice (through Shopify, from the store's own email). Resets the
+// payment reminders, because a new invoice starts the clock again. An order that is already paid is simply marked paid.
+export async function invoiceBuyer({ shop, saleId, customerId, admin, db = prisma, saleTitle, shopName }) {
+  const title = saleTitle || (await db.actionSale.findFirst({ where: { id: saleId, shop }, select: { title: true } }))?.title || "the live sale";
+  const name = shopName || (await (await admin.graphql(SHOP_QUERY)).json())?.data?.shop?.name || "our store";
+  const result = await checkoutFor({ shop, saleId, customerId, admin, db });
+  if (!result.ok) {
+    if (result.paid) {
+      await db.actionBuyer.updateMany({ where: { saleId, customerId }, data: { invoiceSentAt: new Date(), paidAt: new Date() } });
+      return { ok: true, skipped: "paid" };
+    }
+    return result;
+  }
+  const mail = await (await admin.graphql(`#graphql
+    mutation ActionInvoice($id: ID!, $email: EmailInput) { draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id } userErrors { field message } } }`, {
+    variables: { id: result.draftOrderId, email: { subject: `Your items from ${title} at ${name}`, customMessage: "Thanks for joining the live sale! Here are the items you claimed. Please complete your purchase with the secure link." } },
+  })).json();
+  userErrors(mail, "draftOrderInvoiceSend");
+  await db.actionBuyer.update({
+    where: { saleId_customerId: { saleId, customerId } },
+    data: { invoiceSentAt: new Date(), reminder1At: null, reminder2At: null, ownerAlertedAt: null, paidAt: null, checkedAt: null },
+  });
+  return { ok: true, draftOrderId: result.draftOrderId, total: result.total };
+}
+
 // End the show: close the open item, then give every shopper who claimed something their combined invoice by email.
 export async function endShowAndInvoice({ shop, saleId, admin, db = prisma, limit = 60 }) {
   const sale = await db.actionSale.findFirst({ where: { id: saleId, shop } });
@@ -143,14 +168,8 @@ export async function endShowAndInvoice({ shop, saleId, admin, db = prisma, limi
     if (buyer?.invoiceSentAt) continue;
     if (sent + failed >= limit) { pending += 1; continue; }
     try {
-      const result = await checkoutFor({ shop, saleId, customerId, admin, db });
-      if (!result.ok) continue;
-      const mail = await (await admin.graphql(`#graphql
-        mutation ActionInvoice($id: ID!, $email: EmailInput) { draftOrderInvoiceSend(id: $id, email: $email) { draftOrder { id } userErrors { field message } } }`, {
-        variables: { id: result.draftOrderId, email: { subject: `Your items from ${sale.title} at ${shopInfo?.name || "our store"}`, customMessage: `Thanks for joining the live sale! Here are the items you claimed. Please complete your purchase with the secure link.` } },
-      })).json();
-      userErrors(mail, "draftOrderInvoiceSend");
-      await db.actionBuyer.update({ where: { saleId_customerId: { saleId, customerId } }, data: { invoiceSentAt: new Date() } });
+      const done = await invoiceBuyer({ shop, saleId, customerId, admin, db, saleTitle: sale.title, shopName: shopInfo?.name });
+      if (!done.ok || done.skipped) continue;
       sent += 1;
     } catch (error) {
       failed += 1;

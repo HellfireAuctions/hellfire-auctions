@@ -231,6 +231,13 @@ model ActionBuyer {
   draftOrderId  String?
   invoiceUrl    String?
   invoiceSentAt DateTime?
+  invoiceAttemptAt DateTime?
+  reminder1At   DateTime?
+  reminder2At   DateTime?
+  ownerAlertedAt DateTime?
+  struckAt      DateTime?
+  paidAt        DateTime?
+  checkedAt     DateTime?
   updatedAt     DateTime  @updatedAt
 
   @@id([saleId, customerId])

@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "ActionBuyer" ADD COLUMN "invoiceAttemptAt" TIMESTAMP(3),
+ADD COLUMN "reminder1At" TIMESTAMP(3),
+ADD COLUMN "reminder2At" TIMESTAMP(3),
+ADD COLUMN "ownerAlertedAt" TIMESTAMP(3),
+ADD COLUMN "struckAt" TIMESTAMP(3),
+ADD COLUMN "paidAt" TIMESTAMP(3),
+ADD COLUMN "checkedAt" TIMESTAMP(3);

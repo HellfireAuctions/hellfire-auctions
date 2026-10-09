@@ -28,9 +28,11 @@ export const loader = async ({ request }) => {
   const pick = wanted || (sales.find((s) => s.status === "LIVE") || sales.find((s) => s.status === "DRAFT") || sales[0])?.id || null;
   const sale = pick ? await prisma.actionSale.findFirst({ where: { id: pick, shop }, include: { drops: { orderBy: { position: "asc" } } } }) : null;
   const buyers = sale ? (await prisma.actionClaim.findMany({ where: { saleId: sale.id, shop }, select: { customerId: true }, distinct: ["customerId"] })).length : 0;
+  const buyerRows = sale ? await prisma.actionBuyer.findMany({ where: { saleId: sale.id }, select: { invoiceSentAt: true, paidAt: true, struckAt: true } }) : [];
+  const buyerStats = { invoiced: buyerRows.filter((b) => b.invoiceSentAt).length, paid: buyerRows.filter((b) => b.paidAt).length, unpaid: buyerRows.filter((b) => b.struckAt).length };
   const studioReady = Boolean(sale) && sale.status !== "ENDED" && goLiveEnabled(shop, process.env.GOLIVE_SHOPS) && streamConfigured();
   const studioUrl = studioReady ? `${process.env.SHOPIFY_APP_URL}/live-studio?t=${encodeURIComponent(signStudioToken({ shop, saleId: sale.id, secret: process.env.SHOPIFY_API_SECRET }))}` : null;
-  return { allowed: plan.key === "INFERNO", shop, sales, buyers, studioUrl, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status })) } };
+  return { allowed: plan.key === "INFERNO", shop, sales, buyers, buyerStats, studioUrl, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status })) } };
 };
 
 export const action = async ({ request }) => {
@@ -325,7 +327,7 @@ function NowSelling({ sale, busy }) {
 }
 
 export default function LiveActionSale() {
-  const { allowed, shop, sales, sale, buyers, studioUrl } = useLoaderData();
+  const { allowed, shop, sales, sale, buyers, buyerStats, studioUrl } = useLoaderData();
   const result = useActionData();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
@@ -384,7 +386,7 @@ export default function LiveActionSale() {
               <div style={{ display: "grid", gap: 14 }}>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   {chip(sale.status)}
-                  <span style={{ fontSize: 13 }}>{buyers} shopper{buyers === 1 ? "" : "s"} with claims</span>
+                  <span style={{ fontSize: 13 }}>{buyers} shopper{buyers === 1 ? "" : "s"} with claims{buyers > 0 ? ` \u00B7 ${buyerStats.invoiced} invoiced \u00B7 ${buyerStats.paid} paid` : ""}{buyerStats.unpaid ? ` \u00B7 ${buyerStats.unpaid} unpaid` : ""}</span>
                   {sale.status === "DRAFT" && <Act saleId={sale.id} intent="start" label="Start the show" primary disabled={busy || sale.drops.length === 0} />}
                   {live && <Act saleId={sale.id} intent="end" label="End the show and send invoices" disabled={busy} />}
                   {sale.status === "ENDED" && <Act saleId={sale.id} intent="invoices" label="Send invoices" primary disabled={busy} />}

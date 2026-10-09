@@ -65,15 +65,24 @@ export async function recordStrike(shop, auction, customerId, draftId) {
       if (error?.code !== "P2002") throw error;
     }
   }
+  const { strikes, blocked } = await applyStrikeLimit(shop, id);
+  return { strikes, blocked, added };
+}
+
+// Counts every unpaid sale for this shopper in this store (auctions and Live Drops together) and blocks them once the
+// store's limit is reached.
+export async function applyStrikeLimit(shop, customerId) {
+  const id = String(customerId);
   const rows = await prisma.$queryRaw`
     SELECT COUNT(*)::int AS n FROM "AuctionNotification" n JOIN "Auction" a ON a."id" = n."auctionId"
     WHERE a."shop" = ${shop} AND n."type" = 'STRIKE' AND n."customerId" = ${id}`;
-  const strikes = Number(rows?.[0]?.n || 0);
+  const dropStrikes = await prisma.actionBuyer.count({ where: { shop, customerId: id, struckAt: { not: null } } });
+  const strikes = Number(rows?.[0]?.n || 0) + dropStrikes;
   const { strikeLimit } = await getShopSettings(shop);
   let blocked = Boolean(await prisma.blockedBidder.findUnique({ where: { shop_customerId: { shop, customerId: id } } }));
   if (!blocked && reachedLimit(strikes, strikeLimit)) {
     await prisma.blockedBidder.upsert({ where: { shop_customerId: { shop, customerId: id } }, create: { shop, customerId: id }, update: {} });
     blocked = true;
   }
-  return { strikes, blocked, added };
+  return { strikes, blocked };
 }

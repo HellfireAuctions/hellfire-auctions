@@ -5,6 +5,7 @@ import { publish } from "../live-hub.server";
 import { checkBidder } from "../bidder-rules.server";
 import { getShopSettings } from "../settings.server";
 import { claimDrop, checkoutFor } from "../action-sale.server";
+import { noteDropActivity } from "../drops-followup.server";
 import { unauthenticated } from "../shopify.server";
 
 // A shopper taps CLAIM (first tap wins) or CHECKOUT, from the Live Drops room. Signed by Shopify like every
@@ -42,6 +43,7 @@ export const action = async ({ request }) => {
     if (result.ok) {
       memoDelete("action:" + result.saleId); // everyone sees the new count on their next refresh
       publish("sale-" + result.saleId, "update");
+      noteDropActivity(); // keeps the automatic-invoice timer awake while claims are fresh
       console.log("[HELLFIRE LIVE DROPS]", JSON.stringify({ claim: result.title, left: result.remaining }));
     }
     return reply(result, result.ok ? 200 : result.code === "NOT_FOUND" ? 404 : 409);

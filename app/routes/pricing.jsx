@@ -63,7 +63,6 @@ const PLANS = [
       "Unlimited auctions",
       "Everything in Blaze",
       "Deeper analytics: best times to end auctions, your best buyers, what didn't sell and plain-language advice",
-      "Live Drops: sell set-price items live on any stream; the first to tap CLAIM gets it, with one combined invoice per shopper",
       "Optional Anti Sniping: auto-extend on late bids",
       "HOT flame badge on auctions with 10+ bids",
       "Priority support",

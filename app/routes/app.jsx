@@ -21,7 +21,7 @@ export default function App() {
         <s-link href="/app">Home</s-link>
         <s-link href="/app/add-auction">Add auction</s-link>
         <s-link href="/app/auctions">Live auctions</s-link>
-        <s-link href="/app/live">Live Drops</s-link>
+        <s-link href="/app/live">Live Drops (beta)</s-link>
         <s-link href="/app/analytics">Analytics</s-link>
         <s-link href="/app/settings">Settings</s-link>
         <s-link href="/app/plans">Plans &amp; upgrades</s-link>

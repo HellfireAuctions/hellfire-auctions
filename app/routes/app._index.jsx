@@ -2645,7 +2645,7 @@ export default function AuctionsPage() {
           <ul style={{ margin: "0 0 16px", paddingLeft: 20, display: "grid", gap: 6, fontSize: 14, lineHeight: 1.5 }}>
             <li><strong>Spark, free:</strong> 10 auctions a month, automatic bidding and analytics. No bidder emails.</li>
             <li><strong>Blaze, $10/month:</strong> 90 auctions a month, plus outbid, reminder and &ldquo;Sorry, you didn&rsquo;t win&rdquo; emails. 7-day free trial.</li>
-            <li><strong>Inferno, $25/month:</strong> unlimited auctions, optional anti-sniping, deeper analytics, Live Drops and the HOT badge. 7-day free trial.</li>
+            <li><strong>Inferno, $25/month:</strong> unlimited auctions, optional anti-sniping, deeper analytics and the HOT badge. 7-day free trial.</li>
           </ul>
           <s-button href="/app/plans" variant="primary">Choose your plan</s-button>
         </div>

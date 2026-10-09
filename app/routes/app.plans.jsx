@@ -133,7 +133,6 @@ const TIERS = [
       "Unlimited auctions",
       "Everything in Blaze",
       "Deeper analytics: best times to end auctions, your best buyers, what didn't sell and plain-language advice",
-      "Live Drops: sell set-price items live on any stream; the first to tap CLAIM gets it, with one combined invoice per shopper",
       "Optional Anti Sniping: auto-extend on late bids",
       `\u{1F525} HOT flame badge on auctions with ${HOT_BID_THRESHOLD}+ bids`,
       "Priority support",

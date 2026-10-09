@@ -30,7 +30,7 @@ export const loader = async ({ request }) => {
 export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
-  if ((await getShopPlan(shop)).key !== "INFERNO") return { error: "Live Drops is part of the Inferno plan." };
+  if ((await getShopPlan(shop)).key !== "INFERNO") return { error: "Live Drops (beta) is available on the Inferno plan while it is being finished." };
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
   const saleId = String(form.get("saleId") || "");
@@ -86,6 +86,26 @@ export const action = async ({ request }) => {
     await deleteDropProduct(admin, drop.productId); // the hidden product it made goes too
     touch(saleId);
     return { success: "Item removed." };
+  }
+  if (intent === "set-video") {
+    const videoUrl = String(form.get("videoUrl") || "").trim();
+    if (videoUrl && !embedFor(videoUrl)) return { error: "That video link can't be shown on the page. YouTube, Vimeo, Facebook and Twitch links work. TikTok and Instagram can't play inside a web page: stream there, leave this empty, and share the room link." };
+    await prisma.actionSale.update({ where: { id: saleId }, data: { videoUrl: videoUrl || null } });
+    touch(saleId);
+    return { success: videoUrl ? "Video saved. It plays at the top of the room." : "Video removed from the room." };
+  }
+  if (intent === "next") {
+    const queue = await prisma.actionDrop.findMany({ where: { saleId, shop }, orderBy: { position: "asc" } });
+    const upNext = queue.find((d) => d.status === "QUEUED" && remaining(d) > 0);
+    await closeOpenDrop({ shop, saleId });
+    if (!upNext) {
+      touch(saleId);
+      return { success: "Closed. There are no more items waiting." };
+    }
+    const opened = await openDrop({ shop, saleId, dropId: upNext.id });
+    if (!opened.ok) return { error: opened.message };
+    touch(saleId);
+    return { success: "Now selling: " + upNext.title };
   }
   if (intent === "start") {
     if (sale.status !== "DRAFT") return { error: "This show has already started." };
@@ -220,6 +240,73 @@ function AddItem({ saleId, busy }) {
   );
 }
 
+// The host's show room: where the shoppers' page is, and where the video goes.
+function RoomCard({ sale, link, busy }) {
+  const [copied, setCopied] = useState(false);
+  const playable = Boolean(sale.videoUrl) && Boolean(embedFor(sale.videoUrl));
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* the link is shown below to copy by hand */
+    }
+  }
+  return (
+    <div style={{ ...card, borderColor: "#303030", borderWidth: 2 }}>
+      <strong style={{ fontSize: 16 }}>Your live room</strong>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <a href={link} target="_blank" rel="noreferrer" style={{ ...button(true), textDecoration: "none", display: "inline-block" }}>Open the live room</a>
+        <button type="button" onClick={copy} style={button(false)}>{copied ? "Copied!" : "Copy the link"}</button>
+      </div>
+      <div style={{ fontSize: 13, wordBreak: "break-all" }}>{link}</div>
+      <Form method="post" style={{ display: "grid", gap: 6 }}>
+        <input type="hidden" name="intent" value="set-video" />
+        <input type="hidden" name="saleId" value={sale.id} />
+        <label>Live video link (YouTube, Facebook, Vimeo or Twitch)<input name="videoUrl" defaultValue={sale.videoUrl || ""} placeholder="https://..." style={field} /></label>
+        <div><button type="submit" disabled={busy} style={button(false)}>Save video link</button></div>
+      </Form>
+      <div style={{ fontSize: 13 }}>
+        {playable ? "The video plays at the top of the room." : "No video in the room yet. Streaming on TikTok or Instagram? They can't play inside a web page, so stream there and share the room link: your viewers claim items here."}
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, display: "grid", gap: 2 }}>
+        <li>Add your items below, then press Start the show.</li>
+        <li>Go live wherever you stream, and share the room link above.</li>
+        <li>Press Open for claiming on an item. Shoppers see a CLAIM button.</li>
+        <li>When it sells out (or you press Close), open the next one.</li>
+      </ol>
+    </div>
+  );
+}
+
+// What is being sold right now, with the two buttons the host needs most.
+function NowSelling({ sale, busy }) {
+  const open = sale.drops.find((d) => d.status === "OPEN");
+  return (
+    <div style={{ ...card, borderColor: open ? "#008060" : "#d9d9d9", borderWidth: 2 }}>
+      <strong style={{ fontSize: 16 }}>Now selling</strong>
+      {open ? (
+        <>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <Thumb src={open.imageUrl} />
+            <div><div style={{ fontWeight: 700, fontSize: 18 }}>{open.title}</div><div>{money(open.price)} \u00B7 {open.claimed} of {open.quantity} claimed \u00B7 {remaining(open)} left</div></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Act saleId={sale.id} intent="close" label="Close this item" disabled={busy} />
+            <Act saleId={sale.id} intent="next" label="Close and open the next item" primary disabled={busy} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div>No item is open for claiming. Press <strong>Open for claiming</strong> on an item below, or open the next one here.</div>
+          <div><Act saleId={sale.id} intent="next" label="Open the next item" primary disabled={busy} /></div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function LiveActionSale() {
   const { allowed, shop, sales, sale, buyers } = useLoaderData();
   const result = useActionData();
@@ -240,15 +327,20 @@ export default function LiveActionSale() {
   const chip = (key) => <span style={{ color: STATUS[key][1], fontWeight: 700, fontSize: 12 }}>{STATUS[key][0]}</span>;
 
   return (
-    <s-page heading="Live Drops">
-      {result?.error && <div role="alert" style={{ ...card, borderColor: "#b3261e", color: "#b3261e", marginBottom: 12 }}>{result.error}</div>}
-      {result?.success && <div role="status" style={{ ...card, borderColor: "#008060", color: "#005c45", marginBottom: 12 }}>{result.success}</div>}
+    <s-page heading="Live Drops (beta)">
+      <div style={{ ...card, background: "#fff8e1", borderColor: "#ffd60a", marginBottom: 12 }}>
+        <strong>Beta.</strong> Live Drops works, and it is still being finished. Built-in video is coming; for now, paste a YouTube, Vimeo, Facebook or Twitch link, or stream anywhere and share the room link.
+      </div>
+      <div style={{ position: "sticky", top: 0, zIndex: 10 }}>
+        {result?.error && <div role="alert" style={{ ...card, borderColor: "#b3261e", color: "#b3261e", marginBottom: 12, background: "#fff" }}>{result.error}</div>}
+        {result?.success && <div role="status" style={{ ...card, borderColor: "#008060", color: "#005c45", marginBottom: 12, background: "#fff" }}>{result.success}</div>}
+      </div>
 
       {!allowed ? (
         <s-section heading="Sell live, at set prices">
           <s-stack gap="small">
             <s-text>Show items on video (TikTok, Instagram, Facebook, YouTube, anywhere), say a price, and shoppers tap CLAIM. The first people to tap get it, and each shopper gets one combined invoice.</s-text>
-            <s-text>Live Drops is part of the Inferno plan.</s-text>
+            <s-text>Live Drops (beta) is available on the Inferno plan while it is being finished.</s-text>
             <s-link href="/app/plans">See plans</s-link>
           </s-stack>
         </s-section>
@@ -281,8 +373,8 @@ export default function LiveActionSale() {
                   {sale.status === "ENDED" && <Act saleId={sale.id} intent="invoices" label="Send invoices" primary disabled={busy} />}
                   {sale.status !== "LIVE" && <Act saleId={sale.id} intent="delete-sale" label="Delete" disabled={busy} />}
                 </div>
-                <div style={{ fontSize: 13, wordBreak: "break-all" }}>Share this link with your viewers: <a href={link} target="_blank" rel="noreferrer">{link}</a></div>
-
+                <RoomCard sale={sale} link={link} busy={busy} />
+                {live && <NowSelling sale={sale} busy={busy} />}
                 {sale.status !== "ENDED" && (
                   <div style={card}>
                     <strong>Add an item</strong>
@@ -300,8 +392,8 @@ export default function LiveActionSale() {
                           <div style={{ fontWeight: 600 }}>{d.title} {chip(d.status)}</div>
                           <div style={{ fontSize: 14 }}>{money(d.price)} · {d.claimed} of {d.quantity} claimed · {remaining(d)} left{d.perPerson > 1 ? ` · limit ${d.perPerson} each` : ""}</div>
                         </div>
-                        {live && d.status !== "OPEN" && remaining(d) > 0 && <Act saleId={sale.id} intent="go" label="Go" primary disabled={busy} extra={<input type="hidden" name="dropId" value={d.id} />} />}
-                        {live && d.status === "OPEN" && <Act saleId={sale.id} intent="close" label="Close" disabled={busy} />}
+                        {live && d.status !== "OPEN" && remaining(d) > 0 && <Act saleId={sale.id} intent="go" label="Open for claiming" primary disabled={busy} extra={<input type="hidden" name="dropId" value={d.id} />} />}
+                        {live && d.status === "OPEN" && <Act saleId={sale.id} intent="close" label="Close this item" disabled={busy} />}
                         {sale.status !== "ENDED" && d.status !== "OPEN" && d.claimed === 0 && <Act saleId={sale.id} intent="remove-drop" label="Remove" disabled={busy} extra={<input type="hidden" name="dropId" value={d.id} />} />}
                       </div>
                     </div>

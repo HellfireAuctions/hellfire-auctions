@@ -60,6 +60,16 @@ export const action = async ({ request }) => {
       touch(saleId);
       return reply({ ok: true });
     }
+    if (intent === "start-show") {
+      const sale = await prisma.actionSale.findFirst({ where: { id: saleId, shop }, select: { status: true } });
+      if (!sale) return reply({ ok: false, message: "That show wasn't found." }, 404);
+      if (sale.status === "ENDED") return reply({ ok: false, message: "This show has ended." }, 409);
+      if (sale.status === "LIVE") return reply({ ok: true });
+      if (!(await prisma.actionDrop.count({ where: { saleId } }))) return reply({ ok: false, message: "Add at least one item to the show first (in the app)." }, 409);
+      await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } });
+      touch(saleId);
+      return reply({ ok: true, message: "The show is live." });
+    }
     if (intent === "beat") return reply(await beatStream({ shop, saleId }));
     if (intent === "go") {
       const sale = await prisma.actionSale.findFirst({ where: { id: saleId, shop }, select: { id: true } });

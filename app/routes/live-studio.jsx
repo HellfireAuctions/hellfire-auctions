@@ -51,6 +51,7 @@ function Studio({ token }) {
   const [live, setLive] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState("");
   const [facing, setFacing] = useState("user");
   const [muted, setMuted] = useState(false);
   const videoRef = useRef(null);
@@ -141,6 +142,7 @@ function Studio({ token }) {
     setMessage("");
     try {
       if (!streamRef.current && !(await openCamera())) return;
+      await ensureLive(); // going live also starts the show, so the item buttons work
       const started = await call("start");
       if (!started.ok) {
         setMessage(started.message || "Could not start the video.");
@@ -183,12 +185,38 @@ function Studio({ token }) {
     setBusy(false);
   }
 
+  // A show that has not started cannot sell anything. The Studio starts it for you, so no button ever looks dead.
+  async function ensureLive() {
+    if (show?.status !== "DRAFT") return true;
+    const started = await call("start-show");
+    setNotice(started.ok ? "" : started.message || "The show could not be started.");
+    await refresh();
+    return Boolean(started.ok);
+  }
+
+  async function startShowNow() {
+    setBusy(true);
+    try {
+      await ensureLive();
+    } catch {
+      setNotice("Connection problem. Check your signal and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function control(intent, extra) {
     setBusy(true);
-    const result = await call(intent, extra);
-    setMessage(result.ok ? result.message || "" : result.message || "That did not work.");
-    await refresh();
-    setBusy(false);
+    try {
+      if (!(await ensureLive())) return;
+      const result = await call(intent, extra);
+      setNotice(result.ok ? result.message || "" : result.message || "That did not work.");
+      await refresh();
+    } catch {
+      setNotice("Connection problem. Check your signal and try again.");
+    } finally {
+      setBusy(false); // a dropped connection can never leave the buttons stuck
+    }
   }
 
   const open = show?.drops.find((d) => d.status === "OPEN");
@@ -215,8 +243,16 @@ function Studio({ token }) {
         <>
           <div style={{ fontSize: 14 }}>{show.buyers} shopper{show.buyers === 1 ? "" : "s"} with claims</div>
           {show.room && <div style={{ fontSize: 13, wordBreak: "break-all", margin: "4px 0" }}>Shoppers watch and claim here: <a href={show.room} target="_blank" rel="noreferrer">{show.room}</a></div>}
+          {show.status === "DRAFT" && (
+            <div style={{ ...card, borderColor: "#b3261e", background: "#fff4f4" }}>
+              <strong>The show has not started yet.</strong>
+              <div style={{ margin: "6px 0 10px" }}>Shoppers can&rsquo;t claim anything until it starts. It also starts by itself when you press Go live or Open the next item.</div>
+              <button type="button" style={btn(true)} disabled={busy} onClick={startShowNow}>Start the show</button>
+            </div>
+          )}
           <div style={{ ...card, borderColor: open ? "#008060" : "#d9d9d9", borderWidth: 2 }}>
             <strong>Now selling</strong>
+            {notice && <div role="status" style={{ color: "#8e1f0b", fontWeight: 600, marginTop: 6 }}>{notice}</div>}
             {open ? (
               <>
                 <div style={{ fontSize: 18, fontWeight: 700 }}>{open.title}</div>
@@ -229,8 +265,8 @@ function Studio({ token }) {
             ) : (
               <>
                 <div>No item is open.</div>
-                {!ended && <div style={{ marginTop: 8 }}><button type="button" style={btn(true)} disabled={busy || show.status !== "LIVE"} onClick={() => control("next")}>Open the next item</button></div>}
-                {show.status === "DRAFT" && <div style={{ fontSize: 13, marginTop: 6 }}>Start the show in the app first (Live Drops, Start the show).</div>}
+                {!ended && <div style={{ marginTop: 8 }}><button type="button" style={btn(true)} disabled={busy} onClick={() => control("next")}>Open the next item</button></div>}
+                {show.status === "DRAFT" && <div style={{ fontSize: 13, marginTop: 6 }}>Pressing this also starts the show.</div>}
               </>
             )}
           </div>
@@ -241,7 +277,7 @@ function Studio({ token }) {
                 <div style={{ fontWeight: 600 }}>{d.title}</div>
                 <div style={{ fontSize: 13 }}>{money(d.price)} {"\u00B7"} {d.claimed} of {d.quantity} claimed {"\u00B7"} {d.status === "OPEN" ? "OPEN" : d.status === "CLOSED" ? "closed" : "waiting"}</div>
               </div>
-              {show.status === "LIVE" && d.status !== "OPEN" && d.claimed < d.quantity && <button type="button" style={btn(false)} disabled={busy} onClick={() => control("go", { dropId: d.id })}>Open for claiming</button>}
+              {show.status !== "ENDED" && d.status !== "OPEN" && d.claimed < d.quantity && <button type="button" style={btn(false)} disabled={busy} onClick={() => control("go", { dropId: d.id })}>Open for claiming</button>}
             </div>
           ))}
         </>

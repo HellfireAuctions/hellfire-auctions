@@ -10,6 +10,10 @@ import { parseNewItem, remaining } from "../action-sale";
 import { photoProblem, squareCrop, outputSide } from "../photo-ratio";
 import { addDropToSale, openDrop, closeOpenDrop, endShowAndInvoice } from "../action-sale.server";
 import { createDropProduct, deleteDropProduct } from "../drop-product.server";
+import { signStudioToken } from "../studio-token.server";
+import { goLiveEnabled } from "../go-live";
+import { streamConfigured } from "../cloudflare-stream.server";
+import { releaseStream } from "../stream-control.server";
 
 // Live Drops: the host's screen. The host streams anywhere (TikTok, Instagram, Facebook, YouTube...), shares the
 // show's link, and sells items at a set price: press Go on an item and shoppers see a CLAIM button; the first people
@@ -24,7 +28,9 @@ export const loader = async ({ request }) => {
   const pick = wanted || (sales.find((s) => s.status === "LIVE") || sales.find((s) => s.status === "DRAFT") || sales[0])?.id || null;
   const sale = pick ? await prisma.actionSale.findFirst({ where: { id: pick, shop }, include: { drops: { orderBy: { position: "asc" } } } }) : null;
   const buyers = sale ? (await prisma.actionClaim.findMany({ where: { saleId: sale.id, shop }, select: { customerId: true }, distinct: ["customerId"] })).length : 0;
-  return { allowed: plan.key === "INFERNO", shop, sales, buyers, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status })) } };
+  const studioReady = Boolean(sale) && sale.status !== "ENDED" && goLiveEnabled(shop, process.env.GOLIVE_SHOPS) && streamConfigured();
+  const studioUrl = studioReady ? `${process.env.SHOPIFY_APP_URL}/live-studio?t=${encodeURIComponent(signStudioToken({ shop, saleId: sale.id, secret: process.env.SHOPIFY_API_SECRET }))}` : null;
+  return { allowed: plan.key === "INFERNO", shop, sales, buyers, studioUrl, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status })) } };
 };
 
 export const action = async ({ request }) => {
@@ -129,12 +135,14 @@ export const action = async ({ request }) => {
   if (intent === "end" || intent === "invoices") {
     if (intent === "invoices" && sale.status !== "ENDED") return { error: "End the show first." };
     const result = await endShowAndInvoice({ shop, saleId, admin });
+    await releaseStream({ shop, saleId }); // the show is over: shut the video channel down
     touch(saleId);
     if (!result.ok) return { error: result.message };
     return { success: `${intent === "end" ? "The show has ended. " : ""}${result.people} shopper${result.people === 1 ? "" : "s"} claimed items. ${result.sent} invoice${result.sent === 1 ? "" : "s"} sent${result.failed ? `, ${result.failed} failed (check your store's sender email)` : ""}${result.pending ? `, ${result.pending} still to send: press "Send invoices" again` : ""}.` };
   }
   if (intent === "delete-sale") {
     if (sale.status === "LIVE") return { error: "End the show before deleting it." };
+    await releaseStream({ shop, saleId });
     const unclaimed = await prisma.actionDrop.findMany({ where: { saleId, shop, claimed: 0 }, select: { productId: true } });
     for (const d of unclaimed) await deleteDropProduct(admin, d.productId); // products with claims stay: invoices refer to them
     await prisma.actionSale.delete({ where: { id: saleId } });
@@ -241,7 +249,7 @@ function AddItem({ saleId, busy }) {
 }
 
 // The host's show room: where the shoppers' page is, and where the video goes.
-function RoomCard({ sale, link, busy }) {
+function RoomCard({ sale, link, busy, studioUrl }) {
   const [copied, setCopied] = useState(false);
   const playable = Boolean(sale.videoUrl) && Boolean(embedFor(sale.videoUrl));
   async function copy() {
@@ -261,6 +269,15 @@ function RoomCard({ sale, link, busy }) {
         <button type="button" onClick={copy} style={button(false)}>{copied ? "Copied!" : "Copy the link"}</button>
       </div>
       <div style={{ fontSize: 13, wordBreak: "break-all" }}>{link}</div>
+      {studioUrl ? (
+        <div style={{ borderTop: "1px solid #d9d9d9", paddingTop: 10, display: "grid", gap: 6 }}>
+          <strong>Go live with your camera <span style={{ fontSize: 12, color: "#8a5a00" }}>(beta add-on)</span></strong>
+          <div style={{ fontSize: 13 }}>Opens the Live Studio in a new tab (cameras can&rsquo;t run inside the Shopify admin). Works on a phone or a computer.</div>
+          <div><a href={studioUrl} target="_blank" rel="noreferrer" style={{ ...button(true), textDecoration: "none", display: "inline-block" }}>Open Live Studio</a></div>
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: "#616161" }}>Built-in video (Go Live) is a coming add-on.</div>
+      )}
       <Form method="post" style={{ display: "grid", gap: 6 }}>
         <input type="hidden" name="intent" value="set-video" />
         <input type="hidden" name="saleId" value={sale.id} />
@@ -308,7 +325,7 @@ function NowSelling({ sale, busy }) {
 }
 
 export default function LiveActionSale() {
-  const { allowed, shop, sales, sale, buyers } = useLoaderData();
+  const { allowed, shop, sales, sale, buyers, studioUrl } = useLoaderData();
   const result = useActionData();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
@@ -373,7 +390,7 @@ export default function LiveActionSale() {
                   {sale.status === "ENDED" && <Act saleId={sale.id} intent="invoices" label="Send invoices" primary disabled={busy} />}
                   {sale.status !== "LIVE" && <Act saleId={sale.id} intent="delete-sale" label="Delete" disabled={busy} />}
                 </div>
-                <RoomCard sale={sale} link={link} busy={busy} />
+                <RoomCard sale={sale} link={link} busy={busy} studioUrl={studioUrl} />
                 {live && <NowSelling sale={sale} busy={busy} />}
                 {sale.status !== "ENDED" && (
                   <div style={card}>

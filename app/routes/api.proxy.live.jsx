@@ -4,6 +4,7 @@ import { memo } from "../memo.server";
 import { liveStreamUrl, liveHasRoom } from "../live-stream.server";
 import { roomView } from "../action-sale";
 import { embedFor } from "../video-embed";
+import { streamIsLive } from "../go-live";
 import { shopCurrency } from "../currency.server";
 
 // The shopper's room for a Live Drops, at /apps/hellfire-auctions/live?sale=<id>. A host shows items on video
@@ -20,7 +21,7 @@ async function loadState(shop, saleId, customerId) {
   if (!sale || sale.shop !== shop) return null;
   const myClaims = customerId ? await prisma.actionClaim.findMany({ where: { saleId, shop, customerId }, select: { dropId: true, quantity: true } }) : [];
   const embed = embedFor(sale.videoUrl);
-  return { ...roomView({ sale, drops: sale.drops, myClaims }), saleId: sale.id, loggedIn: Boolean(customerId), video: embed ? embed.src : null };
+  return { ...roomView({ sale, drops: sale.drops, myClaims }), saleId: sale.id, loggedIn: Boolean(customerId), video: embed ? embed.src : null, stream: streamIsLive(sale) ? { playUrl: sale.streamPlayUrl } : null };
 }
 
 function pageHtml(state, cfg) {
@@ -29,6 +30,7 @@ function pageHtml(state, cfg) {
   <noscript><p>Please turn on JavaScript to join the show.</p></noscript>
   <div id="hf-head"></div>
   <div id="hf-video"></div>
+  <div id="hf-video-live"></div>
   <div id="hf-show"><p>Loading ${esc(state.title)}...</p></div>
 </div>
 <script>
@@ -129,8 +131,64 @@ function pageHtml(state, cfg) {
     if (s.upcoming.length) { root.appendChild(el("h2", "margin:22px 0 4px;font-size:18px", "Coming up")); s.upcoming.forEach(function (u) { root.appendChild(row(u, money(u.price) + (u.quantity > 1 ? ", " + u.quantity + " available" : ", 1 available"))); }); }
     if (s.results.length) { root.appendChild(el("h2", "margin:22px 0 4px;font-size:18px", "Earlier in the show")); s.results.forEach(function (r) { root.appendChild(row({ title: r.title }, r.soldOut ? "Sold out" : r.claimed + " of " + r.quantity + " claimed")); }); }
   }
+  var liveBox = document.getElementById("hf-video-live");
+  var live = { pc: null, url: "", video: null, wrap: null, timer: null };
+  function stopLive() {
+    if (live.timer) { clearTimeout(live.timer); live.timer = null; }
+    if (live.pc) { try { live.pc.close(); } catch (e) { /* already closed */ } live.pc = null; }
+    live.url = "";
+    liveBox.textContent = "";
+  }
+  function retryLive(pc, ms) {
+    if (live.timer) clearTimeout(live.timer);
+    live.timer = setTimeout(function () { if (state && state.stream && live.pc === pc) connectLive(state.stream.playUrl); }, ms);
+  }
+  function connectLive(url) {
+    if (live.pc) { try { live.pc.close(); } catch (e) { /* already closed */ } }
+    live.url = url;
+    if (!live.video) {
+      live.wrap = el("div", "position:relative;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;margin-bottom:16px");
+      var v = document.createElement("video");
+      v.autoplay = true; v.muted = true; v.playsInline = true; v.controls = true;
+      v.setAttribute("playsinline", "");
+      v.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000";
+      live.wrap.appendChild(v);
+      live.video = v;
+    }
+    liveBox.textContent = "";
+    liveBox.appendChild(live.wrap);
+    var pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
+    live.pc = pc;
+    pc.addTransceiver("video", { direction: "recvonly" });
+    pc.addTransceiver("audio", { direction: "recvonly" });
+    pc.ontrack = function (e) {
+      if (live.video.srcObject !== e.streams[0]) live.video.srcObject = e.streams[0];
+      var p = live.video.play(); if (p && p.catch) p.catch(function () {});
+    };
+    pc.onconnectionstatechange = function () {
+      if ((pc.connectionState === "failed" || pc.connectionState === "disconnected") && live.pc === pc) retryLive(pc, 2000);
+    };
+    pc.createOffer().then(function (offer) { return pc.setLocalDescription(offer); }).then(function () {
+      return new Promise(function (resolve) {
+        if (pc.iceGatheringState === "complete") return resolve();
+        var t = setTimeout(resolve, 2500);
+        pc.addEventListener("icegatheringstatechange", function () { if (pc.iceGatheringState === "complete") { clearTimeout(t); resolve(); } });
+      });
+    }).then(function () { return fetch(url, { method: "POST", headers: { "Content-Type": "application/sdp" }, body: pc.localDescription.sdp }); })
+      .then(function (r) { if (!r.ok) throw new Error("play " + r.status); return r.text(); })
+      .then(function (answer) { return pc.setRemoteDescription({ type: "answer", sdp: answer }); })
+      .catch(function () { if (live.pc === pc) retryLive(pc, 3000); });
+  }
+  function syncLive() {
+    var s = state && state.stream;
+    var embed = document.getElementById("hf-video");
+    if (embed) embed.style.display = s ? "none" : "";
+    if (!s || !window.RTCPeerConnection) { if (live.url) stopLive(); return; }
+    var dead = !live.pc || live.pc.connectionState === "closed" || live.pc.connectionState === "failed";
+    if (live.url !== s.playUrl || dead) connectLive(s.playUrl);
+  }
   function load() {
-    fetch(cfg.url, { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) { if (j && j.version) { state = j; render(); } }).catch(function () {});
+    fetch(cfg.url, { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) { if (j && j.version) { state = j; render(); syncLive(); } }).catch(function () {});
   }
   function scheduleLoad() {
     if (timer) return;

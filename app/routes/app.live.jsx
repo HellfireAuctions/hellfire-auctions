@@ -104,6 +104,7 @@ export const action = async ({ request }) => {
     return { success: videoUrl ? "Video saved. It plays at the top of the room." : "Video removed from the room." };
   }
   if (intent === "next") {
+    if (sale.status === "DRAFT") await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } });
     const queue = await prisma.actionDrop.findMany({ where: { saleId, shop }, orderBy: { position: "asc" } });
     const upNext = queue.find((d) => d.status === "QUEUED" && remaining(d) > 0);
     await closeOpenDrop({ shop, saleId });
@@ -124,6 +125,7 @@ export const action = async ({ request }) => {
     return { success: "The show is live. Press Go on an item when you're ready to sell it." };
   }
   if (intent === "go") {
+    if (sale.status === "DRAFT") await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } }); // opening an item starts the show
     const opened = await openDrop({ shop, saleId, dropId: String(form.get("dropId") || "") });
     if (!opened.ok) return { error: opened.message };
     touch(saleId);
@@ -297,7 +299,9 @@ function RoomCard({ sale, link, busy, studioUrl }) {
       ) : (
         <div style={{ fontSize: 13, color: "#616161" }}>Built-in video (Go Live) is a coming add-on.</div>
       )}
-      <Form method="post" style={{ display: "grid", gap: 6 }}>
+      <details>
+      <summary style={{ cursor: "pointer", fontWeight: 600 }}>Video link and how it works</summary>
+      <Form method="post" style={{ display: "grid", gap: 6, marginTop: 8 }}>
         <input type="hidden" name="intent" value="set-video" />
         <input type="hidden" name="saleId" value={sale.id} />
         <label>Live video link (YouTube, Facebook, Vimeo or Twitch)<input name="videoUrl" defaultValue={sale.videoUrl || ""} placeholder="https://..." style={field} /></label>
@@ -313,6 +317,7 @@ function RoomCard({ sale, link, busy, studioUrl }) {
         <li>When it sells out (or you press Close), open the next one.</li>
         <li>When you are done, press End the show (it also ends by itself after an hour with no activity). Everyone who claimed is emailed one combined invoice 30 minutes later.</li>
       </ol>
+      </details>
     </div>
   );
 }
@@ -340,6 +345,18 @@ function NowSelling({ sale, busy }) {
           <div><Act saleId={sale.id} intent="next" label="Open the next item" primary disabled={busy} /></div>
         </>
       )}
+    </div>
+  );
+}
+
+// Before the show starts: one obvious box that says what to do next.
+function StartPanel({ sale, busy }) {
+  const has = sale.drops.length > 0;
+  return (
+    <div style={{ ...card, borderColor: "#303030", borderWidth: 2 }}>
+      <strong style={{ fontSize: 16 }}>Ready to sell?</strong>
+      <div>{has ? `You have ${sale.drops.length} item${sale.drops.length === 1 ? "" : "s"} in this show. Press Start the show, then Open for claiming on an item. (Pressing Open for claiming on an item also starts the show.)` : "Step 1: add at least one item below. Step 2: press Start the show."}</div>
+      <div><Act saleId={sale.id} intent="start" label="Start the show" primary disabled={busy || !has} /></div>
     </div>
   );
 }
@@ -413,8 +430,9 @@ export default function LiveActionSale() {
                   {sale.status !== "LIVE" && <Act saleId={sale.id} intent="delete-sale" label="Delete" disabled={busy} />}
                 </div>
                 {sale.status === "ENDED" && buyers > buyerStats.invoiced && <div style={{ fontSize: 13 }}>{dueIn > 0 ? `Invoices are emailed automatically in about ${dueIn} minute${dueIn === 1 ? "" : "s"}. Press Send invoices now to send them immediately.` : "Invoices are being sent now."}</div>}
-                <RoomCard sale={sale} link={link} busy={busy} studioUrl={studioUrl} />
+                {sale.status === "DRAFT" && <StartPanel sale={sale} busy={busy} />}
                 {live && <NowSelling sale={sale} busy={busy} />}
+                <RoomCard sale={sale} link={link} busy={busy} studioUrl={studioUrl} />
                 {sale.status !== "ENDED" && (
                   <div style={card}>
                     <strong>Add an item</strong>
@@ -433,7 +451,7 @@ export default function LiveActionSale() {
                           <div style={{ fontWeight: 600 }}>{d.title} {chip(d.status)}</div>
                           <div style={{ fontSize: 14 }}>{money(d.price)} · {d.claimed} of {d.quantity} claimed · {remaining(d)} left{d.perPerson > 1 ? ` · limit ${d.perPerson} each` : ""}</div>
                         </div>
-                        {live && d.status !== "OPEN" && remaining(d) > 0 && <Act saleId={sale.id} intent="go" label="Open for claiming" primary disabled={busy} extra={<input type="hidden" name="dropId" value={d.id} />} />}
+                        {sale.status !== "ENDED" && d.status !== "OPEN" && remaining(d) > 0 && <Act saleId={sale.id} intent="go" label="Open for claiming" primary disabled={busy} extra={<input type="hidden" name="dropId" value={d.id} />} />}
                         {live && d.status === "OPEN" && <Act saleId={sale.id} intent="close" label="Close this item" disabled={busy} />}
                         {sale.status !== "ENDED" && d.status !== "OPEN" && d.claimed === 0 && <Act saleId={sale.id} intent="remove-drop" label="Remove" disabled={busy} extra={<input type="hidden" name="dropId" value={d.id} />} />}
                       </div>

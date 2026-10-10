@@ -141,7 +141,7 @@ export const action = async ({ request }) => {
     noteDropActivity(); // keeps the invoice timer awake for the next 40 minutes
     touch(saleId);
     if (!ended.ok) return { error: ended.message };
-    return { success: "The show has ended. Combined invoices are emailed to shoppers automatically in 30 minutes. Press Send invoices now to send them immediately." };
+    return { success: "The show has ended. Combined invoices are emailed to shoppers automatically in 30 minutes. Press Send invoices now to send them immediately. Pressed End by mistake? Press Resume the show." };
   }
   if (intent === "invoices") {
     if (sale.status !== "ENDED") return { error: "End the show first." };
@@ -151,6 +151,13 @@ export const action = async ({ request }) => {
     return {
       success: result.people + " shopper" + (result.people === 1 ? "" : "s") + " claimed items. " + result.sent + " invoice" + (result.sent === 1 ? "" : "s") + " sent" + (result.failed ? ", " + result.failed + " failed (check your store's sender email)" : "") + (result.pending ? ", " + result.pending + " more follow within minutes" : "") + ".",
     };
+  }
+  if (intent === "resume") {
+    if (sale.status !== "ENDED") return { error: "This show is not ended." };
+    await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", endedAt: null, lastActivityAt: new Date() } });
+    noteDropActivity();
+    touch(saleId);
+    return { success: "The show is live again. Press Open for claiming on an item." };
   }
   if (intent === "delete-sale") {
     if (sale.status === "LIVE") return { error: "End the show before deleting it." };
@@ -173,9 +180,9 @@ function Thumb({ src }) {
   return src ? <img src={src} alt="" style={{ width: 52, height: 52, objectFit: "cover", aspectRatio: "1 / 1", borderRadius: 8, flex: "none" }} /> : <div style={{ width: 52, height: 52, borderRadius: 8, background: "#e3e3e3", flex: "none" }} />;
 }
 
-function Act({ saleId, intent, label, primary, disabled, extra }) {
+function Act({ saleId, intent, label, primary, disabled, extra, confirm }) {
   return (
-    <Form method="post" style={{ display: "inline-block" }}>
+    <Form method="post" style={{ display: "inline-block" }} onSubmit={(event) => { if (confirm && !window.confirm(confirm)) event.preventDefault(); }}>
       <input type="hidden" name="saleId" value={saleId} />
       <input type="hidden" name="intent" value={intent} />
       {extra}
@@ -400,8 +407,9 @@ export default function LiveActionSale() {
                   {chip(sale.status)}
                   <span style={{ fontSize: 13 }}>{buyers} shopper{buyers === 1 ? "" : "s"} with claims{buyers > 0 ? ` \u00B7 ${buyerStats.invoiced} invoiced \u00B7 ${buyerStats.paid} paid` : ""}{buyerStats.unpaid ? ` \u00B7 ${buyerStats.unpaid} unpaid` : ""}</span>
                   {sale.status === "DRAFT" && <Act saleId={sale.id} intent="start" label="Start the show" primary disabled={busy || sale.drops.length === 0} />}
-                  {live && <Act saleId={sale.id} intent="end" label="End the show" disabled={busy} />}
-                  {sale.status === "ENDED" && <Act saleId={sale.id} intent="invoices" label="Send invoices now" primary disabled={busy} />}
+                  {live && <Act saleId={sale.id} intent="end" label="End the show" disabled={busy} confirm="End the show? Shoppers will not be able to claim anything more, and everyone who claimed is emailed one combined invoice 30 minutes later." />}
+                  {sale.status === "ENDED" && <Act saleId={sale.id} intent="resume" label="Resume the show" primary disabled={busy} />}
+                  {sale.status === "ENDED" && <Act saleId={sale.id} intent="invoices" label="Send invoices now" disabled={busy} />}
                   {sale.status !== "LIVE" && <Act saleId={sale.id} intent="delete-sale" label="Delete" disabled={busy} />}
                 </div>
                 {sale.status === "ENDED" && buyers > buyerStats.invoiced && <div style={{ fontSize: 13 }}>{dueIn > 0 ? `Invoices are emailed automatically in about ${dueIn} minute${dueIn === 1 ? "" : "s"}. Press Send invoices now to send them immediately.` : "Invoices are being sent now."}</div>}
@@ -415,6 +423,7 @@ export default function LiveActionSale() {
                 )}
 
                 <div style={{ display: "grid", gap: 8 }}>
+                  {sale.status === "ENDED" && <div style={{ ...card, borderColor: "#b3261e", background: "#fff4f4" }}><strong>This show has ended,</strong> so items can&rsquo;t be opened. Press <strong>Resume the show</strong> above to keep selling.</div>}
                   {sale.drops.length === 0 && <span>No items yet. Add your first item above.</span>}
                   {sale.drops.map((d) => (
                     <div key={d.id} style={{ ...card, padding: 12, borderColor: d.status === "OPEN" ? "#008060" : "#d9d9d9", borderWidth: d.status === "OPEN" ? 2 : 1 }}>

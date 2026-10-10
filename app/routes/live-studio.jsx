@@ -205,6 +205,19 @@ function Studio({ token }) {
     }
   }
 
+  async function resumeNow() {
+    setBusy(true);
+    try {
+      const result = await call("resume");
+      setNotice(result.ok ? "" : result.message || "Could not resume the show.");
+      await refresh();
+    } catch {
+      setNotice("Connection problem. Check your signal and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function control(intent, extra) {
     setBusy(true);
     try {
@@ -243,6 +256,13 @@ function Studio({ token }) {
         <>
           <div style={{ fontSize: 14 }}>{show.buyers} shopper{show.buyers === 1 ? "" : "s"} with claims</div>
           {show.room && <div style={{ fontSize: 13, wordBreak: "break-all", margin: "4px 0" }}>Shoppers watch and claim here: <a href={show.room} target="_blank" rel="noreferrer">{show.room}</a></div>}
+          {ended && (
+            <div style={{ ...card, borderColor: "#b3261e", background: "#fff4f4" }}>
+              <strong>This show has ended.</strong>
+              <div style={{ margin: "6px 0 10px" }}>Items can&rsquo;t be opened while it is ended. If that was a mistake, or you want to keep selling, resume it.</div>
+              <button type="button" style={btn(true)} disabled={busy} onClick={resumeNow}>Resume the show</button>
+            </div>
+          )}
           {show.status === "DRAFT" && (
             <div style={{ ...card, borderColor: "#b3261e", background: "#fff4f4" }}>
               <strong>The show has not started yet.</strong>

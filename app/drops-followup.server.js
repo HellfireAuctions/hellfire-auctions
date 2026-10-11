@@ -2,6 +2,7 @@ import prisma from "./db.server.js";
 import { invoiceBuyer, endShow } from "./action-sale.server.js";
 import { releaseStream } from "./stream-control.server.js";
 import { applyStrikeLimit } from "./settings.server.js";
+import { SELFTEST_SHOP } from "./self-test.server.js";
 import { needsInvoice, followUpAction, checkDue, reminderText, isIdle, FINAL_HOURS, FOLLOW_UP_DAYS } from "./drops-followup.js";
 
 // Live Drops: the background work. Every minute right after claims or a show ending (every ten minutes otherwise):
@@ -76,7 +77,8 @@ export async function endIdleShows({ db = prisma, now = Date.now(), end = endSho
 export async function autoInvoicePass({ db = prisma, now = Date.now(), getAdmin = defaultAdmin, deps = {} } = {}) {
   const { invoice = invoiceBuyer } = deps;
   const out = { invoiced: 0, failed: 0 };
-  const groups = await db.actionClaim.groupBy({ by: ["saleId", "customerId", "shop"], where: { createdAt: { gte: new Date(now - FOLLOW_UP_DAYS * DAY) } }, _max: { createdAt: true } });
+  const everyone = await db.actionClaim.groupBy({ by: ["saleId", "customerId", "shop"], where: { createdAt: { gte: new Date(now - FOLLOW_UP_DAYS * DAY) } }, _max: { createdAt: true } });
+  const groups = everyone.filter((g) => g.shop !== SELFTEST_SHOP); // the robot's pretend store is never invoiced
   if (!groups.length) return out;
   const saleIds = [...new Set(groups.map((g) => g.saleId))];
   const endedAtBy = new Map((await db.actionSale.findMany({ where: { id: { in: saleIds }, status: "ENDED" }, select: { id: true, endedAt: true, updatedAt: true } })).map((s) => [s.id, s.endedAt || s.updatedAt]));

@@ -82,11 +82,52 @@ export async function runSelfTest({ base, secret, db, subscribeFn = subscribe, f
     check("a second purchase is refused", p2.status === 409, `HTTP ${p2.status}`);
     const anon = await call("POST", "auction", {}, new URLSearchParams({ product_id: a.productId, amount: "99" }).toString());
     check("bidding while signed out is refused", anon.status === 401, `HTTP ${anon.status}`);
+
+    // ---- Live Drops: first tap wins, the limit, and the refusals ----
+    const claim = (saleId, dropId, who) => call("POST", "live-claim", who ? { logged_in_customer_id: who } : {}, new URLSearchParams({ intent: "claim", sale: saleId, drop: dropId }).toString());
+    const nap = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const show = await db.actionSale.create({ data: { shop: SELFTEST_SHOP, title: "Self-test show", status: "LIVE", lastActivityAt: new Date(stamp) } });
+    const item = (position, extra) =>
+      db.actionDrop.create({
+        data: { saleId: show.id, shop: SELFTEST_SHOP, position, productId: `gid://shopify/Product/${9_100_000_000_000 + position}`, variantId: `gid://shopify/ProductVariant/${9_100_000_000_000 + position}`, title: `Self-test item ${position}`, price: 5, ...extra },
+      });
+    const d1 = await item(1, { status: "OPEN", quantity: 3, perPerson: 1 });
+    const room = await call("GET", "live", { sale: show.id, format: "json", logged_in_customer_id: "selftest-A" });
+    check("Live Drops: the room's data loads", room.status === 200 && room.json?.phase === "open" && room.json?.open?.id === d1.id, `HTTP ${room.status}, ${room.json?.phase}`);
+    const tries = await Promise.all(Array.from({ length: 8 }, (_, i) => claim(show.id, d1.id, `selftest-drop-${i}`)));
+    const won = tries.filter((x) => x.status === 200 && x.json?.ok === true).length;
+    const refused = tries.filter((x) => x.status === 409).length;
+    check("Live Drops: 8 people tapping at once on 3 items, exactly 3 get one", won === 3 && refused === 5, `${won} got one, ${refused} refused`);
+    const after = await db.actionDrop.findUnique({ where: { id: d1.id } });
+    const held = await db.actionClaim.findMany({ where: { dropId: d1.id } });
+    check("Live Drops: the count, the claims and the sold-out status agree", after?.claimed === 3 && after?.status === "CLOSED" && held.length === 3 && new Set(held.map((c) => c.customerId)).size === 3, `claimed ${after?.claimed}, ${after?.status}, ${held.length} claims`);
+    const d2 = await item(2, { status: "OPEN", quantity: 5, perPerson: 2 });
+    const c1 = await claim(show.id, d2.id, "selftest-limit");
+    await nap(300);
+    const c2 = await claim(show.id, d2.id, "selftest-limit");
+    await nap(300);
+    const c3 = await claim(show.id, d2.id, "selftest-limit");
+    check("Live Drops: a limit of 2 per person stops the third claim", c1.status === 200 && c2.status === 200 && c3.status === 409, `${c1.status}, ${c2.status}, ${c3.status}`);
+    const d3 = await item(3, { status: "QUEUED", quantity: 2, perPerson: 1 });
+    const early = await claim(show.id, d3.id, "selftest-A");
+    check("Live Drops: an item that has not been opened cannot be claimed", early.status === 409, `HTTP ${early.status}`);
+    const anonymous = await claim(show.id, d2.id, null);
+    check("Live Drops: claiming while signed out is refused", anonymous.status === 401, `HTTP ${anonymous.status}`);
+    await db.actionSale.update({ where: { id: show.id }, data: { status: "ENDED" } });
+    const late = await claim(show.id, d2.id, "selftest-late");
+    check("Live Drops: claiming in a show that has ended is refused", late.status === 409, `HTTP ${late.status}`);
   } catch (error) {
     check("the test ran without an unexpected error", false, String(error?.message || error).slice(0, 160));
   } finally {
     off();
     try {
+      const saleIds = (await db.actionSale.findMany({ where: { shop: SELFTEST_SHOP }, select: { id: true } })).map((x) => x.id);
+      if (saleIds.length) {
+        await db.actionClaim.deleteMany({ where: { saleId: { in: saleIds } } });
+        await db.actionBuyer.deleteMany({ where: { saleId: { in: saleIds } } });
+        await db.actionDrop.deleteMany({ where: { saleId: { in: saleIds } } });
+        await db.actionSale.deleteMany({ where: { id: { in: saleIds } } });
+      }
       const ids = (await db.auction.findMany({ where: { shop: SELFTEST_SHOP }, select: { id: true } })).map((x) => x.id);
       if (ids.length) {
         await db.bidEvent.deleteMany({ where: { auctionId: { in: ids } } });

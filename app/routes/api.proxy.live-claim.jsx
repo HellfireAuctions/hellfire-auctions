@@ -6,6 +6,7 @@ import { checkBidder } from "../bidder-rules.server";
 import { getShopSettings } from "../settings.server";
 import { claimDrop, checkoutFor, bumpActivity } from "../action-sale.server";
 import { noteDropActivity } from "../drops-followup.server";
+import { SELFTEST_SHOP } from "../self-test.server";
 import { unauthenticated } from "../shopify.server";
 
 // A shopper taps CLAIM (first tap wins) or CHECKOUT, from the Live Drops room. Signed by Shopify like every
@@ -43,7 +44,7 @@ export const action = async ({ request }) => {
     if (result.ok) {
       memoDelete("action:" + result.saleId); // everyone sees the new count on their next refresh
       publish("sale-" + result.saleId, "update");
-      noteDropActivity(); // keeps the automatic timer awake while claims are fresh
+      if (shop !== SELFTEST_SHOP) noteDropActivity(); // keeps the automatic timer awake while claims are fresh (never for the robot's pretend store)
       void bumpActivity(result.saleId); // a claim is activity: the show will not end as quiet
       console.log("[HELLFIRE LIVE DROPS]", JSON.stringify({ claim: result.title, left: result.remaining }));
     }

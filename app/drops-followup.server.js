@@ -5,7 +5,7 @@ import { applyStrikeLimit } from "./settings.server.js";
 import { SELFTEST_SHOP } from "./self-test.server.js";
 import { needsInvoice, followUpAction, checkDue, reminderText, isIdle, FINAL_HOURS, FOLLOW_UP_DAYS } from "./drops-followup.js";
 
-// Live Drops: the background work. Every minute right after claims or a show ending (every ten minutes otherwise):
+// Live Drops: the background work. Every minute right after claims or a show ending (every thirty minutes otherwise):
 //   0. a live show with no activity for an hour ends by itself;
 //   1. 30 minutes after a show has ended, every shopper not yet invoiced is emailed their one combined invoice;
 //   2. every unpaid invoice is checked for payment, reminded at 24 and 72 hours, and at 96 hours the store owner is
@@ -158,7 +158,10 @@ export async function followUpPass({ db = prisma, now = Date.now(), getAdmin = d
   return out;
 }
 
-// ---- the timer: every minute while claims are fresh, every ten minutes otherwise (so a quiet store never wakes the database) ----
+// ---- the timer: every minute while claims are fresh, every thirty minutes otherwise (so a quiet store lets the database sleep) ----
+// A quiet store checks only twice an hour. Neon puts the database to sleep after 5 quiet minutes, so a check every 10 minutes
+// would keep it awake about half the month and use up the free plan's compute allowance for nothing.
+export const QUIET_PASS_MS = 30 * 60_000;
 let hotUntil = 0;
 let lastRun = 0;
 let running = false;
@@ -166,7 +169,7 @@ export const noteDropActivity = (now = Date.now()) => { hotUntil = now + 40 * 60
 
 export async function dropsTick({ now = Date.now(), force = false } = {}) {
   if (running) return;
-  if (!force && now > hotUntil && now - lastRun < 10 * 60_000) return;
+  if (!force && now > hotUntil && now - lastRun < QUIET_PASS_MS) return;
   running = true;
   lastRun = now;
   try {

@@ -1,4 +1,5 @@
 import { stageImage } from "./shopify-upload.server.js";
+import { syncDropStock } from "./drop-stock.server.js";
 
 // Live Drops makes its own products: the host types what the item is, the app creates it in the store. These products
 // are created Active but NOT published to the Online Store, so they never appear in the shop's catalog. They exist so the
@@ -20,7 +21,7 @@ async function imageAddress(admin, productId) {
   return null;
 }
 
-export async function createDropProduct({ admin, title, price, imageFile }) {
+export async function createDropProduct({ admin, title, price, quantity, imageFile }) {
   const source = imageFile ? await stageImage(admin, imageFile) : null;
   const created = await (
     await admin.graphql(
@@ -60,8 +61,10 @@ export async function createDropProduct({ admin, title, price, imageFile }) {
     await deleteDropProduct(admin, productId);
     throw new Error(priceErrors.map((e) => e.message).join(", "));
   }
+  // stock: tracked, and set to the quantity for sale; when a shopper pays, Shopify takes the units off by itself
+  const stock = await syncDropStock({ admin, productId, quantity });
   const imageUrl = source ? (await imageAddress(admin, productId)) || source : null;
-  return { productId, variantId, imageUrl };
+  return { productId, variantId, imageUrl, stock };
 }
 
 // Best effort: a leftover hidden product is harmless, so a failure here is only logged.

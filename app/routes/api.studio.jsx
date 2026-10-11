@@ -6,6 +6,7 @@ import { goLiveEnabled } from "../go-live";
 import { streamConfigured } from "../cloudflare-stream.server";
 import { openDrop, closeOpenDrop } from "../action-sale.server";
 import { startStream, stopStream, beatStream, openNextDrop } from "../stream-control.server";
+import { ensureStockForShop } from "../drop-stock.server";
 
 // The Live Studio's data and controls. Every request carries the signed link the admin handed out (good for one show,
 // four hours), so this page needs no Shopify login. It can run that show's video and items, and nothing else.
@@ -67,6 +68,7 @@ export const action = async ({ request }) => {
       if (sale.status === "LIVE") return reply({ ok: true });
       if (!(await prisma.actionDrop.count({ where: { saleId } }))) return reply({ ok: false, message: "Add at least one item to the show first (in the app)." }, 409);
       await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } });
+      await ensureStockForShop({ shop, saleId });
       touch(saleId);
       return reply({ ok: true, message: "The show is live." });
     }
@@ -82,6 +84,7 @@ export const action = async ({ request }) => {
     if (intent === "go") {
       const sale = await prisma.actionSale.findFirst({ where: { id: saleId, shop }, select: { id: true } });
       if (!sale) return reply({ ok: false, message: "That show wasn't found." }, 404);
+      await ensureStockForShop({ shop, saleId });
       const opened = await openDrop({ shop, saleId, dropId: String(form.get("dropId") || "") });
       if (opened.ok) touch(saleId);
       return reply(opened, opened.ok ? 200 : 409);
@@ -92,6 +95,7 @@ export const action = async ({ request }) => {
       return reply(closed, closed.ok ? 200 : 409);
     }
     if (intent === "next") {
+      await ensureStockForShop({ shop, saleId });
       const next = await openNextDrop({ shop, saleId });
       if (next.ok) touch(saleId);
       return reply(next, next.ok ? 200 : 409);

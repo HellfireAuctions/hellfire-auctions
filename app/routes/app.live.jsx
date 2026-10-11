@@ -10,6 +10,7 @@ import { parseNewItem, remaining } from "../action-sale";
 import { photoProblem, squareCrop, outputSide } from "../photo-ratio";
 import { addDropToSale, openDrop, closeOpenDrop, endShowAndInvoice, endShow } from "../action-sale.server";
 import { createDropProduct, deleteDropProduct } from "../drop-product.server";
+import { ensureStockForSale } from "../drop-stock.server";
 import { signStudioToken } from "../studio-token.server";
 import { goLiveEnabled } from "../go-live";
 import { streamConfigured } from "../cloudflare-stream.server";
@@ -33,7 +34,7 @@ export const loader = async ({ request }) => {
   const buyerStats = { invoiced: buyerRows.filter((b) => b.invoiceSentAt).length, paid: buyerRows.filter((b) => b.paidAt).length, unpaid: buyerRows.filter((b) => b.struckAt).length };
   const studioReady = Boolean(sale) && sale.status !== "ENDED" && goLiveEnabled(shop, process.env.GOLIVE_SHOPS) && streamConfigured();
   const studioUrl = studioReady ? `${process.env.SHOPIFY_APP_URL}/live-studio?t=${encodeURIComponent(signStudioToken({ shop, saleId: sale.id, secret: process.env.SHOPIFY_API_SECRET }))}` : null;
-  return { allowed: plan.key === "INFERNO", shop, sales, buyers, buyerStats, studioUrl, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, endedAt: sale.endedAt, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status })) } };
+  return { allowed: plan.key === "INFERNO", shop, sales, buyers, buyerStats, studioUrl, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, endedAt: sale.endedAt, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status, stockSynced: d.stockSynced })) } };
 };
 
 export const action = async ({ request }) => {
@@ -74,18 +75,18 @@ export const action = async ({ request }) => {
     let made;
     try {
       // The app creates the product itself (hidden from the shop's catalog), so Live Drops needs nothing set up beforehand.
-      made = await createDropProduct({ admin, title: parsed.item.title, price: parsed.item.price, imageFile: hasPhoto ? photo : null });
+      made = await createDropProduct({ admin, title: parsed.item.title, price: parsed.item.price, quantity: parsed.item.quantity, imageFile: hasPhoto ? photo : null });
     } catch (error) {
       console.error("[HELLFIRE LIVE DROPS] could not create the product:", error?.message || error);
       return { error: "Shopify couldn't create the product just now. Please try again." };
     }
-    const added = await addDropToSale({ shop, saleId, drop: { ...parsed.item, productId: made.productId, variantId: made.variantId, imageUrl: made.imageUrl } });
+    const added = await addDropToSale({ shop, saleId, drop: { ...parsed.item, productId: made.productId, variantId: made.variantId, imageUrl: made.imageUrl, stockSynced: Boolean(made.stock?.ok) } });
     if (!added.ok) {
       await deleteDropProduct(admin, made.productId);
       return { error: added.message };
     }
     touch(saleId);
-    return { success: "Item added. Press Go when you're ready to sell it." };
+    return { success: made.stock?.ok ? "Item added. Its stock is tracked in your store: when a shopper pays, the units come off automatically." : "Item added. (Stock tracking could not be set up yet: " + (made.stock?.reason || "unknown reason") + ". It is retried when the show starts.)" };
   }
   if (intent === "remove-drop") {
     const drop = await prisma.actionDrop.findFirst({ where: { id: String(form.get("dropId") || ""), saleId, shop } });
@@ -105,6 +106,7 @@ export const action = async ({ request }) => {
   }
   if (intent === "next") {
     if (sale.status === "DRAFT") await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } });
+    await ensureStockForSale({ shop, saleId, admin });
     const queue = await prisma.actionDrop.findMany({ where: { saleId, shop }, orderBy: { position: "asc" } });
     const upNext = queue.find((d) => d.status === "QUEUED" && remaining(d) > 0);
     await closeOpenDrop({ shop, saleId });
@@ -122,10 +124,12 @@ export const action = async ({ request }) => {
     if (!(await prisma.actionDrop.count({ where: { saleId } }))) return { error: "Add at least one item first." };
     await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } });
     touch(saleId);
+    await ensureStockForSale({ shop, saleId, admin });
     return { success: "The show is live. Press Go on an item when you're ready to sell it." };
   }
   if (intent === "go") {
     if (sale.status === "DRAFT") await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } }); // opening an item starts the show
+    await ensureStockForSale({ shop, saleId, admin }); // sets up stock for items added before it existed
     const opened = await openDrop({ shop, saleId, dropId: String(form.get("dropId") || "") });
     if (!opened.ok) return { error: opened.message };
     touch(saleId);
@@ -448,7 +452,7 @@ export default function LiveActionSale() {
                       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                         <Thumb src={d.imageUrl} />
                         <div style={{ flex: 1, minWidth: 180 }}>
-                          <div style={{ fontWeight: 600 }}>{d.title} {chip(d.status)}</div>
+                          <div style={{ fontWeight: 600 }}>{d.title} {chip(d.status)}{d.stockSynced ? <span style={{ fontSize: 12, fontWeight: 400, color: "#616161" }}> {"\u00B7"} stock tracked</span> : null}</div>
                           <div style={{ fontSize: 14 }}>{money(d.price)} · {d.claimed} of {d.quantity} claimed · {remaining(d)} left{d.perPerson > 1 ? ` · limit ${d.perPerson} each` : ""}</div>
                         </div>
                         {sale.status !== "ENDED" && d.status !== "OPEN" && remaining(d) > 0 && <Act saleId={sale.id} intent="go" label="Open for claiming" primary disabled={busy} extra={<input type="hidden" name="dropId" value={d.id} />} />}

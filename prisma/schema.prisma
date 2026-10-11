@@ -203,6 +203,7 @@ model ActionDrop {
   quantity  Int
   claimed   Int           @default(0)
   perPerson Int           @default(1)
+  stockSynced Boolean     @default(false)
   status    String        @default("QUEUED")
   openedAt  DateTime?
   closedAt  DateTime?

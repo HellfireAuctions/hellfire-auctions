@@ -2643,7 +2643,7 @@ export default function AuctionsPage() {
             Your plan decides which features you get (buyer emails, how many auctions a month, anti-sniping and more), so pick it before you set up. You can change it any time.
           </p>
           <ul style={{ margin: "0 0 16px", paddingLeft: 20, display: "grid", gap: 6, fontSize: 14, lineHeight: 1.5 }}>
-            <li><strong>Spark, free:</strong> 10 auctions a month, automatic bidding and analytics. No bidder emails.</li>
+            <li><strong>Spark, free:</strong> 10 auctions a month, automatic bidding and analytics. Winners are invoiced automatically; no outbid or reminder emails.</li>
             <li><strong>Blaze, $10/month:</strong> 90 auctions a month, plus outbid, reminder and &ldquo;Sorry, you didn&rsquo;t win&rdquo; emails. 7-day free trial.</li>
             <li><strong>Inferno, $25/month:</strong> unlimited auctions, optional anti-sniping, deeper analytics and the HOT badge. 7-day free trial.</li>
           </ul>
@@ -2656,7 +2656,7 @@ export default function AuctionsPage() {
         <summary style={{ cursor: "pointer", fontWeight: 700, fontSize: 15 }}>Setup guide (about 10 minutes)</summary>
         <ol style={{ margin: "12px 0 0", paddingLeft: 20, display: "grid", gap: 12, fontSize: 14, lineHeight: 1.5 }}>
           <li>
-            <strong>Turn on Hellfire Auctions in your theme.</strong> Click the button below. In the panel that opens on the left, switch <em>Hellfire Auctions Runtime</em> on, then click <em>Save</em> (top right). This adds the live bidding panel to auction product pages and live bid badges to product cards. It works with any theme and changes no theme code. Repeat this for any other theme you publish later.
+            <strong>Turn on Hellfire Auctions in your theme.</strong> Click the button below. In the panel that opens on the left, switch <em>Hellfire Auctions Runtime</em> on, then click <em>Save</em> (top right). This adds the live bidding panel to auction product pages, live bid badges to product cards, and a Live Auctions button to every page. It works with any theme and changes no theme code. Repeat this for any other theme you publish later.
             <div style={{ marginTop: 8 }}>
               <s-button href={storefrontActivationUrl} target="_top" variant="primary">Open theme editor</s-button>
             </div>
@@ -2701,6 +2701,7 @@ export default function AuctionsPage() {
             <li><strong>Unsold auctions</strong> are taken off your store about 10 minutes after they end. <em>Relist</em> puts them back.</li>
             <li><strong>Auction events:</strong> create several auctions, tick <em>Add to an auction event</em> on the upcoming ones, then schedule them all to start together and end one after another (for example, every 8 minutes).</li>
             <li><strong>Bulk creation:</strong> open <em>Create many auctions from a spreadsheet (CSV)</em> to upload a list, schedule the whole batch as an event, repeat it every week, and relist unsold items automatically.</li>
+            <li><strong>Live Drops (beta)</strong> in the menu is a new way to sell items at set prices during a live stream. It works, but it is still being finished. The Help center explains how it works.</li>
             <li><strong>Need help?</strong> The <s-link href="https://hellfire-auctions.onrender.com/help" target="_blank">Help center</s-link> has setup steps and troubleshooting, or email support@hellfireauctions.com.</li>
           </ul>
         </div>

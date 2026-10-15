@@ -32,4 +32,9 @@ for (const [name, text] of [["privacy", privacy], ["terms", terms], ["help", hel
   for (const stale of ["Live Action Sale", "Live Sale Mode", "Live sale", "Choose a product", "Press Go on an item", "15 minutes after"]) assert.ok(!text.includes(stale), name + " no longer says: " + stale);
   assert.ok(!/ebay/i.test(text.replace(/\/\/.*$/gm, "")), name + " has no other company's name");
 }
+const home = read("app/routes/app._index.jsx");
+assert.ok(!home.includes("No bidder emails"), "the Spark summary no longer implies winners get no email");
+assert.ok(home.includes("Winners are invoiced automatically; no outbid or reminder emails"), "and says what Spark really includes");
+assert.ok(home.includes("a Live Auctions button to every page"), "the setup guide mentions the Live Auctions button");
+assert.ok(home.includes("<strong>Live Drops (beta)</strong> in the menu"), "the guide explains the Live Drops (beta) menu item");
 console.log("Installer-facing wording: all checks passed");

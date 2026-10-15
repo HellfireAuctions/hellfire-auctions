@@ -802,6 +802,7 @@ export async function emailDataRequest({ shop, customerId, report }) {
   const data = await lookup(shop, customerId || "0", "gid://shopify/Product/0");
   const to = data?.shop?.email || data?.shop?.contactEmail;
   if (!to) return;
+  const liveRows = (report.liveDrops?.items || []).slice(0, 25).map((i) => `${i.title} x${i.quantity}`);
   const rows = (report.events || []).slice(0, 25).map((e) => `${e.title}: ${Number(e.amount).toFixed(2)} on ${new Date(e.at).toISOString().slice(0, 10)}`);
   await sendEmail({
     to,
@@ -810,6 +811,7 @@ export async function emailDataRequest({ shop, customerId, report }) {
     lines: [
       `Shopify sent a data request for customer ${customerId}${data?.customer?.email ? ` (${data.customer.email})` : ""}.`,
       `Records held: ${report.bids} bid(s) on ${report.auctions} auction(s), ${report.watches} watch(es), ${report.notices} email notice record(s). Blocked by you: ${report.blocked ? "yes" : "no"}.`,
+      report.liveDrops && report.liveDrops.claims ? `Live Drops: ${report.liveDrops.claims} claim(s) (${liveRows.join("; ")}), ${report.liveDrops.invoices} invoice(s), ${report.liveDrops.paid} paid, ${report.liveDrops.unpaidStrikes} unpaid.` : "No Live Drops records are held.",
       rows.length ? `Visible bid amounts: ${rows.join("; ")}` : "No bid amounts are held.",
       "The app stores no name, address or payment details. Please share this with the customer if they asked for it.",
     ],

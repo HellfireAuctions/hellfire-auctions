@@ -13,12 +13,11 @@ export default function Privacy() {
       <div style={S.hero}>
         <div style={{ fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase", color: "#ffd60a", fontWeight: 700 }}>Hellfire Auctions</div>
         <h1 style={{ margin: "6px 0 4px", fontSize: 32 }}>Privacy Policy</h1>
-        <div>Effective October 5, 2026</div>
+        <div>Effective October 15, 2026</div>
       </div>
 
       <p>
-        Hellfire Auctions (&ldquo;the App&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Shopify app that lets merchants run timed,
-        timed auctions in their Shopify stores. This policy explains what information the App collects, why, how it is used,
+        Hellfire Auctions (&ldquo;the App&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;) is a Shopify app that lets merchants run timed auctions, and live sales at set prices (&ldquo;Live Drops&rdquo;, currently in beta), in their Shopify stores. This policy explains what information the App collects, why, how it is used,
         who it is shared with, and how it is deleted.
       </p>
 
@@ -28,6 +27,7 @@ export default function Privacy() {
         <li>The store&rsquo;s Shopify domain and the access credentials Shopify issues to the App, so the App can work in that store.</li>
         <li>Auction details the merchant enters: title, description, image, starting bid, reserve price, start and end times.</li>
         <li>Product information for auction items the App creates in the store.</li>
+        <li>Live Drops show details the merchant enters: the show&rsquo;s title, an optional video link, and each item&rsquo;s name, photo, price and quantity. For each item the App creates a hidden product in the store, so shoppers&rsquo; invoices contain real items.</li>
         <li>The store&rsquo;s name, time zone and contact email, read from Shopify when needed to display times and to set the reply-to address on bidder emails.</li>
         <li>The store&rsquo;s Hellfire Auctions plan. Payments are handled entirely by Shopify; we never see card details.</li>
       </ul>
@@ -44,13 +44,15 @@ export default function Privacy() {
         <li>A record of each unpaid sale (customer ID and auction). If a winner does not pay within the payment window, the merchant can see how many unpaid sales that bidder has, and can choose to have the App block bidders who reach a limit the merchant sets. These records are deleted with the customer&rsquo;s other data.</li>
         <li>Totals only, such as &ldquo;7 bidders&rdquo; and &ldquo;12 watching&rdquo;, are shown to shoppers on an auction. Names are never shown.</li>
         <li>When an auction ends, the winner&rsquo;s Shopify customer ID is used to create a Shopify draft order and invoice in the merchant&rsquo;s store.</li>
+        <li>In a Live Drops show: the shopper&rsquo;s Shopify customer ID, each item they claim (the item, quantity and time), and whether their combined invoice was sent and paid. When the show ends, the customer ID is used to create one Shopify draft order and invoice for everything that shopper claimed. As with auctions, we do not store email addresses. An unpaid Live Drops invoice counts as an unpaid sale, in the same way as an unpaid auction.</li>
       </ul>
-      <p>Bidders must be signed in to the merchant&rsquo;s store to bid. Other shoppers only ever see bidders as an anonymous label such as &ldquo;Bidder #1234&rdquo;.</p>
+      <p>Bidders must be signed in to the merchant&rsquo;s store to bid, and shoppers must be signed in to claim items in a Live Drops show. Other shoppers only ever see bidders as an anonymous label such as &ldquo;Bidder #1234&rdquo;, and claims are never shown with a name.</p>
 
       <h2 style={S.h2}>3. How we use information</h2>
       <ul>
         <li>To run auctions: accept and validate bids, calculate prices, show live bids and countdowns, and end auctions on time.</li>
         <li>To invoice auction winners through Shopify.</li>
+        <li>To run Live Drops shows: accept claims first-come, keep each item&rsquo;s remaining count accurate, keep the store&rsquo;s stock right, and invoice each shopper once for everything they claimed.</li>
         <li>To email bidders about auctions they bid on or watch (outbid notices, reminders, results, and winner and payment notices).</li>
         <li>To record unpaid sales, so merchants can offer an item to the next bidder or block repeat non-payers.</li>
         <li>To enforce plan limits and keep the service secure and working.</li>
@@ -64,15 +66,17 @@ export default function Privacy() {
         <li><strong>Render</strong> &mdash; hosts the App&rsquo;s servers.</li>
         <li><strong>Neon</strong> &mdash; hosts the App&rsquo;s database, encrypted at rest and in transit.</li>
         <li><strong>Resend</strong> &mdash; delivers auction emails to bidders.</li>
+        <li><strong>Cloudflare</strong> &mdash; carries live video, only when a merchant uses the optional Go Live feature in Live Drops. The video is streamed live and is not recorded or stored by us.</li>
       </ul>
+      <p>Go Live is optional and off unless it is switched on for the store. When a host uses it, their browser asks permission to use the camera and microphone, which are used only while they are live.</p>
       <p>We may also disclose information if required by law.</p>
 
       <h2 style={S.h2}>5. Retention and deletion</h2>
       <ul>
-        <li>When a merchant uninstalls the App, their store&rsquo;s access credentials are removed right away and their open auctions are stopped.</li>
-        <li>When Shopify sends the store data-erasure request (about 48 hours after uninstall), we delete that store&rsquo;s auctions, bids, notice records, settings and plan record.</li>
-        <li>When Shopify sends a customer data-erasure request, we delete that customer&rsquo;s bids and notice records and remove them as a recorded winner.</li>
-        <li>Auction records, including bids and notice records, are also deleted automatically 24 months after the auction ends.</li>
+        <li>When a merchant uninstalls the App, their store&rsquo;s access credentials are removed right away and their open auctions and live shows are stopped.</li>
+        <li>When Shopify sends the store data-erasure request (about 48 hours after uninstall), we delete that store&rsquo;s auctions, bids, notice records, Live Drops shows, items, claims and invoice records, settings and plan record.</li>
+        <li>When Shopify sends a customer data-erasure request, we delete that customer&rsquo;s bids, Live Drops claims and invoice records, and notice records, and remove them as a recorded winner.</li>
+        <li>Auction and Live Drops records, including bids, claims and notice records, are also deleted automatically 24 months after the auction or show ends.</li>
         <li>Encrypted weekly backups are kept for up to 30 days, so a record erased on request can remain in a backup for that long.</li>
         <li>Each bidder's choices about optional emails (outbid alerts, reminders, results) are stored so we respect them, and are deleted with the rest of their data.</li>
         <li>We respond to customer data requests that Shopify forwards to us.</li>

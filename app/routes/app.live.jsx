@@ -125,7 +125,7 @@ export const action = async ({ request }) => {
     await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } });
     touch(saleId);
     await ensureStockForSale({ shop, saleId, admin });
-    return { success: "The show is live. Press Go on an item when you're ready to sell it." };
+    return { success: "The show is live. Press Open for claiming on an item when you're ready to sell it." };
   }
   if (intent === "go") {
     if (sale.status === "DRAFT") await prisma.actionSale.update({ where: { id: saleId }, data: { status: "LIVE", lastActivityAt: new Date() } }); // opening an item starts the show
@@ -180,7 +180,7 @@ const card = { border: "1px solid #d9d9d9", borderRadius: 12, padding: 16, backg
 const field = { padding: "9px 12px", border: "1px solid #8a8a8a", borderRadius: 8, font: "inherit", width: "100%", boxSizing: "border-box" };
 const button = (primary) => ({ padding: "10px 16px", borderRadius: 8, border: primary ? "none" : "1px solid #8a8a8a", background: primary ? "#303030" : "#f6f6f7", color: primary ? "#fff" : "#303030", fontWeight: 600, cursor: "pointer", font: "inherit" });
 const money = (v) => `$${Number(v || 0).toFixed(2)}`;
-const STATUS = { DRAFT: ["NOT STARTED", "#616161"], LIVE: ["\u25CF LIVE", "#b3261e"], ENDED: ["ENDED", "#616161"], QUEUED: ["WAITING", "#616161"], OPEN: ["\u25CF OPEN", "#008060"], CLOSED: ["CLOSED", "#616161"] };
+const STATUS = { DRAFT: ["NOT STARTED", "#616161"], LIVE: ["\u25CF LIVE", "#b3261e"], ENDED: ["ENDED", "#616161"], CANCELLED: ["STOPPED", "#616161"], QUEUED: ["WAITING", "#616161"], OPEN: ["\u25CF OPEN", "#008060"], CLOSED: ["CLOSED", "#616161"] };
 
 function Thumb({ src }) {
   return src ? <img src={src} alt="" style={{ width: 52, height: 52, objectFit: "cover", aspectRatio: "1 / 1", borderRadius: 8, flex: "none" }} /> : <div style={{ width: 52, height: 52, borderRadius: 8, background: "#e3e3e3", flex: "none" }} />;

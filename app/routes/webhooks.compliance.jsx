@@ -1,6 +1,7 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { emailDataRequest } from "../notifications.server";
+import { liveDropsDataFor, eraseCustomerLiveDrops, eraseShopLiveDrops } from "../live-drops-erasure.server";
 
 // Shopify's three mandatory privacy webhooks (required for App Store apps):
 // customers/data_request, customers/redact, shop/redact.
@@ -25,6 +26,7 @@ export const action = async ({ request }) => {
           watches: await db.watch.count({ where: { customerId, shop } }),
           notices: await db.auctionNotification.count({ where: { customerId } }),
           blocked: Boolean(await db.blockedBidder.findUnique({ where: { shop_customerId: { shop, customerId } } })),
+          liveDrops: await liveDropsDataFor({ shop, customerId }),
           events: events.map((e) => ({ title: e.auction?.title || "Auction", amount: e.amount, at: e.createdAt })),
         };
         await emailDataRequest({ shop, customerId, report }).catch((error) => console.error("[compliance] data request email failed:", error?.message || error));
@@ -42,6 +44,7 @@ export const action = async ({ request }) => {
         await db.blockedBidder.deleteMany({ where: { customerId, shop } });
         await db.notificationPref.deleteMany({ where: { customerId, shop } });
         await db.auctionNotification.deleteMany({ where: { customerId } });
+        await eraseCustomerLiveDrops({ shop, customerId });
         await db.auction.updateMany({
           where: { shop, winnerId: { in: [customerId, `gid://shopify/Customer/${customerId}`] } },
           data: { winnerId: null },
@@ -61,6 +64,7 @@ export const action = async ({ request }) => {
       await db.blockedBidder.deleteMany({ where: { shop } });
       await db.watch.deleteMany({ where: { shop } });
       await db.notificationPref.deleteMany({ where: { shop } });
+      await eraseShopLiveDrops({ shop });
       console.log(`[compliance] shop data erased for ${shop}`);
       break;
     }

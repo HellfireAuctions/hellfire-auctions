@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { stopShopLiveDrops } from "../live-drops-erasure.server";
 
 export const action = async ({ request }) => {
   const { shop, session, topic } = await authenticate.webhook(request);
@@ -22,6 +23,14 @@ export const action = async ({ request }) => {
     if (stopped.count) console.log(`[uninstall] stopped ${stopped.count} open auction(s) for ${shop}`);
   } catch (error) {
     console.error("[uninstall] could not stop open auctions:", error?.message || error);
+  }
+
+  // Live shows are stopped too (and any running video channel is shut down), for the same reason.
+  try {
+    const live = await stopShopLiveDrops({ shop });
+    if (live.stopped || live.channels) console.log(`[uninstall] stopped ${live.stopped} live show(s) and ${live.channels} video channel(s) for ${shop}`);
+  } catch (error) {
+    console.error("[uninstall] could not stop live shows:", error?.message || error);
   }
 
   return new Response();

@@ -9,6 +9,7 @@ import { publish } from "./live-hub.server.js";
 import { selfTestIfDue, selfTestAfterBoot } from "./self-test.server.js";
 import { orphanSweepIfDue, orphanSweepAfterBoot } from "./orphan-sweep.server.js";
 import { startDropsFollowUp } from "./drops-followup.server.js";
+import { eraseOldLiveDrops } from "./live-drops-erasure.server.js";
 import { memoDelete } from "./memo.server.js";
 
 const ENDING_SOON_WINDOW_MS = 60 * 60_000;
@@ -804,6 +805,12 @@ async function retentionSweep() {
   if (Date.now() - lastRetention < 12 * 3600_000) return;
   lastRetention = Date.now();
   const cutoff = new Date(Date.now() - 730 * 24 * 3600_000);
+  try {
+    const removedShows = await eraseOldLiveDrops({ db: prisma });
+    if (removedShows) console.log("[hellfire-auctions] retention: removed", removedShows, "live shows older than 24 months");
+  } catch (error) {
+    console.error("[hellfire-auctions] live show retention error:", error?.message || error);
+  }
   const old = await prisma.auction.findMany({
     where: { endsAt: { lt: cutoff }, status: { in: ["ENDED", "CANCELLED", "SETTLEMENT_FAILED"] } },
     select: { id: true },

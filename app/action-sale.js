@@ -69,7 +69,7 @@ export function roomView({ sale, drops, myClaims = [] }) {
   const heldByDrop = new Map();
   for (const c of myClaims) heldByDrop.set(c.dropId, (heldByDrop.get(c.dropId) || 0) + Number(c.quantity));
   const brief = (d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl || null, price: Number(d.price), quantity: d.quantity, remaining: remaining(d), perPerson: d.perPerson });
-  const phase = sale.status === "ENDED" ? "ended" : sale.status === "DRAFT" ? "before" : open ? "open" : "between";
+  const phase = sale.status === "ENDED" || sale.status === "CANCELLED" ? "ended" : sale.status === "DRAFT" ? "before" : open ? "open" : "between";
   const mine = sorted.filter((d) => heldByDrop.has(d.id)).map((d) => ({ title: d.title, price: Number(d.price), quantity: heldByDrop.get(d.id) }));
   return {
     title: sale.title,

@@ -2,14 +2,16 @@ import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { emailDataRequest } from "../notifications.server";
 import { liveDropsDataFor, eraseCustomerLiveDrops, eraseShopLiveDrops } from "../live-drops-erasure.server";
+import { readWebhook, guardWebhook } from "../webhook-guard.server";
 
 // Shopify's three mandatory privacy webhooks (required for App Store apps):
 // customers/data_request, customers/redact, shop/redact.
 // authenticate.webhook() verifies the HMAC and returns 401 for invalid requests.
 export const action = async ({ request }) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);
+  const { shop, topic, payload } = await readWebhook(request, authenticate);
   const normalized = String(topic).replaceAll("/", "_").toUpperCase();
 
+  await guardWebhook(normalized, async () => {
   switch (normalized) {
     case "CUSTOMERS_DATA_REQUEST": {
       const customerId = String(payload?.customer?.id ?? "");
@@ -72,6 +74,7 @@ export const action = async ({ request }) => {
     default:
       console.log(`[compliance] unhandled topic ${topic} for ${shop}`);
   }
+  });
 
   return new Response();
 };

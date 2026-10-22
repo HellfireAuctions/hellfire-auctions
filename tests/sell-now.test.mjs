@@ -31,7 +31,7 @@ assert.ok(route.includes('if (intent === "sell-now") {'), "the admin has the act
 assert.ok(route.includes("sellNowDecision(target, new Date())"), "the action checks the rules on the server (never trusts the button)");
 assert.ok(route.includes("settleAuctionNow(session.shop, target.id)"), "and settles through the same code as a normal ending");
 assert.ok(route.includes('value="sell-now"') && route.includes("End now and sell"), "and the button is on the auction card");
-assert.ok(route.includes("sellNowDecision(auction).ok"), "shown only when it would work");
+assert.ok(route.includes("sellNowDecision(auction).ok ?") && route.includes("End now and sell isn&rsquo;t available yet"), "shown when it works, and otherwise says why");
 assert.ok(worker.includes("export async function settleAuctionNow(shop, auctionId)"), "the worker can settle one auction immediately");
 const settle = worker.slice(worker.indexOf("export async function settleAuctionNow"), worker.indexOf("export function wakeWorker"));
 assert.ok(settle.includes("await settleAuction(") && settle.includes("status: \"LIVE\""), "it only touches a running auction, using the normal settle routine");

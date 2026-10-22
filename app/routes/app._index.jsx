@@ -3149,13 +3149,15 @@ export default function AuctionsPage() {
                           <s-button type="submit" variant="tertiary">Remove from list</s-button>
                         </Form>
                       ) : null}
-                      {sellNowDecision(auction).ok && (
+                      {sellNowDecision(auction).ok ? (
                         <Form method="post" onSubmit={(e) => { if (!window.confirm("End this auction now and sell it to the high bidder? The winner will be invoiced right away.")) e.preventDefault(); }}>
                           <input type="hidden" name="intent" value="sell-now" />
                           <input type="hidden" name="auctionId" value={auction.id} />
                           <s-button type="submit" variant="primary">End now and sell</s-button>
                         </Form>
-                      )}
+                      ) : state === "LIVE" ? (
+                        <div style={{ fontSize: 12, color: "#616161", width: "100%" }}>End now and sell isn&rsquo;t available yet: {sellNowDecision(auction).message}</div>
+                      ) : null}
                       {state !== "ENDED" && auction.status !== "CANCELLED" && (
                         <Form method="post" onSubmit={(e) => { if (!window.confirm("End this auction now WITHOUT a sale? Nobody will be invoiced and the product will be hidden. Use this if there's a problem with the item.")) e.preventDefault(); }}>
                           <input type="hidden" name="intent" value="end" />

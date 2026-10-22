@@ -54,12 +54,20 @@ export function planKeyFromBillingName(name) {
 }
 
 // Development stores get free test charges; real stores are billed for real.
+const reportedPlans = new Set();
 export async function isDevelopmentStore(admin) {
   try {
     const response = await admin.graphql(`#graphql
-      query StorePlan { shop { plan { partnerDevelopment } } }`);
+      query StorePlan { shop { myshopifyDomain plan { partnerDevelopment displayName } } }`);
     const json = await response.json();
-    return Boolean(json?.data?.shop?.plan?.partnerDevelopment);
+    const shop = json?.data?.shop;
+    const isDev = Boolean(shop?.plan?.partnerDevelopment);
+    // Shopify's own review stores are not always flagged as development stores. Note what they report, once per store.
+    if (!isDev && shop?.myshopifyDomain && !reportedPlans.has(shop.myshopifyDomain)) {
+      reportedPlans.add(shop.myshopifyDomain);
+      console.log("[plan] not treated as a development store:", shop.myshopifyDomain, JSON.stringify(shop.plan || null));
+    }
+    return isDev;
   } catch {
     return false;
   }

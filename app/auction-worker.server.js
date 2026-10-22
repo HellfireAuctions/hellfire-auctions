@@ -1449,6 +1449,18 @@ async function runScheduledTick() {
 }
 
 // Called after the merchant creates, relists or cancels an auction.
+// "End now and sell": the merchant accepts the best offer early. The auction ends this instant and is settled by exactly the same
+// routine as a normal ending, so the winner gets the same draft order and invoice.
+export async function settleAuctionNow(shop, auctionId) {
+  const running = await prisma.auction.findFirst({ where: { id: auctionId, shop, status: "LIVE" } });
+  if (!running) return { ok: false };
+  await prisma.auction.update({ where: { id: running.id }, data: { endsAt: new Date() } });
+  const fresh = await prisma.auction.findUnique({ where: { id: running.id } });
+  await settleAuction(fresh);
+  const done = await prisma.auction.findUnique({ where: { id: running.id }, select: { status: true, winnerId: true, winnerCheckoutUrl: true, winnerDraftOrderId: true } });
+  return { ok: true, ...done };
+}
+
 export function wakeWorker() {
   schedule(1000);
 }

@@ -5,7 +5,8 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { resolveProxyBids } from "../bidding.server";
 import { canCreateAuction, getShopPlan, planNeedsChoice } from "../plans.server";
-import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep } from "../auction-worker.server";
+import { wakeWorker, offerToNextBidder, remindWinnerNow, cancelUnpaidSale, combineWinnerInvoices, releaseDraftFor, runPaymentSweep, settleAuctionNow } from "../auction-worker.server";
+import { sellNowDecision } from "../sell-now";
 import { getShopSettings, saveShopSettings } from "../settings.server";
 import { BIDDER_RULES } from "../bidder-rules";
 import { parseBuyNowPrice } from "../buy-now";
@@ -1313,6 +1314,26 @@ const actionImpl = async ({ request }) => {
             ? "Bid removed. The price and leader have been recalculated."
             : "That bidder has no bid on this auction.",
     };
+  }
+
+  if (intent === "sell-now") {
+    const candidate = await prisma.auction.findFirst({ where: { id: formData.get("auctionId")?.toString() || "", shop: session.shop } });
+    const target = candidate;
+    const decision = sellNowDecision(target, new Date());
+    if (!decision.ok) return { error: decision.message };
+    try {
+      const result = await settleAuctionNow(session.shop, target.id);
+      if (!result.ok) return { error: "This auction could not be sold right now. Please try again in a moment." };
+      if (!result.winnerId) return { error: "The auction ended, but there was no winner to invoice." };
+      return {
+        success: result.winnerDraftOrderId || result.winnerCheckoutUrl
+          ? "Sold! The auction has ended, a Shopify draft order was created for the high bidder, and the invoice was emailed to them. You can find it in Shopify under Orders, then Drafts."
+          : "Sold! The auction has ended and the high bidder is the winner. Their invoice is being prepared and will be emailed shortly.",
+      };
+    } catch (error) {
+      console.error("[admin] sell now failed:", error?.message || error);
+      return { error: "That didn't work: " + (error?.message || "unknown error") };
+    }
   }
 
   if (["cancel", "end", "relist", "delete"].includes(intent)) {
@@ -3128,6 +3149,13 @@ export default function AuctionsPage() {
                           <s-button type="submit" variant="tertiary">Remove from list</s-button>
                         </Form>
                       ) : null}
+                      {sellNowDecision(auction).ok && (
+                        <Form method="post" onSubmit={(e) => { if (!window.confirm("End this auction now and sell it to the high bidder? The winner will be invoiced right away.")) e.preventDefault(); }}>
+                          <input type="hidden" name="intent" value="sell-now" />
+                          <input type="hidden" name="auctionId" value={auction.id} />
+                          <s-button type="submit" variant="primary">End now and sell</s-button>
+                        </Form>
+                      )}
                       {state !== "ENDED" && auction.status !== "CANCELLED" && (
                         <Form method="post" onSubmit={(e) => { if (!window.confirm("End this auction now WITHOUT a sale? Nobody will be invoiced and the product will be hidden. Use this if there's a problem with the item.")) e.preventDefault(); }}>
                           <input type="hidden" name="intent" value="end" />

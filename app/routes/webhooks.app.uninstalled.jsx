@@ -4,15 +4,13 @@ import { stopShopLiveDrops } from "../live-drops-erasure.server";
 import { readWebhook, guardWebhook } from "../webhook-guard.server";
 
 export const action = async ({ request }) => {
-  const { shop, session, topic } = await readWebhook(request, authenticate);
+  const { shop, topic } = await readWebhook(request, authenticate);
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
   // Webhook requests can trigger multiple times and after an app has already been uninstalled.
   // If this webhook already ran, the session may have been deleted previously.
-  if (session) {
-    await guardWebhook("uninstall (removing the store's access)", () => db.session.deleteMany({ where: { shop } }));
-  }
+  await guardWebhook("uninstall (removing the store's access)", () => db.session.deleteMany({ where: { shop } }));
 
   // The app can no longer reach this store, so stop its open auctions. Otherwise the worker would keep
   // trying to start and settle them (and a reinstall would find them half-finished).

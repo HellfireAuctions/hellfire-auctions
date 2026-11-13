@@ -74,7 +74,28 @@ export async function isDevelopmentStore(admin) {
 }
 
 // Asks Shopify which plan is really active and saves it (Shopify is the source of truth).
-export async function syncShopPlan({ billing, admin, shop }) {
+import { pickActiveSubscription } from "./plan-pick.js";
+export { markSubscriptionCancelled } from "./plan-pick.js";
+
+// Right after a merchant approves a charge, Shopify's list of active subscriptions can lag behind. Ask about that exact charge.
+async function findApprovedCharge(admin, shop, chargeId) {
+  try {
+    const id = String(chargeId).startsWith("gid://") ? String(chargeId) : "gid://shopify/AppSubscription/" + String(chargeId);
+    const response = await admin.graphql(
+      `#graphql
+        query ApprovedCharge($id: ID!) { node(id: $id) { ... on AppSubscription { id name status test } } }`,
+      { variables: { id } },
+    );
+    const node = (await response.json())?.data?.node;
+    if (!node || ![BILLING_NAMES.BLAZE, BILLING_NAMES.INFERNO].includes(node.name)) return null;
+    return pickActiveSubscription([node], { shop, chargeId });
+  } catch (error) {
+    console.error("[plans] could not confirm the approved charge:", error?.message || error);
+    return null;
+  }
+}
+
+export async function syncShopPlan({ billing, admin, shop, chargeId = null }) {
   const isTest = await isDevelopmentStore(admin);
   if (isComplimentary(shop)) {
     return { plan: PLANS.INFERNO, isTest, subscription: null, complimentary: true };
@@ -83,7 +104,8 @@ export async function syncShopPlan({ billing, admin, shop }) {
     plans: [BILLING_NAMES.BLAZE, BILLING_NAMES.INFERNO],
     isTest,
   });
-  const active = (appSubscriptions || []).find((s) => s.status === "ACTIVE") || null;
+  let active = pickActiveSubscription(appSubscriptions, { shop, chargeId });
+  if (!active && chargeId) active = await findApprovedCharge(admin, shop, chargeId);
   const key = active ? planKeyFromBillingName(active.name) : "SPARK";
   await setShopPlan(shop, key, active?.id || null, { confirm: confirmOnSync(active) });
   return { plan: PLANS[key], isTest, subscription: active, complimentary: false };

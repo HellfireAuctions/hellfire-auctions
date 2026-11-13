@@ -2,12 +2,13 @@ import { useEffect } from "react";
 import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import { authenticate } from "../shopify.server";
 import { BILLING_NAMES, PLANS, TRIAL_DAYS, HOT_BID_THRESHOLD } from "../plans.shared";
-import { auctionsCreatedThisMonth, planNeedsChoice, setShopPlan, syncShopPlan } from "../plans.server";
+import { auctionsCreatedThisMonth, markSubscriptionCancelled, planNeedsChoice, setShopPlan, syncShopPlan } from "../plans.server";
 
 export const loader = async ({ request }) => {
   const { billing, admin, session } = await authenticate.admin(request);
   const wasUndecided = await planNeedsChoice(session.shop);
-  const { plan, isTest, complimentary } = await syncShopPlan({ billing, admin, shop: session.shop });
+  const chargeId = new URL(request.url).searchParams.get("charge_id");
+  const { plan, isTest, complimentary } = await syncShopPlan({ billing, admin, shop: session.shop, chargeId });
   const stillUndecided = await planNeedsChoice(session.shop);
   if (wasUndecided && !stillUndecided) throw redirect("/app"); // a paid plan was just approved: on to the setup guide
   const used = await auctionsCreatedThisMonth(session.shop);
@@ -30,6 +31,7 @@ export const action = async ({ request }) => {
   if (target === "SPARK") {
     if (subscription?.id) {
       await billing.cancel({ subscriptionId: subscription.id, isTest, prorate: true });
+      markSubscriptionCancelled(session.shop, subscription.id); // Shopify is slow to record this; don't let the page flip back
     }
     const wasUndecided = await planNeedsChoice(session.shop);
     await setShopPlan(session.shop, "SPARK", null, { confirm: true });

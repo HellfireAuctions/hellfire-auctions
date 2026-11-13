@@ -44,7 +44,7 @@ async function createAndSendWinnerInvoice(auction, winnerId, opts = {}) {
   // Inventory apps or manual edits can set the item to 0, which would break the winner's checkout.
   await ensureInvoiceStock(auction).catch((error) => console.error("[hellfire-auctions] stock re-check failed:", error?.message || error));
   // A buyer who already combined their wins into one unpaid invoice gets new wins added to it.
-  if (!auction.winnerDraftOrderId && !opts.secondChance) {
+  if (!auction.winnerDraftOrderId && !opts.secondChance && !opts.test) {
     const joined = await tryJoinCombinedInvoice(auction, winnerId);
     if (joined) return joined;
   }
@@ -96,8 +96,8 @@ async function createAndSendWinnerInvoice(auction, winnerId, opts = {}) {
       {
         input: {
           purchasingEntity: { customerId: customerGid },
-          note: `Hellfire Auctions winner: ${auction.title}`,
-          tags: ["Hellfire Auction"],
+          note: opts.test ? `Hellfire Auctions TEST auction (not sent to the shopper): ${auction.title}` : `Hellfire Auctions winner: ${auction.title}`,
+          tags: opts.test ? ["Hellfire Auction", "Hellfire test auction"] : ["Hellfire Auction"],
           lineItems: [
             {
               variantId: variant.id,
@@ -129,6 +129,9 @@ async function createAndSendWinnerInvoice(auction, winnerId, opts = {}) {
       data: { winnerDraftOrderId: draftOrderId, winnerCheckoutUrl: checkoutUrl },
     });
   }
+
+  // A test auction's draft order exists so the merchant can see how invoicing works, but nobody is ever emailed about it.
+  if (opts.test) return { draftOrderId, checkoutUrl };
 
   if (!auction.winnerNotifiedAt) {
     // Primary: our own email (photo, price, deadline, secure checkout link). Shopify's invoice email
@@ -283,6 +286,17 @@ async function settleAuction(auction) {
         auction,
         winnerId,
       ));
+    }
+
+    // A test auction on a live store: still no winner and no email, but make the draft order so the full flow can be seen.
+    if (!winnerId && testOnLiveStore && testTopBidder) {
+      try {
+        if (await productStillExists(auction)) {
+          ({ draftOrderId, checkoutUrl } = await createAndSendWinnerInvoice(auction, testTopBidder, { test: true }));
+        }
+      } catch (error) {
+        console.error("[hellfire-auctions] test auction draft order failed:", error?.message || error);
+      }
     }
 
     await prisma.auction.update({

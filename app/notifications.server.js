@@ -709,6 +709,8 @@ export async function notifyMerchantTestEnded({ auction, topBidderId }) {
       return;
     }
     const title = data?.product?.title || auction.title;
+    const draftId = auction.winnerDraftOrderId ? String(auction.winnerDraftOrderId).split("/").pop() : null;
+    const draftLink = draftId ? `https://admin.shopify.com/store/${String(auction.shop || "").replace(/\.myshopify\.com$/, "")}/draft_orders/${draftId}` : null;
     await sendEmail({
       to,
       subject: `Test auction finished: ${title}`,
@@ -717,8 +719,15 @@ export async function notifyMerchantTestEnded({ auction, topBidderId }) {
         topBidderId && data?.customer?.email
           ? `The top bidder was ${data.customer.email} at ${money(auction.currentBid)}.`
           : "There was no qualifying top bid.",
-        "Because this was a test auction, no winner, order or invoice was created, and nobody can pay for it.",
-        "For a real sale, create the auction with a length of 24 hours or longer.",
+        ...(draftLink
+          ? [
+              `A Shopify draft order was created for the top bidder so you can see how invoicing works: ${draftLink} (it is tagged "Hellfire test auction"). It was NOT emailed to the bidder, nothing was charged, and you can delete it.`,
+              "Test auctions never email or charge anyone. For a real sale, with the invoice emailed to the winner, create an auction of 24 hours or longer.",
+            ]
+          : [
+              "Because this was a test auction, no winner, order or invoice was created, and nobody can pay for it.",
+              "For a real sale, create the auction with a length of 24 hours or longer.",
+            ]),
       ],
       shopName: data?.shop?.name || "your store",
     });

@@ -11,7 +11,6 @@ import { getShopSettings, saveShopSettings } from "../settings.server";
 import { BIDDER_RULES } from "../bidder-rules";
 import { parseBuyNowPrice } from "../buy-now";
 import { squareCrop, outputSide, photoProblem } from "../photo-ratio";
-import { plainTextFromHtml } from "../product-pick";
 import { urlPhotoProblem } from "../photo-url.server";
 import { wantsBubble } from "../bubble-setting";
 import { menuStatus, itemsToAdd } from "../menu-items";
@@ -2011,7 +2010,6 @@ function AuctionForm({
 
   const [photoCount, setPhotoCount] = useState(0);
   const [thumbs, setThumbs] = useState([]);
-  const [pickNote, setPickNote] = useState("");
   const [photoNote, setPhotoNote] = useState("");
 
   const calculateEndPreview = () => {
@@ -2057,53 +2055,6 @@ function AuctionForm({
     setImagePreview(squared[0] ? URL.createObjectURL(squared[0]) : source?.imageUrl || null);
   };
 
-  // "Choose an existing product": opens Shopify's own product picker, then copies that product's title, description and
-  // photos into this form. The merchant's original product is never touched; the auction gets its own listing.
-  const pickExistingProduct = async (event) => {
-    const form = event.currentTarget.closest("form");
-    setPickNote("");
-    let picked;
-    try {
-      picked = await window.shopify.resourcePicker({ type: "product", action: "select", multiple: false });
-    } catch {
-      setPickNote("The product picker couldn't open. Please try again, or add the details by hand below.");
-      return;
-    }
-    const product = picked && picked[0];
-    if (!product || !form) return;
-    const titleField = form.querySelector('s-text-field[name="title"]');
-    const descField = form.querySelector('s-text-area[name="description"]');
-    if (titleField) titleField.value = product.title || "";
-    if (descField && product.descriptionHtml) descField.value = plainTextFromHtml(product.descriptionHtml);
-    const urls = (product.images || []).map((i) => i.originalSrc || i.url).filter(Boolean).slice(0, 5);
-    const squared = [];
-    for (const url of urls) {
-      try {
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const out = await toSquare(new File([blob], "product-photo.jpg", { type: blob.type || "image/jpeg" }));
-        if (out) squared.push(out);
-      } catch {
-        /* a photo that can't be read is skipped */
-      }
-    }
-    const input = form.querySelector('input[type="file"][name="image"]');
-    if (input && squared.length) {
-      const transfer = new DataTransfer();
-      for (const f of squared) transfer.items.add(f);
-      input.files = transfer.files;
-      setPhotoNote("");
-      setPhotoCount(squared.length);
-      setThumbs(squared.map((f) => URL.createObjectURL(f)));
-      setImagePreview(URL.createObjectURL(squared[0]));
-    }
-    setPickNote(
-      squared.length
-        ? `Copied "${product.title}": its title, description and ${squared.length} photo${squared.length === 1 ? "" : "s"}. Your original product is not changed. Edit anything you like, then set the price and length below.`
-        : `Copied "${product.title}", but its photos couldn't be loaded. Please add a photo below.`,
-    );
-  };
-
   return (
     <Form
       method="post"
@@ -2124,16 +2075,6 @@ function AuctionForm({
       )}
 
       <s-stack gap="base">
-
-        {!isEdit && !locked && (
-          <s-section heading="Start from a product you already sell (optional)">
-            <s-stack gap="small">
-              <s-text>Choose one of your store&rsquo;s existing products and its title, description and photos are copied into this auction. Your original product is not changed.</s-text>
-              <s-button type="button" onClick={pickExistingProduct}>Choose an existing product</s-button>
-              {pickNote && <div role="status" style={{ fontSize: 13, color: "#303030" }}>{pickNote}</div>}
-            </s-stack>
-          </s-section>
-        )}
 
         {locked ? (
           <s-stack gap="small">

@@ -1012,6 +1012,7 @@ export const loader = async ({ request }) => {
       ...auction,
       bidders,
       paymentStatus: auction.winnerDraftOrderId ? draftStatuses.get(auction.winnerDraftOrderId) || null : null,
+        draftShared: auction.winnerDraftOrderId ? auctions.filter((x) => x.winnerDraftOrderId === auction.winnerDraftOrderId).length : 0,
       weight: weights.get(auction.productId) || null,
       winnerStrikes: auction.winnerId ? strikeMap.get(String(auction.winnerId)) || 0 : 0,
       autoRelistLeft: relistLeft.get(auction.id) || 0,
@@ -1325,10 +1326,13 @@ const actionImpl = async ({ request }) => {
       const result = await settleAuctionNow(session.shop, target.id);
       if (!result.ok) return { error: "This auction could not be sold right now. Please try again in a moment." };
       if (!result.winnerId) return { error: "The auction ended, but there was no winner to invoice." };
+      const sharing = result.winnerDraftOrderId ? await prisma.auction.count({ where: { shop: session.shop, winnerDraftOrderId: result.winnerDraftOrderId } }) : 0;
       return {
-        success: result.winnerDraftOrderId || result.winnerCheckoutUrl
-          ? "Sold! The auction has ended, a Shopify draft order was created for the high bidder, and the invoice was emailed to them. You can find it in Shopify under Orders, then Drafts."
-          : "Sold! The auction has ended and the high bidder is the winner. Their invoice is being prepared and will be emailed shortly.",
+        success: !(result.winnerDraftOrderId || result.winnerCheckoutUrl)
+          ? "Sold! The auction has ended and the high bidder is the winner. Their invoice is being prepared and will be emailed shortly."
+          : sharing > 1
+            ? `Sold! This buyer already had an open invoice, so this win was added to it (${sharing} items on one draft order). Find it in Shopify under Orders, then Drafts, or click "Open the draft order in Shopify" on the auction card.`
+            : "Sold! The auction has ended, a new Shopify draft order was created for the high bidder, and the invoice was emailed to them. Find it in Shopify under Orders, then Drafts, or click \"Open the draft order in Shopify\" on the auction card.",
       };
     } catch (error) {
       console.error("[admin] sell now failed:", error?.message || error);
@@ -1386,7 +1390,7 @@ const actionImpl = async ({ request }) => {
       } catch (error) {
         console.error("[admin] hide ended product failed:", error?.message || error);
       }
-      return { success: "Auction ended early with no sale. Nobody will be invoiced, and the product is hidden from your store." };
+      return { success: "Auction ended early with no sale. Nobody will be invoiced, and the product is hidden from your store." + (target.bidCount > 0 ? " Changed your mind? Click \"Sell to the high bidder\" on the auction card." : "") };
     }
 
     // Relist an unsold auction with a length the merchant chooses.
@@ -2999,6 +3003,12 @@ export default function AuctionsPage() {
                       {state === "UPCOMING" ? "Starts " : state === "LIVE" ? "Ends " : "Ended "}
                       {formatEastern(new Date(state === "UPCOMING" ? auction.startsAt : auction.endsAt), timezone)}
                     </div>
+                    {state === "ENDED" && auction.winnerId && auction.winnerDraftOrderId && (
+                      <div style={{ fontSize: 12 }}>
+                        <a href={"shopify://admin/draft_orders/" + String(auction.winnerDraftOrderId).split("/").pop()} target="_top">Open the draft order in Shopify</a>
+                        {auction.draftShared > 1 ? ` (combined with this buyer's other wins: ${auction.draftShared} items on one invoice)` : ""}
+                      </div>
+                    )}
                     {state === "ENDED" && auction.winnerId && ["COMPLETED", "OPEN", "INVOICE_SENT"].includes(auction.paymentStatus) && (
                       <div style={{ fontSize: 13 }}>
                         {auction.paymentStatus === "COMPLETED" ? (
@@ -3154,10 +3164,10 @@ export default function AuctionsPage() {
                         </Form>
                       ) : null}
                       {sellNowDecision(auction).ok ? (
-                        <Form method="post" onSubmit={(e) => { if (!window.confirm("End this auction now and sell it to the high bidder? The winner will be invoiced right away.")) e.preventDefault(); }}>
+                        <Form method="post" onSubmit={(e) => { if (!window.confirm(auction.status === "CANCELLED" ? "Sell this auction to its high bidder now? The winner will be invoiced right away." : "End this auction now and sell it to the high bidder? The winner will be invoiced right away.")) e.preventDefault(); }}>
                           <input type="hidden" name="intent" value="sell-now" />
                           <input type="hidden" name="auctionId" value={auction.id} />
-                          <s-button type="submit" variant="primary">End now and sell</s-button>
+                          <s-button type="submit" variant="primary">{auction.status === "CANCELLED" ? "Sell to the high bidder" : "End now and sell"}</s-button>
                         </Form>
                       ) : state === "LIVE" ? (
                         <div style={{ fontSize: 12, color: "#616161", width: "100%" }}>End now and sell isn&rsquo;t available yet: {sellNowDecision(auction).message}</div>

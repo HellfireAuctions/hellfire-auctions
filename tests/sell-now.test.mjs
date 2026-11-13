@@ -17,7 +17,13 @@ assert.match(sellNowDecision(auction({ reservePrice: 100 }), now).message, /rese
 assert.match(sellNowDecision(auction({ isTest: true }), now).message, /Test auctions/, "test auctions can't be sold");
 assert.match(sellNowDecision(auction({ endsAt: "2026-10-21T11:59:00Z" }), now).message, /already ended/, "past its end time");
 assert.match(sellNowDecision(auction({ endsAt: "2026-10-21T12:00:00Z" }), now).message, /already ended/, "exactly at its end time");
-for (const status of ["CANCELLED", "ENDED", "SETTLING"]) assert.match(sellNowDecision(auction({ status }), now).message, /already ended/, status);
+for (const status of ["ENDED", "SETTLING"]) assert.match(sellNowDecision(auction({ status }), now).message, /already ended/, status);
+// ended early with "End now": can still be sold to the high bidder (the reviewer was stuck without this)
+assert.equal(sellNowDecision(auction({ status: "CANCELLED", endsAt: "2026-10-21T11:00:00Z" }), now).ok, true, "ended early, with a qualifying bid: sellable");
+assert.match(sellNowDecision(auction({ status: "CANCELLED", bidCount: 0 }), now).message, /no bids/, "ended early but no bids");
+assert.match(sellNowDecision(auction({ status: "CANCELLED", reservePrice: 100 }), now).message, /reserve/, "ended early, reserve not met");
+assert.match(sellNowDecision(auction({ status: "CANCELLED", winnerId: "abc" }), now).message, /already has a winner/, "ended early but already sold");
+assert.match(sellNowDecision(auction({ status: "CANCELLED", isTest: true }), now).message, /Test auctions/, "test auctions still can't be sold");
 for (const status of ["DRAFT", "UPCOMING"]) assert.match(sellNowDecision(auction({ status }), now).message, /Only a running auction/, status);
 assert.match(sellNowDecision(null, now).message, /could not be found/);
 assert.match(sellNowDecision(undefined, now).message, /could not be found/);

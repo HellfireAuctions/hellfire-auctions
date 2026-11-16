@@ -7,7 +7,7 @@ import { subscribe } from "./live-hub.server.js";
 // owner is emailed once. This catches a bad release within minutes instead of when a real bidder hits it.
 
 export const SELFTEST_SHOP = "selftest.myshopify.com";
-export const EVERY_MS = 10 * 60_000;
+export const EVERY_MS = 60 * 60_000; // hourly: lets the database sleep between checks
 const slot = () => (globalThis.__HF_SELFTEST__ ||= { at: 0, ok: null, failures: [], checks: 0, ms: 0, running: false });
 export const selfTestStatus = () => ({ ...slot() });
 

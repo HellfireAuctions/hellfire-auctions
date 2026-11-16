@@ -622,6 +622,9 @@ async function autoSecondChance(a) {
 }
 
 // ----- merchant actions on an unpaid winner -----
+// A store that has uninstalled has no saved login. Its leftover rows are harmless, so that is not worth an error line every pass.
+export const storeIsGone = (error) => /Could not find a session for shop/.test(error?.message || String(error));
+
 export async function remindWinnerNow(shop, auctionId) {
   const a = await prisma.auction.findFirst({ where: { id: auctionId, shop } });
   if (!a?.winnerId) return { error: "This auction has no winner." };
@@ -888,7 +891,7 @@ async function checkStorefrontEmbeds() {
         if (fresh) notifyMerchantEmbedOff({ auction: a }).catch(() => {});
       }
     } catch (error) {
-      console.error("[hellfire-auctions] embed check failed:", a.id, error?.message || error);
+      if (!storeIsGone(error)) console.error("[hellfire-auctions] embed check failed:", a.id, error?.message || error);
     }
   }
 }
@@ -1151,7 +1154,7 @@ async function paymentSweep(minGapMs = 9 * 60_000) {
         }
       }
     } catch (error) {
-      console.error("[hellfire-auctions] payment sweep failed for", shop, error?.message || error);
+      if (!storeIsGone(error)) console.error("[hellfire-auctions] payment sweep failed for", shop, error?.message || error);
     }
   }
 }

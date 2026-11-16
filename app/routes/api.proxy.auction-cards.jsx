@@ -1,3 +1,4 @@
+import { storeIsGone } from "../auction-worker.server";
 import { unauthenticated } from "../shopify.server";
 import { proxyAuth } from "../proxy-auth.server";
 import prisma from "../db.server";
@@ -80,7 +81,7 @@ export const loader = async ({ request }) => {
   try {
     handles = await handlesFor(shop, [...auctions, ...older].map((a) => a.productId));
   } catch (error) {
-    console.error("[auction-cards] handle lookup failed:", error?.message || error);
+    if (!storeIsGone(error)) console.error("[auction-cards] handle lookup failed:", error?.message || error);
   }
 
   const plan = await memo("plan:" + shop, 15_000, () => getShopPlan(shop));

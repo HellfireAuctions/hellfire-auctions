@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const read = (f) => fs.readFileSync(f, "utf8").replace(/\r\n/g, "\n");
+const selfTest = read("app/self-test.server.js");
+assert.ok(selfTest.includes("export const EVERY_MS = 60 * 60_000;"), "the self-test runs hourly, so the database can sleep");
+const w = read("app/auction-worker.server.js");
+assert.ok(w.includes("export const storeIsGone = (error) => /Could not find a session for shop/.test(error?.message || String(error));"), "the helper exists");
+const storeIsGone = (error) => /Could not find a session for shop/.test(error?.message || String(error));
+assert.equal(storeIsGone(new Error("Could not find a session for shop x.myshopify.com when creating unauthenticated admin context")), true);
+assert.equal(storeIsGone(new Error("database is down")), false, "real failures are still logged");
+assert.ok(w.includes('if (!storeIsGone(error)) console.error("[hellfire-auctions] embed check failed'), "embed check is quiet for gone stores");
+assert.ok(w.includes('if (!storeIsGone(error)) console.error("[hellfire-auctions] payment sweep failed'), "payment sweep is quiet for gone stores");
+const cards = read("app/routes/api.proxy.auction-cards.jsx");
+assert.ok(cards.includes('if (!storeIsGone(error)) console.error("[auction-cards] handle lookup failed:"') && cards.includes('import { storeIsGone } from "../auction-worker.server";'), "auction cards are quiet for gone stores");
+console.log("Quiet logs: all checks passed");

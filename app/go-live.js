@@ -1,14 +1,12 @@
-// Go Live (beta add-on): who may use it, and when a stream counts as live. Pure, so it can be tested.
+// Built-in live video (Go Live): who may use it, and when a stream counts as live. Pure, so it can be tested.
 
 export const MAX_STREAM_MS = 4 * 60 * 60 * 1000; // a stream never runs longer than 4 hours
 export const BEAT_WINDOW_MS = 30 * 1000; // the host's Studio page checks in every few seconds; silence for 30 s means the host has left
 
-// The add-on switch for now: a list of store addresses in the GOLIVE_SHOPS setting. Billing will replace this later.
-export function goLiveShops(value) {
-  return new Set(String(value || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean));
-}
-export function goLiveEnabled(shop, value) {
-  return goLiveShops(value).has(String(shop || "").trim().toLowerCase());
+// Built-in video is part of the top plan (Inferno): the video runs on Cloudflare, which costs per minute streamed and watched.
+export const GO_LIVE_PLAN = "INFERNO";
+export function goLiveEnabled(planKey) {
+  return String(planKey || "").toUpperCase() === GO_LIVE_PLAN;
 }
 
 // Is the host's video really coming through right now?

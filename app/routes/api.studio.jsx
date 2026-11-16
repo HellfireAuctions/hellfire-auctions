@@ -3,6 +3,7 @@ import { memoDelete } from "../memo.server";
 import { publish } from "../live-hub.server";
 import { verifyStudioToken } from "../studio-token.server";
 import { goLiveEnabled } from "../go-live";
+import { getShopPlan } from "../plans.server";
 import { streamConfigured } from "../cloudflare-stream.server";
 import { openDrop, closeOpenDrop } from "../action-sale.server";
 import { startStream, stopStream, beatStream, openNextDrop } from "../stream-control.server";
@@ -18,7 +19,7 @@ async function authorize(request, form) {
   const token = (form && form.get("t")) || url.searchParams.get("t") || "";
   const verdict = verifyStudioToken(token, process.env.SHOPIFY_API_SECRET);
   if (!verdict.ok) return { error: reply({ ok: false, message: "This Studio link has expired. Open the Studio again from the app." }, 401) };
-  if (!goLiveEnabled(verdict.shop, process.env.GOLIVE_SHOPS) || !streamConfigured()) return { error: reply({ ok: false, message: "Go Live isn't switched on for this store." }, 403) };
+  if (!goLiveEnabled((await getShopPlan(verdict.shop)).key) || !streamConfigured()) return { error: reply({ ok: false, message: "Built-in live video is part of the Inferno plan." }, 403) };
   return { shop: verdict.shop, saleId: verdict.saleId };
 }
 

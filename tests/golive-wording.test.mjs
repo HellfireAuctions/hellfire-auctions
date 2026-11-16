@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const read = (f) => fs.readFileSync(f, "utf8").replace(/\r\n/g, "\n");
+const all = ["app/routes/app.live.jsx", "app/routes/live-studio.jsx", "app/routes/api.studio.jsx", "app/routes/help.jsx", "app/routes/privacy.jsx", "app/go-live.js"].map(read).join("\n");
+assert.ok(!/GOLIVE_SHOPS|goLiveShops/.test(all), "the hidden store list is gone");
+assert.ok(!/beta add-on|coming add-on|is being tested|Built-in video is coming/.test(all), "built-in video is no longer described as coming or an add-on");
+assert.ok(!/anywhere else you stream|stream anywhere and share the room link\.\s*</.test(read("app/routes/app.live.jsx")), "the live page leads with the built-in camera");
+assert.ok(read("app/routes/app.live.jsx").includes("goLiveEnabled(plan.key)"), "the live page gates by plan");
+for (const f of ["app/routes/live-studio.jsx", "app/routes/api.studio.jsx"]) assert.ok(read(f).includes("goLiveEnabled((await getShopPlan(verdict.shop)).key)"), f + " gates by plan");
+console.log("Go Live wording and plan gate: all checks passed");

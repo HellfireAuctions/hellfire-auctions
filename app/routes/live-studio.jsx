@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLoaderData } from "react-router";
 import { verifyStudioToken } from "../studio-token.server";
 import { goLiveEnabled } from "../go-live";
+import { getShopPlan } from "../plans.server";
 import { streamConfigured } from "../cloudflare-stream.server";
 
 // The Live Studio: the host's camera, a Go live button, and the item controls, in one browser tab. It opens from the
@@ -13,7 +14,7 @@ export const loader = async ({ request }) => {
   const token = new URL(request.url).searchParams.get("t") || "";
   const verdict = verifyStudioToken(token, process.env.SHOPIFY_API_SECRET);
   if (!verdict.ok) return { state: "expired" };
-  if (!goLiveEnabled(verdict.shop, process.env.GOLIVE_SHOPS) || !streamConfigured()) return { state: "off" };
+  if (!goLiveEnabled((await getShopPlan(verdict.shop)).key) || !streamConfigured()) return { state: "off" };
   return { state: "ok", token };
 };
 
@@ -312,7 +313,7 @@ export default function LiveStudio() {
     return <div style={page}><h1>This Studio link has expired</h1><p>Open Live Drops in your Shopify app and press <strong>Open Live Studio</strong> again.</p></div>;
   }
   if (data.state === "off") {
-    return <div style={page}><h1>Go Live isn&rsquo;t switched on</h1><p>Built-in video is a beta add-on and isn&rsquo;t available for this store yet.</p></div>;
+    return <div style={page}><h1>Built-in video is part of the Inferno plan</h1><p>Upgrade in the app under Plans, then open the Live Studio again.</p></div>;
   }
   return <Studio token={data.token} />;
 }

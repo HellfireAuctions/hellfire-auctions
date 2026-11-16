@@ -66,9 +66,9 @@ export default function Privacy() {
         <li><strong>Render</strong> &mdash; hosts the App&rsquo;s servers.</li>
         <li><strong>Neon</strong> &mdash; hosts the App&rsquo;s database, encrypted at rest and in transit.</li>
         <li><strong>Resend</strong> &mdash; delivers auction emails to bidders.</li>
-        <li><strong>Cloudflare</strong> &mdash; carries live video, only when a merchant uses the optional Go Live feature in Live Drops. The video is streamed live and is not recorded or stored by us.</li>
+        <li><strong>Cloudflare</strong> &mdash; carries live video, only when a merchant goes live with built-in video in Live Drops. The video is streamed live and is not recorded or stored by us.</li>
       </ul>
-      <p>Go Live is optional and off unless it is switched on for the store. When a host uses it, their browser asks permission to use the camera and microphone, which are used only while they are live.</p>
+      <p>Built-in video is part of the Inferno plan and is used only when a host chooses to go live. When a host uses it, their browser asks permission to use the camera and microphone, which are used only while they are live.</p>
       <p>We may also disclose information if required by law.</p>
 
       <h2 style={S.h2}>5. Retention and deletion</h2>

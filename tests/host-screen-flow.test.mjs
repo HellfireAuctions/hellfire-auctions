@@ -14,5 +14,5 @@ const go = app.slice(at('if (intent === "go") {'), at('if (intent === "close") {
 assert.ok(go.includes('sale.status === "DRAFT"') && go.includes('status: "LIVE"'), "opening an item starts a show that has not started");
 const next = app.slice(at('if (intent === "next") {'), at('if (intent === "start") {'));
 assert.ok(next.includes('sale.status === "DRAFT"') && next.includes('status: "LIVE"'), "so does the next item");
-assert.ok(app.includes("<details>") && app.includes("Video link and how it works") && app.includes("</details>"), "the room card folds up");
+assert.ok(app.includes("<details>") && app.includes("How a show works, and streaming from another platform instead") && app.includes("</details>"), "the room card folds up");
 console.log("Host screen flow: all checks passed");

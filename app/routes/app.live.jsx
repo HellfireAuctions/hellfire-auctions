@@ -17,8 +17,8 @@ import { streamConfigured } from "../cloudflare-stream.server";
 import { releaseStream } from "../stream-control.server";
 import { noteDropActivity } from "../drops-followup.server";
 
-// Live Drops: the host's screen. The host streams anywhere (TikTok, Instagram, Facebook, YouTube...), shares the
-// show's link, and sells items at a set price: press Go on an item and shoppers see a CLAIM button; the first people
+// Live Drops: the host's screen. The host goes live with their camera from the Live Studio (the video plays inside the
+// show room on the store), shares the show's link, and sells items at a set price: press Go on an item and shoppers see a CLAIM button; the first people
 // to tap get it. Everyone's claims are combined into one invoice.
 
 export const loader = async ({ request }) => {
@@ -32,7 +32,7 @@ export const loader = async ({ request }) => {
   const buyers = sale ? (await prisma.actionClaim.findMany({ where: { saleId: sale.id, shop }, select: { customerId: true }, distinct: ["customerId"] })).length : 0;
   const buyerRows = sale ? await prisma.actionBuyer.findMany({ where: { saleId: sale.id }, select: { invoiceSentAt: true, paidAt: true, struckAt: true } }) : [];
   const buyerStats = { invoiced: buyerRows.filter((b) => b.invoiceSentAt).length, paid: buyerRows.filter((b) => b.paidAt).length, unpaid: buyerRows.filter((b) => b.struckAt).length };
-  const studioReady = Boolean(sale) && sale.status !== "ENDED" && goLiveEnabled(shop, process.env.GOLIVE_SHOPS) && streamConfigured();
+  const studioReady = Boolean(sale) && sale.status !== "ENDED" && goLiveEnabled(plan.key) && streamConfigured();
   const studioUrl = studioReady ? `${process.env.SHOPIFY_APP_URL}/live-studio?t=${encodeURIComponent(signStudioToken({ shop, saleId: sale.id, secret: process.env.SHOPIFY_API_SECRET }))}` : null;
   return { allowed: plan.key === "INFERNO", shop, sales, buyers, buyerStats, studioUrl, sale: sale && { id: sale.id, title: sale.title, status: sale.status, videoUrl: sale.videoUrl, endedAt: sale.endedAt, drops: sale.drops.map((d) => ({ id: d.id, title: d.title, imageUrl: d.imageUrl, price: d.price, quantity: d.quantity, claimed: d.claimed, perPerson: d.perPerson, status: d.status, stockSynced: d.stockSynced })) } };
 };
@@ -40,7 +40,7 @@ export const loader = async ({ request }) => {
 export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
-  if ((await getShopPlan(shop)).key !== "INFERNO") return { error: "Live Drops (beta) is available on the Inferno plan while it is being finished." };
+  if ((await getShopPlan(shop)).key !== "INFERNO") return { error: "Live Drops, with built-in live video, is part of the Inferno plan." };
   const form = await request.formData();
   const intent = String(form.get("intent") || "");
   const saleId = String(form.get("saleId") || "");
@@ -296,27 +296,27 @@ function RoomCard({ sale, link, busy, studioUrl }) {
       <div style={{ fontSize: 13, wordBreak: "break-all" }}>{link}</div>
       {studioUrl ? (
         <div style={{ borderTop: "1px solid #d9d9d9", paddingTop: 10, display: "grid", gap: 6 }}>
-          <strong>Go live with your camera <span style={{ fontSize: 12, color: "#8a5a00" }}>(beta add-on)</span></strong>
+          <strong>Go live with your camera</strong>
           <div style={{ fontSize: 13 }}>Opens the Live Studio in a new tab (cameras can&rsquo;t run inside the Shopify admin). Works on a phone or a computer.</div>
           <div><a href={studioUrl} target="_blank" rel="noreferrer" style={{ ...button(true), textDecoration: "none", display: "inline-block" }}>Open Live Studio</a></div>
         </div>
       ) : (
-        <div style={{ fontSize: 13, color: "#616161" }}>Built-in video (Go Live) is a coming add-on.</div>
+        <div style={{ fontSize: 13, color: "#616161" }}>{sale.status === "ENDED" ? "This show has ended. Resume it or create a new show to go live again." : "Built-in video is not set up on this server yet."}</div>
       )}
       <details>
-      <summary style={{ cursor: "pointer", fontWeight: 600 }}>Video link and how it works</summary>
+      <summary style={{ cursor: "pointer", fontWeight: 600 }}>How a show works, and streaming from another platform instead</summary>
       <Form method="post" style={{ display: "grid", gap: 6, marginTop: 8 }}>
         <input type="hidden" name="intent" value="set-video" />
         <input type="hidden" name="saleId" value={sale.id} />
-        <label>Live video link (YouTube, Facebook, Vimeo or Twitch)<input name="videoUrl" defaultValue={sale.videoUrl || ""} placeholder="https://..." style={field} /></label>
+        <label>Streaming somewhere else instead? Paste the video link (YouTube, Facebook, Vimeo or Twitch)<input name="videoUrl" defaultValue={sale.videoUrl || ""} placeholder="https://..." style={field} /></label>
         <div><button type="submit" disabled={busy} style={button(false)}>Save video link</button></div>
       </Form>
       <div style={{ fontSize: 13 }}>
-        {playable ? "The video plays at the top of the room." : "No video in the room yet. Streaming on TikTok or Instagram? They can't play inside a web page, so stream there and share the room link: your viewers claim items here."}
+        {playable ? "That outside video plays at the top of the room instead of your camera." : "Most hosts leave this empty and go live with their camera from the Live Studio. TikTok and Instagram can't play inside a web page: if you stream there, share the room link and your viewers claim items here."}
       </div>
       <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, display: "grid", gap: 2 }}>
         <li>Add your items below, then press Start the show.</li>
-        <li>Go live wherever you stream, and share the room link above.</li>
+        <li>Press Open Live Studio, then Go live. Your camera plays inside the room on your store. Share the room link above.</li>
         <li>Press Open for claiming on an item. Shoppers see a CLAIM button.</li>
         <li>When it sells out (or you press Close), open the next one.</li>
         <li>When you are done, press End the show (it also ends by itself after an hour with no activity). Everyone who claimed is emailed one combined invoice 30 minutes later.</li>
@@ -388,7 +388,7 @@ export default function LiveActionSale() {
   return (
     <s-page heading="Live Drops (beta)">
       <div style={{ ...card, background: "#fff8e1", borderColor: "#ffd60a", marginBottom: 12 }}>
-        <strong>Beta.</strong> Live Drops works, and it is still being finished. Built-in video is coming; for now, paste a YouTube, Vimeo, Facebook or Twitch link, or stream anywhere and share the room link.
+        <strong>Beta.</strong> Live Drops works, and it is still being finished. Go live with your camera from the Live Studio: your video plays inside the show room on your store, and shoppers claim items under it.
       </div>
       <div style={{ position: "sticky", top: 0, zIndex: 10 }}>
         {result?.error && <div role="alert" style={{ ...card, borderColor: "#b3261e", color: "#b3261e", marginBottom: 12, background: "#fff" }}>{result.error}</div>}
@@ -398,8 +398,8 @@ export default function LiveActionSale() {
       {!allowed ? (
         <s-section heading="Sell live, at set prices">
           <s-stack gap="small">
-            <s-text>Show items on video (TikTok, Instagram, Facebook, YouTube, anywhere), say a price, and shoppers tap CLAIM. The first people to tap get it, and each shopper gets one combined invoice.</s-text>
-            <s-text>Live Drops (beta) is available on the Inferno plan while it is being finished.</s-text>
+            <s-text>Go live with your camera, show items, say a price, and shoppers tap CLAIM. The first people to tap get it, and each shopper gets one combined invoice.</s-text>
+            <s-text>Live Drops, with built-in live video, is part of the Inferno plan.</s-text>
             <s-link href="/app/plans">See plans</s-link>
           </s-stack>
         </s-section>
@@ -415,8 +415,7 @@ export default function LiveActionSale() {
             <Form method="post" style={{ display: "grid", gap: 10, maxWidth: 640 }}>
               <input type="hidden" name="intent" value="create-sale" />
               <label>New show title<input name="title" maxLength={80} placeholder="Friday frag night" required style={field} /></label>
-              <label>Video link (optional)<input name="videoUrl" placeholder="YouTube, Vimeo, Facebook or Twitch" style={field} /></label>
-              <div style={{ fontSize: 13, color: "#616161" }}>Streaming on TikTok or Instagram? Leave the video link empty and share the show&rsquo;s link while you stream.</div>
+              <div style={{ fontSize: 13, color: "#616161" }}>After creating the show, open the Live Studio and press Go live to stream from your camera. (Streaming on another platform instead? You can paste its link on the show page.)</div>
               <div><button type="submit" disabled={busy} style={button(true)}>Create the show</button></div>
             </Form>
           </s-section>

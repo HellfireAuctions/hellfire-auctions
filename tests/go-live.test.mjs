@@ -1,17 +1,16 @@
 import assert from "node:assert/strict";
-import { goLiveShops, goLiveEnabled, streamIsLive, streamExpired, MAX_STREAM_MS, BEAT_WINDOW_MS } from "../app/go-live.js";
+import { goLiveEnabled, GO_LIVE_PLAN, streamIsLive, streamExpired, MAX_STREAM_MS, BEAT_WINDOW_MS } from "../app/go-live.js";
 import { signStudioToken, verifyStudioToken, STUDIO_TTL_MS } from "../app/studio-token.server.js";
 import { parseLiveInput, createLiveInput, deleteLiveInput, streamConfigured } from "../app/cloudflare-stream.server.js";
 
 // ---------- who has Go Live (the add-on switch for now) ----------
-assert.deepEqual([...goLiveShops(" A.myshopify.com , b.myshopify.com,, ")], ["a.myshopify.com", "b.myshopify.com"], "tidy list");
-assert.equal(goLiveEnabled("a.myshopify.com", "a.myshopify.com,b.myshopify.com"), true);
-assert.equal(goLiveEnabled("A.MyShopify.com ", "a.myshopify.com"), true, "capitals and spaces don't matter");
-assert.equal(goLiveEnabled("c.myshopify.com", "a.myshopify.com,b.myshopify.com"), false, "everyone else is off by default");
-assert.equal(goLiveEnabled("a.myshopify.com", ""), false);
-assert.equal(goLiveEnabled("a.myshopify.com", undefined), false, "no setting: nobody");
-assert.equal(goLiveEnabled("", "a.myshopify.com"), false);
-assert.equal(goLiveEnabled("a.myshopify.com.evil.com", "a.myshopify.com"), false, "only an exact match counts");
+assert.equal(GO_LIVE_PLAN, "INFERNO", "built-in video comes with the top plan");
+assert.equal(goLiveEnabled("INFERNO"), true);
+assert.equal(goLiveEnabled("inferno"), true, "case does not matter");
+assert.equal(goLiveEnabled("BLAZE"), false, "lower plans do not get built-in video");
+assert.equal(goLiveEnabled("SPARK"), false);
+assert.equal(goLiveEnabled(""), false);
+assert.equal(goLiveEnabled(undefined), false, "no plan: no video");
 
 // ---------- is the video really coming through ----------
 const now = Date.parse("2026-10-09T12:00:00Z");

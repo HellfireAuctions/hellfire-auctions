@@ -199,6 +199,12 @@ function pageHtml(state, cfg) {
     }
     liveBox.textContent = "";
     liveBox.appendChild(live.wrap);
+    if (!live.wait) {
+      live.wait = el("div", "position:absolute;left:0;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;background:#000;color:#fff;font-size:14px;pointer-events:none", "Connecting to the live video...");
+      live.wrap.appendChild(live.wait);
+      live.video.addEventListener("playing", function () { if (live.wait) live.wait.style.display = "none"; });
+    }
+    live.wait.style.display = "flex";
     var pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }], bundlePolicy: "max-bundle" });
     live.pc = pc;
     pc.addTransceiver("video", { direction: "recvonly" });
@@ -215,7 +221,7 @@ function pageHtml(state, cfg) {
     pc.createOffer().then(function (offer) { return pc.setLocalDescription(offer); }).then(function () {
       return new Promise(function (resolve) {
         if (pc.iceGatheringState === "complete") return resolve();
-        var t = setTimeout(resolve, 2500);
+        var t = setTimeout(resolve, 1200);
         pc.addEventListener("icegatheringstatechange", function () { if (pc.iceGatheringState === "complete") { clearTimeout(t); resolve(); } });
       });
     }).then(function () { return fetch(url, { method: "POST", headers: { "Content-Type": "application/sdp" }, body: pc.localDescription.sdp }); })

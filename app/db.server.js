@@ -3,7 +3,13 @@ import { PrismaClient } from "@prisma/client";
 // The production database is Neon: NEON_DATABASE_URL must be set on the server. DATABASE_URL is only a fallback for local
 // development (the old Render database was retired in October 2026; see DATABASE.md).
 const useNeon = Boolean(process.env.NEON_DATABASE_URL);
-const datasourceUrl = useNeon ? process.env.NEON_DATABASE_URL : process.env.DATABASE_URL;
+// Prisma's default pool is tiny on a small server (a handful of connections), so a rush of simultaneous shoppers queues behind it.
+// Unless the address already sets a limit, allow a roomier pool.
+export function withPool(url, limit = 15) {
+  if (!url || /[?&]connection_limit=/.test(url)) return url;
+  return url + (url.includes("?") ? "&" : "?") + "connection_limit=" + limit + "&pool_timeout=20";
+}
+const datasourceUrl = withPool(useNeon ? process.env.NEON_DATABASE_URL : process.env.DATABASE_URL);
 
 function create() {
   return new PrismaClient({ datasourceUrl });

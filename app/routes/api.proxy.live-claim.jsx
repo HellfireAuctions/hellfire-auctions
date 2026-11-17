@@ -24,11 +24,16 @@ export const action = async ({ request }) => {
   if (!customerId) return reply({ ok: false, message: "Please log in to claim." }, 401);
 
   // the same people-rules as bidding: blocked shoppers, and the store's "who can bid" rule
-  const blocked = await prisma.blockedBidder.findUnique({ where: { shop_customerId: { shop, customerId } } });
+  const blocked = await memo("blocked:" + shop + ":" + customerId, 5_000, () => prisma.blockedBidder.findUnique({ where: { shop_customerId: { shop, customerId } } }));
   if (blocked) return reply({ ok: false, message: "You can't claim items from this store." }, 403);
   const rules = await memo("settings:" + shop, 10_000, () => getShopSettings(shop));
-  const verdict = await checkBidder(shop, customerId, rules.bidderRule, rules.approvedTag);
-  if (!verdict.ok) return reply({ ok: false, message: verdict.message }, 403);
+  // a rush of taps from one shopper asks the same question again and again: remember a "yes" briefly (never a "no", so a newly approved shopper is not kept waiting)
+  const verdictKey = "verdict:" + shop + ":" + customerId + ":" + rules.bidderRule + ":" + rules.approvedTag;
+  const verdict = await memo(verdictKey, 15_000, () => checkBidder(shop, customerId, rules.bidderRule, rules.approvedTag));
+  if (!verdict.ok) {
+    memoDelete(verdictKey);
+    return reply({ ok: false, message: verdict.message }, 403);
+  }
 
   const last = lastTap.get(customerId) || 0;
   if (Date.now() - last < TAP_GAP_MS) return reply({ ok: false, message: "One moment..." }, 429);

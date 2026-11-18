@@ -99,6 +99,32 @@ function Studio({ token }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [live]);
 
+  // A phone that dims, locks or switches apps pauses the camera, and the show quietly dies. While live, ask the screen to stay
+  // on; and when the host comes back to this page, if the camera was paused, turn it on again without stopping the show.
+  useEffect(() => {
+    if (!live) return undefined;
+    let lock = null;
+    const hold = async () => {
+      try {
+        if (navigator.wakeLock && document.visibilityState === "visible") lock = await navigator.wakeLock.request("screen");
+      } catch {
+        /* not supported or refused: the notice still tells the host to keep the screen on */
+      }
+    };
+    const back = async () => {
+      if (document.visibilityState !== "visible") return;
+      hold();
+      const video = streamRef.current?.getVideoTracks()[0];
+      if (!video || video.readyState === "ended") await openCamera(facing);
+    };
+    hold();
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      document.removeEventListener("visibilitychange", back);
+      lock?.release?.().catch(() => {});
+    };
+  }, [live, facing]);
+
   async function openCamera(nextFacing = facing) {
     try {
       streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -164,6 +190,7 @@ function Studio({ token }) {
       };
       await publishTo(pc, started.publishUrl);
       setLive(true);
+      setNotice("Keep this page open and your phone's screen on while you're live. Locking the phone or switching apps can pause your video.");
       clearInterval(beatRef.current);
       beatRef.current = setInterval(() => call("beat"), 5000);
     } catch (error) {

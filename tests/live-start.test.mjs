@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+const room = fs.readFileSync("app/routes/api.proxy.live.jsx", "utf8").replace(/\r\n/g, "\n");
+assert.ok(room.includes("confirming = null; syncLive(); render(); }"), "the video connection starts before the screen is redrawn");
+assert.ok(!room.includes("render(); syncLive(); }"), "and not the other way round");
+assert.ok(room.includes('var liveBox = document.getElementById("hf-video-live");'), "syncLive can run first because the video box is a fixed page element, not something render() rebuilds");
+assert.ok(!/liveBox/.test(room.slice(room.indexOf("function render() {"), room.indexOf("var liveBox") > room.indexOf("function render() {") ? room.indexOf("var liveBox") : room.indexOf("function render() {") + 3000)), "render() never touches the video box");
+assert.ok(room.includes('hint.rel = "preconnect"') && room.includes("new URL(url).origin"), "the room pre-connects to the video service");
+assert.ok(room.includes("var t = setTimeout(resolve, 1200);") && room.includes("Connecting to the live video..."), "the earlier speed-ups are still there");
+console.log("Live start: all checks passed");

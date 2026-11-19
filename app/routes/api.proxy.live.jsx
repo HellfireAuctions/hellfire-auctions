@@ -173,6 +173,16 @@ function pageHtml(state, cfg) {
     live.timer = setTimeout(function () { if (state && state.stream && live.pc === pc) connectLive(state.stream.playUrl); }, ms);
   }
   function connectLive(url) {
+    // open the secure connection to the video service now, while the network candidates are still being gathered
+    try {
+      if (!live.pre || live.pre !== url) {
+        var hint = document.createElement("link");
+        hint.rel = "preconnect";
+        hint.href = new URL(url).origin;
+        document.head.appendChild(hint);
+        live.pre = url;
+      }
+    } catch (e) { /* only a speed-up */ }
     if (live.pc) { try { live.pc.close(); } catch (e) { /* already closed */ } }
     live.url = url;
     if (!live.video) {
@@ -238,7 +248,7 @@ function pageHtml(state, cfg) {
     if (live.url !== s.playUrl || dead) connectLive(s.playUrl);
   }
   function load() {
-    fetch(cfg.url, { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) { if (j && j.version) { state = j; if (confirming && !(j.open && j.open.id === confirming)) confirming = null; render(); syncLive(); } }).catch(function () {});
+    fetch(cfg.url, { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (j) { if (j && j.version) { state = j; if (confirming && !(j.open && j.open.id === confirming)) confirming = null; syncLive(); render(); } }).catch(function () {});
   }
   function scheduleLoad() {
     if (timer) return;

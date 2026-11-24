@@ -3,7 +3,7 @@ import { formatMoney } from "./currency.server.js";
 import prisma from "./db.server.js";
 import { unauthenticated } from "./shopify.server.js";
 import { isDevelopmentStore, canCreateAuction } from "./plans.server.js";
-import { sendEndingSoonReminders, notifyMerchantEnded, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice, notifyMerchantAutoOffer, notifyMerchantSettleFailed } from "./notifications.server.js";
+import { sendEndingSoonReminders, notifyReserveNotMet, alertOwner, sendWinnerInvoiceFallback, notifyWinner, sendPaymentReminder, notifyMerchantUnpaid, notifyLosers, notifyWatchersStarted, sendWatcherReminders, notifyMerchantTestEnded, emailEncryptedBackup, notifyMerchantEmbedOff, notifyMerchantProductGone, notifyCombinedInvoice, notifyJoinedInvoice, notifyMerchantAutoOffer, notifyMerchantSettleFailed } from "./notifications.server.js";
 import { getShopSettings, recordStrike } from "./settings.server.js";
 import { publish } from "./live-hub.server.js";
 import { selfTestIfDue, selfTestAfterBoot } from "./self-test.server.js";
@@ -333,7 +333,7 @@ async function settleAuction(auction) {
   }
   if (settled) {
     const reserveMet = settled.reservePrice == null || Number(settled.currentBid) >= Number(settled.reservePrice);
-    notifyMerchantEnded({ auction: settled, winnerId: settled.winnerId, reserveMet });
+    // No "auction ended" email to the store owner: the app shows the result and the winner is invoiced automatically.
     if (settled.winnerId) notifyLosers({ auction: settled });
     if (!settled.winnerId && !reserveMet) {
       const top = await prisma.bid.findFirst({
